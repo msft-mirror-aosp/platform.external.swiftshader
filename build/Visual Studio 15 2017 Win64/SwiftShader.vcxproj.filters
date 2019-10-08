@@ -165,6 +165,9 @@
     <ClInclude Include="$(SolutionDir)src\Common\MutexLock.hpp">
       <Filter>src\Common</Filter>
     </ClInclude>
+    <ClInclude Include="$(SolutionDir)src\Common\RecursiveLock.hpp">
+      <Filter>src\Common</Filter>
+    </ClInclude>
     <ClInclude Include="$(SolutionDir)src\Common\Resource.hpp">
       <Filter>src\Common</Filter>
     </ClInclude>
@@ -321,19 +324,19 @@
   </ItemGroup>
   <ItemGroup>
     <Filter Include="src">
-      <UniqueIdentifier>{96A3A3C5-1BBA-3A3D-ADF6-3F1639D231D2}</UniqueIdentifier>
+      <UniqueIdentifier>{4CBE9297-1779-302D-AF01-5C79A790DED5}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\Common">
-      <UniqueIdentifier>{8C957365-805D-3B54-ACD9-62917A45452A}</UniqueIdentifier>
+      <UniqueIdentifier>{B0058071-2A97-3E9E-A00E-6FDE51114CE4}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\Main">
-      <UniqueIdentifier>{36A866F1-859C-3157-AA9F-187E0E32538D}</UniqueIdentifier>
+      <UniqueIdentifier>{46D02282-8ABB-32F5-8522-04CF7C13CE38}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\Renderer">
-      <UniqueIdentifier>{F73311CA-ECE8-3EB6-AA1B-4D2395A5DA9F}</UniqueIdentifier>
+      <UniqueIdentifier>{B15F1FA3-503E-37F7-A584-C589FC3DACFA}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\Shader">
-      <UniqueIdentifier>{5F64176E-50DD-3D7B-B221-BD3B3AA34E98}</UniqueIdentifier>
+      <UniqueIdentifier>{B47A3AEA-B1E3-38BC-8D24-842B83F0DCFF}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

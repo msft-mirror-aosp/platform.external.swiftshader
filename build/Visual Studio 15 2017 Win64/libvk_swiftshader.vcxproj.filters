@@ -37,16 +37,7 @@
     <ClCompile Include="$(SolutionDir)src\Device\Renderer.cpp">
       <Filter>src\Device</Filter>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)src\Device\Sampler.cpp">
-      <Filter>src\Device</Filter>
-    </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Device\SetupProcessor.cpp">
-      <Filter>src\Device</Filter>
-    </ClCompile>
-    <ClCompile Include="$(SolutionDir)src\Device\Surface.cpp">
-      <Filter>src\Device</Filter>
-    </ClCompile>
-    <ClCompile Include="$(SolutionDir)src\Device\SwiftConfig.cpp">
       <Filter>src\Device</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Device\Vector.cpp">
@@ -54,6 +45,9 @@
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Device\VertexProcessor.cpp">
       <Filter>src\Device</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)src\Pipeline\ComputeProgram.cpp">
+      <Filter>src\Pipeline</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Pipeline\Constants.cpp">
       <Filter>src\Pipeline</Filter>
@@ -64,16 +58,10 @@
     <ClCompile Include="$(SolutionDir)src\Pipeline\PixelRoutine.cpp">
       <Filter>src\Pipeline</Filter>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)src\Pipeline\PixelShader.cpp">
-      <Filter>src\Pipeline</Filter>
-    </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Pipeline\SamplerCore.cpp">
       <Filter>src\Pipeline</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Pipeline\SetupRoutine.cpp">
-      <Filter>src\Pipeline</Filter>
-    </ClCompile>
-    <ClCompile Include="$(SolutionDir)src\Pipeline\Shader.cpp">
       <Filter>src\Pipeline</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Pipeline\ShaderCore.cpp">
@@ -82,13 +70,16 @@
     <ClCompile Include="$(SolutionDir)src\Pipeline\SpirvShader.cpp">
       <Filter>src\Pipeline</Filter>
     </ClCompile>
+    <ClCompile Include="$(SolutionDir)src\Pipeline\SpirvShaderSampling.cpp">
+      <Filter>src\Pipeline</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)src\Pipeline\SpirvShader_dbg.cpp">
+      <Filter>src\Pipeline</Filter>
+    </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Pipeline\VertexProgram.cpp">
       <Filter>src\Pipeline</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Pipeline\VertexRoutine.cpp">
-      <Filter>src\Pipeline</Filter>
-    </ClCompile>
-    <ClCompile Include="$(SolutionDir)src\Pipeline\VertexShader.cpp">
       <Filter>src\Pipeline</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\System\CPUID.cpp">
@@ -109,19 +100,16 @@
     <ClCompile Include="$(SolutionDir)src\System\Memory.cpp">
       <Filter>src\System</Filter>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)src\System\Resource.cpp">
-      <Filter>src\System</Filter>
-    </ClCompile>
     <ClCompile Include="$(SolutionDir)src\System\Socket.cpp">
-      <Filter>src\System</Filter>
-    </ClCompile>
-    <ClCompile Include="$(SolutionDir)src\System\Thread.cpp">
       <Filter>src\System</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\System\Timer.cpp">
       <Filter>src\System</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Vulkan\VkBuffer.cpp">
+      <Filter>src\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)src\Vulkan\VkBufferView.cpp">
       <Filter>src\Vulkan</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Vulkan\VkCommandBuffer.cpp">
@@ -133,10 +121,22 @@
     <ClCompile Include="$(SolutionDir)src\Vulkan\VkDebug.cpp">
       <Filter>src\Vulkan</Filter>
     </ClCompile>
+    <ClCompile Include="$(SolutionDir)src\Vulkan\VkDescriptorPool.cpp">
+      <Filter>src\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)src\Vulkan\VkDescriptorSetLayout.cpp">
+      <Filter>src\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)src\Vulkan\VkDescriptorUpdateTemplate.cpp">
+      <Filter>src\Vulkan</Filter>
+    </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Vulkan\VkDevice.cpp">
       <Filter>src\Vulkan</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Vulkan\VkDeviceMemory.cpp">
+      <Filter>src\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)src\Vulkan\VkFormat.cpp">
       <Filter>src\Vulkan</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Vulkan\VkFramebuffer.cpp">
@@ -163,6 +163,9 @@
     <ClCompile Include="$(SolutionDir)src\Vulkan\VkPipeline.cpp">
       <Filter>src\Vulkan</Filter>
     </ClCompile>
+    <ClCompile Include="$(SolutionDir)src\Vulkan\VkPipelineCache.cpp">
+      <Filter>src\Vulkan</Filter>
+    </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Vulkan\VkPipelineLayout.cpp">
       <Filter>src\Vulkan</Filter>
     </ClCompile>
@@ -178,6 +181,9 @@
     <ClCompile Include="$(SolutionDir)src\Vulkan\VkRenderPass.cpp">
       <Filter>src\Vulkan</Filter>
     </ClCompile>
+    <ClCompile Include="$(SolutionDir)src\Vulkan\VkSampler.cpp">
+      <Filter>src\Vulkan</Filter>
+    </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Vulkan\VkShaderModule.cpp">
       <Filter>src\Vulkan</Filter>
     </ClCompile>
@@ -186,6 +192,12 @@
     </ClCompile>
     <ClCompile Include="$(SolutionDir)src\Vulkan\main.cpp">
       <Filter>src\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)src\WSI\VkSurfaceKHR.cpp">
+      <Filter>src\WSI</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)src\WSI\VkSwapchainKHR.cpp">
+      <Filter>src\WSI</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -211,6 +223,9 @@
       <Filter>src\Device</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)src\Device\Matrix.hpp">
+      <Filter>src\Device</Filter>
+    </ClInclude>
+    <ClInclude Include="$(SolutionDir)src\Device\Memset.hpp">
       <Filter>src\Device</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)src\Device\PixelProcessor.hpp">
@@ -249,12 +264,6 @@
     <ClInclude Include="$(SolutionDir)src\Device\Stream.hpp">
       <Filter>src\Device</Filter>
     </ClInclude>
-    <ClInclude Include="$(SolutionDir)src\Device\Surface.hpp">
-      <Filter>src\Device</Filter>
-    </ClInclude>
-    <ClInclude Include="$(SolutionDir)src\Device\SwiftConfig.hpp">
-      <Filter>src\Device</Filter>
-    </ClInclude>
     <ClInclude Include="$(SolutionDir)src\Device\Triangle.hpp">
       <Filter>src\Device</Filter>
     </ClInclude>
@@ -267,6 +276,9 @@
     <ClInclude Include="$(SolutionDir)src\Device\VertexProcessor.hpp">
       <Filter>src\Device</Filter>
     </ClInclude>
+    <ClInclude Include="$(SolutionDir)src\Pipeline\ComputeProgram.hpp">
+      <Filter>src\Pipeline</Filter>
+    </ClInclude>
     <ClInclude Include="$(SolutionDir)src\Pipeline\Constants.hpp">
       <Filter>src\Pipeline</Filter>
     </ClInclude>
@@ -276,19 +288,16 @@
     <ClInclude Include="$(SolutionDir)src\Pipeline\PixelRoutine.hpp">
       <Filter>src\Pipeline</Filter>
     </ClInclude>
-    <ClInclude Include="$(SolutionDir)src\Pipeline\PixelShader.hpp">
-      <Filter>src\Pipeline</Filter>
-    </ClInclude>
     <ClInclude Include="$(SolutionDir)src\Pipeline\SamplerCore.hpp">
       <Filter>src\Pipeline</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)src\Pipeline\SetupRoutine.hpp">
       <Filter>src\Pipeline</Filter>
     </ClInclude>
-    <ClInclude Include="$(SolutionDir)src\Pipeline\Shader.hpp">
+    <ClInclude Include="$(SolutionDir)src\Pipeline\ShaderCore.hpp">
       <Filter>src\Pipeline</Filter>
     </ClInclude>
-    <ClInclude Include="$(SolutionDir)src\Pipeline\ShaderCore.hpp">
+    <ClInclude Include="$(SolutionDir)src\Pipeline\SpirvID.hpp">
       <Filter>src\Pipeline</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)src\Pipeline\SpirvShader.hpp">
@@ -300,8 +309,8 @@
     <ClInclude Include="$(SolutionDir)src\Pipeline\VertexRoutine.hpp">
       <Filter>src\Pipeline</Filter>
     </ClInclude>
-    <ClInclude Include="$(SolutionDir)src\Pipeline\VertexShader.hpp">
-      <Filter>src\Pipeline</Filter>
+    <ClInclude Include="$(SolutionDir)src\System\Build.hpp">
+      <Filter>src\System</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)src\System\CPUID.hpp">
       <Filter>src\System</Filter>
@@ -321,13 +330,10 @@
     <ClInclude Include="$(SolutionDir)src\System\Memory.hpp">
       <Filter>src\System</Filter>
     </ClInclude>
-    <ClInclude Include="$(SolutionDir)src\System\Resource.hpp">
-      <Filter>src\System</Filter>
-    </ClInclude>
     <ClInclude Include="$(SolutionDir)src\System\Socket.hpp">
       <Filter>src\System</Filter>
     </ClInclude>
-    <ClInclude Include="$(SolutionDir)src\System\Thread.hpp">
+    <ClInclude Include="$(SolutionDir)src\System\Synchronization.hpp">
       <Filter>src\System</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)src\System\Timer.hpp">
@@ -354,6 +360,18 @@
     <ClInclude Include="$(SolutionDir)src\Vulkan\VkDebug.hpp">
       <Filter>src\Vulkan</Filter>
     </ClInclude>
+    <ClInclude Include="$(SolutionDir)src\Vulkan\VkDescriptorPool.hpp">
+      <Filter>src\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="$(SolutionDir)src\Vulkan\VkDescriptorSet.hpp">
+      <Filter>src\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="$(SolutionDir)src\Vulkan\VkDescriptorSetLayout.hpp">
+      <Filter>src\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="$(SolutionDir)src\Vulkan\VkDescriptorUpdateTemplate.hpp">
+      <Filter>src\Vulkan</Filter>
+    </ClInclude>
     <ClInclude Include="$(SolutionDir)src\Vulkan\VkDestroy.h">
       <Filter>src\Vulkan</Filter>
     </ClInclude>
@@ -367,6 +385,9 @@
       <Filter>src\Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)src\Vulkan\VkFence.hpp">
+      <Filter>src\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="$(SolutionDir)src\Vulkan\VkFormat.h">
       <Filter>src\Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)src\Vulkan\VkFramebuffer.hpp">
@@ -420,25 +441,37 @@
     <ClInclude Include="$(SolutionDir)src\Vulkan\VkShaderModule.hpp">
       <Filter>src\Vulkan</Filter>
     </ClInclude>
+    <ClInclude Include="$(SolutionDir)src\Vulkan\VulkanPlatform.h">
+      <Filter>src\Vulkan</Filter>
+    </ClInclude>
     <ClInclude Include="$(SolutionDir)src\Vulkan\resource.h">
       <Filter>src\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="$(SolutionDir)src\WSI\VkSurfaceKHR.hpp">
+      <Filter>src\WSI</Filter>
+    </ClInclude>
+    <ClInclude Include="$(SolutionDir)src\WSI\VkSwapchainKHR.hpp">
+      <Filter>src\WSI</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="src">
-      <UniqueIdentifier>{96A3A3C5-1BBA-3A3D-ADF6-3F1639D231D2}</UniqueIdentifier>
+      <UniqueIdentifier>{4CBE9297-1779-302D-AF01-5C79A790DED5}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\Device">
-      <UniqueIdentifier>{C049C9D4-3CBA-39A2-9759-8821E28E66E1}</UniqueIdentifier>
+      <UniqueIdentifier>{F0DF3B38-45A9-3C83-B799-8B6EEF044DB4}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\Pipeline">
-      <UniqueIdentifier>{38C47849-2E64-3D36-854E-9C6B0DEAC5E1}</UniqueIdentifier>
+      <UniqueIdentifier>{6F3CF85A-88BA-3D30-B355-FB1C6C74DE8B}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\System">
-      <UniqueIdentifier>{0F6FA2A9-D62B-351D-AAED-2100514E0D67}</UniqueIdentifier>
+      <UniqueIdentifier>{60F4182B-4D0A-3200-8F91-ADD524B1D04F}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\Vulkan">
-      <UniqueIdentifier>{6A487737-5343-3862-800E-F0B7A5CB0903}</UniqueIdentifier>
+      <UniqueIdentifier>{33F32F8E-7DE7-3ADB-AC85-96E48C81EC0F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\WSI">
+      <UniqueIdentifier>{555179D0-49AD-32E8-91BA-FAF1E5D5113C}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

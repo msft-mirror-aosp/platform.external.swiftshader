@@ -249,6 +249,14 @@ namespace sw
 			mask565Q[i][3] = (i & 0x1 ? 0x001F : 0) | (i & 0x2 ? 0x07E0 : 0) | (i & 0x4 ? 0xF800 : 0);
 		}
 
+		for (int i = 0; i < 16; i++)
+		{
+			mask5551Q[i][0] =
+			mask5551Q[i][1] =
+			mask5551Q[i][2] =
+			mask5551Q[i][3] = (i & 0x1 ? 0x001F : 0) | (i & 0x2 ? 0x03E0 : 0) | (i & 0x4 ? 0x7C00 : 0) | (i & 8 ? 0x8000 : 0);
+		}
+
 		for(int i = 0; i < 4; i++)
 		{
 			maskW01Q[i][0] =  -(i >> 0 & 1);
@@ -262,19 +270,18 @@ namespace sw
 			maskD01X[i][3] =  -(i >> 1 & 1);
 		}
 
+		for (int i = 0; i < 16; i++)
+		{
+			mask10Q[i][0] = mask10Q[i][1] =
+					(i & 0x1 ? 0x3FF : 0) |
+					(i & 0x2 ? 0xFFC00 : 0) |
+					(i & 0x4 ? 0x3FF00000 : 0) |
+					(i & 0x8 ? 0xC0000000 : 0);
+		}
+
 		for(int i = 0; i < 256; i++)
 		{
 			sRGBtoLinear8_16[i] = (unsigned short)(sw::sRGBtoLinear((float)i / 0xFF) * 0xFFFF + 0.5f);
-		}
-
-		for(int i = 0; i < 64; i++)
-		{
-			sRGBtoLinear6_16[i] = (unsigned short)(sw::sRGBtoLinear((float)i / 0x3F) * 0xFFFF + 0.5f);
-		}
-
-		for(int i = 0; i < 32; i++)
-		{
-			sRGBtoLinear5_16[i] = (unsigned short)(sw::sRGBtoLinear((float)i / 0x1F) * 0xFFFF + 0.5f);
 		}
 
 		for(int i = 0; i < 0x1000; i++)

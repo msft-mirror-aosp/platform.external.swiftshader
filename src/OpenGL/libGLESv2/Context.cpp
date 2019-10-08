@@ -238,6 +238,7 @@ Context::~Context()
 	mState.pixelPackBuffer = nullptr;
 	mState.pixelUnpackBuffer = nullptr;
 	mState.genericUniformBuffer = nullptr;
+	mState.genericTransformFeedbackBuffer = nullptr;
 
 	for(int i = 0; i < MAX_UNIFORM_BUFFER_BINDINGS; i++) {
 		mState.uniformBuffers[i].set(nullptr, 0, 0);
@@ -693,6 +694,20 @@ void Context::setScissorParams(GLint x, GLint y, GLsizei width, GLsizei height)
 {
 	mState.scissorX = x;
 	mState.scissorY = y;
+
+	// An overflow happens when (infinite precision) X + Width > INT32_MAX. We
+	// can change that formula to "X > INT32_MAX - Width". And when we bring it
+	// down to 32-bit precision, we know it's safe because width is non-negative.
+	if (x > INT32_MAX - width)
+	{
+		width = INT32_MAX - x;
+	}
+
+	if (y > INT32_MAX - height)
+	{
+		height = INT32_MAX - y;
+	}
+
 	mState.scissorWidth = width;
 	mState.scissorHeight = height;
 }
@@ -1171,12 +1186,7 @@ void Context::bindTransformFeedbackBuffer(GLuint buffer)
 {
 	mResourceManager->checkBufferAllocation(buffer);
 
-	TransformFeedback* transformFeedback = getTransformFeedback(mState.transformFeedback);
-
-	if(transformFeedback)
-	{
-		transformFeedback->setGenericBuffer(getBuffer(buffer));
-	}
+	mState.genericTransformFeedbackBuffer = getBuffer(buffer);
 }
 
 void Context::bindTexture(TextureType type, GLuint texture)
@@ -1259,7 +1269,7 @@ void Context::bindGenericTransformFeedbackBuffer(GLuint buffer)
 {
 	mResourceManager->checkBufferAllocation(buffer);
 
-	getTransformFeedback()->setGenericBuffer(getBuffer(buffer));
+	mState.genericTransformFeedbackBuffer = getBuffer(buffer);
 }
 
 void Context::bindIndexedTransformFeedbackBuffer(GLuint buffer, GLuint index, GLintptr offset, GLsizeiptr size)
@@ -1268,6 +1278,7 @@ void Context::bindIndexedTransformFeedbackBuffer(GLuint buffer, GLuint index, GL
 
 	Buffer* bufferObject = getBuffer(buffer);
 	getTransformFeedback()->setBuffer(index, bufferObject, offset, size);
+	mState.genericTransformFeedbackBuffer = bufferObject;
 }
 
 void Context::bindTransformFeedback(GLuint id)
@@ -1621,10 +1632,7 @@ bool Context::getBuffer(GLenum target, es2::Buffer **buffer) const
 		*buffer = getPixelUnpackBuffer();
 		break;
 	case GL_TRANSFORM_FEEDBACK_BUFFER:
-		{
-			TransformFeedback* transformFeedback = getTransformFeedback();
-			*buffer = transformFeedback ? static_cast<es2::Buffer*>(transformFeedback->getGenericBuffer()) : nullptr;
-		}
+		*buffer = static_cast<es2::Buffer*>(mState.genericTransformFeedbackBuffer);
 		break;
 	case GL_UNIFORM_BUFFER:
 		*buffer = getGenericUniformBuffer();
@@ -1643,6 +1651,27 @@ TransformFeedback *Context::getTransformFeedback() const
 Program *Context::getCurrentProgram() const
 {
 	return mResourceManager->getProgram(mState.currentProgram);
+}
+
+Texture *Context::getTargetTexture(GLenum target) const
+{
+	Texture *texture = nullptr;
+
+	switch(target)
+	{
+	case GL_TEXTURE_2D:            texture = getTexture2D();       break;
+	case GL_TEXTURE_2D_ARRAY:      texture = getTexture2DArray();  break;
+	case GL_TEXTURE_3D:            texture = getTexture3D();       break;
+	case GL_TEXTURE_CUBE_MAP:      texture = getTextureCubeMap();  break;
+	case GL_TEXTURE_EXTERNAL_OES:  texture = getTextureExternal(); break;
+	case GL_TEXTURE_RECTANGLE_ARB: texture = getTexture2DRect();   break;
+	default:
+		return error(GL_INVALID_ENUM, nullptr);
+	}
+
+	ASSERT(texture);  // Must always have a default texture to fall back to.
+
+	return texture;
 }
 
 Texture2D *Context::getTexture2D() const
@@ -2362,7 +2391,7 @@ template<typename T> bool Context::getIntegerv(GLenum pname, T *params) const
 			TransformFeedback* transformFeedback = getTransformFeedback(mState.transformFeedback);
 			if(transformFeedback)
 			{
-				*params = transformFeedback->getGenericBufferName();
+				*params = mState.genericTransformFeedbackBuffer.name();
 			}
 			else
 			{
@@ -2767,6 +2796,23 @@ bool Context::applyRenderTarget()
 	viewport.height = mState.viewportHeight;
 	viewport.minZ = zNear;
 	viewport.maxZ = zFar;
+
+	if (viewport.x0 > es2::IMPLEMENTATION_MAX_RENDERBUFFER_SIZE ||
+		viewport.y0 > es2::IMPLEMENTATION_MAX_RENDERBUFFER_SIZE)
+	{
+		TransformFeedback* transformFeedback = getTransformFeedback();
+		if (!transformFeedback->isActive() || transformFeedback->isPaused())
+		{
+			return false;
+		}
+		else
+		{
+			viewport.x0 = 0;
+			viewport.y0 = 0;
+			viewport.width = 0;
+			viewport.height = 0;
+		}
+	}
 
 	device->setViewport(viewport);
 
@@ -3840,6 +3886,10 @@ void Context::detachBuffer(GLuint buffer)
 	{
 		mState.genericUniformBuffer = nullptr;
 	}
+	if (mState.genericTransformFeedbackBuffer.name() == buffer)
+	{
+		mState.genericTransformFeedbackBuffer = nullptr;
+	}
 
 	if(getArrayBufferName() == buffer)
 	{
@@ -4096,7 +4146,11 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 	if(mState.scissorTestEnabled)   // Only write to parts of the destination framebuffer which pass the scissor test
 	{
 		sw::Rect scissorRect(mState.scissorX, mState.scissorY, mState.scissorX + mState.scissorWidth, mState.scissorY + mState.scissorHeight);
-		Device::ClipDstRect(sourceScissoredRect, destScissoredRect, scissorRect, flipX, flipY);
+		if (!Device::ClipDstRect(sourceScissoredRect, destScissoredRect, scissorRect, flipX, flipY))
+		{
+			// Failed to clip, blitting can't happen.
+			return error(GL_INVALID_OPERATION);
+		}
 	}
 
 	sw::SliceRectF sourceTrimmedRect = sourceScissoredRect;
@@ -4105,10 +4159,18 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 	// The source & destination rectangles also may need to be trimmed if
 	// they fall out of the bounds of the actual draw and read surfaces.
 	sw::Rect sourceTrimRect(0, 0, readBufferWidth, readBufferHeight);
-	Device::ClipSrcRect(sourceTrimmedRect, destTrimmedRect, sourceTrimRect, flipX, flipY);
+	if (!Device::ClipSrcRect(sourceTrimmedRect, destTrimmedRect, sourceTrimRect, flipX, flipY))
+	{
+		// Failed to clip, blitting can't happen.
+		return error(GL_INVALID_OPERATION);
+	}
 
 	sw::Rect destTrimRect(0, 0, drawBufferWidth, drawBufferHeight);
-	Device::ClipDstRect(sourceTrimmedRect, destTrimmedRect, destTrimRect, flipX, flipY);
+	if (!Device::ClipDstRect(sourceTrimmedRect, destTrimmedRect, destTrimRect, flipX, flipY))
+	{
+		// Failed to clip, blitting can't happen.
+		return error(GL_INVALID_OPERATION);
+	}
 
 	bool partialBufferCopy = false;
 
@@ -4130,8 +4192,8 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 	{
 		GLenum readColorbufferType = readFramebuffer->getReadBufferType();
 		GLenum drawColorbufferType = drawFramebuffer->getColorbufferType(0);
-		const bool validReadType = readColorbufferType == GL_TEXTURE_2D || readColorbufferType == GL_TEXTURE_RECTANGLE_ARB || Framebuffer::IsRenderbuffer(readColorbufferType);
-		const bool validDrawType = drawColorbufferType == GL_TEXTURE_2D || drawColorbufferType == GL_TEXTURE_RECTANGLE_ARB || Framebuffer::IsRenderbuffer(drawColorbufferType);
+		const bool validReadType = readColorbufferType == GL_TEXTURE_2D || readColorbufferType == GL_TEXTURE_RECTANGLE_ARB || readColorbufferType == GL_TEXTURE_2D_ARRAY || readColorbufferType == GL_TEXTURE_3D || Framebuffer::IsRenderbuffer(readColorbufferType);
+		const bool validDrawType = drawColorbufferType == GL_TEXTURE_2D || drawColorbufferType == GL_TEXTURE_RECTANGLE_ARB || readColorbufferType == GL_TEXTURE_2D_ARRAY || readColorbufferType == GL_TEXTURE_3D || Framebuffer::IsRenderbuffer(drawColorbufferType);
 		if(!validReadType || !validDrawType)
 		{
 			return error(GL_INVALID_OPERATION);
@@ -4347,17 +4409,13 @@ EGLenum Context::validateSharedImage(EGLenum target, GLuint name, GLuint texture
 
 	switch(target)
 	{
-	case EGL_GL_TEXTURE_2D_KHR:
-		textureTarget = GL_TEXTURE_2D;
-		break;
-	case EGL_GL_TEXTURE_CUBE_MAP_POSITIVE_X_KHR:
-	case EGL_GL_TEXTURE_CUBE_MAP_NEGATIVE_X_KHR:
-	case EGL_GL_TEXTURE_CUBE_MAP_POSITIVE_Y_KHR:
-	case EGL_GL_TEXTURE_CUBE_MAP_NEGATIVE_Y_KHR:
-	case EGL_GL_TEXTURE_CUBE_MAP_POSITIVE_Z_KHR:
-	case EGL_GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_KHR:
-		textureTarget = GL_TEXTURE_CUBE_MAP;
-		break;
+	case EGL_GL_TEXTURE_2D_KHR:                  textureTarget = GL_TEXTURE_2D;                  break;
+	case EGL_GL_TEXTURE_CUBE_MAP_POSITIVE_X_KHR: textureTarget = GL_TEXTURE_CUBE_MAP_POSITIVE_X; break;
+	case EGL_GL_TEXTURE_CUBE_MAP_NEGATIVE_X_KHR: textureTarget = GL_TEXTURE_CUBE_MAP_NEGATIVE_X; break;
+	case EGL_GL_TEXTURE_CUBE_MAP_POSITIVE_Y_KHR: textureTarget = GL_TEXTURE_CUBE_MAP_POSITIVE_Y; break;
+	case EGL_GL_TEXTURE_CUBE_MAP_NEGATIVE_Y_KHR: textureTarget = GL_TEXTURE_CUBE_MAP_NEGATIVE_Y; break;
+	case EGL_GL_TEXTURE_CUBE_MAP_POSITIVE_Z_KHR: textureTarget = GL_TEXTURE_CUBE_MAP_POSITIVE_Z; break;
+	case EGL_GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_KHR: textureTarget = GL_TEXTURE_CUBE_MAP_NEGATIVE_Z; break;
 	case EGL_GL_RENDERBUFFER_KHR:
 		break;
 	default:
@@ -4373,7 +4431,17 @@ EGLenum Context::validateSharedImage(EGLenum target, GLuint name, GLuint texture
 	{
 		es2::Texture *texture = getTexture(name);
 
-		if(!texture || texture->getTarget() != textureTarget)
+		if(!texture)
+		{
+			return EGL_BAD_PARAMETER;
+		}
+
+		if (texture->getTarget() != GL_TEXTURE_CUBE_MAP && texture->getTarget() != textureTarget)
+		{
+			return EGL_BAD_PARAMETER;
+		}
+
+		if (texture->getTarget() == GL_TEXTURE_CUBE_MAP && !IsCubemapTextureTarget(textureTarget))
 		{
 			return EGL_BAD_PARAMETER;
 		}
@@ -4388,7 +4456,7 @@ EGLenum Context::validateSharedImage(EGLenum target, GLuint name, GLuint texture
 			return EGL_BAD_PARAMETER;
 		}
 
-		if(textureLevel == 0 && !(texture->isSamplerComplete(nullptr) && texture->getTopLevel() == 0))
+		if(textureLevel == 0 && !texture->isSamplerComplete(nullptr) && texture->hasNonBaseLevels())
 		{
 			return EGL_BAD_PARAMETER;
 		}
@@ -4490,6 +4558,7 @@ const GLubyte *Context::getExtensions(GLuint index, GLuint *numExt) const
 		"GL_EXT_color_buffer_float",   // OpenGL ES 3.0 specific.
 		"GL_EXT_color_buffer_half_float",
 		"GL_EXT_draw_buffers",
+		"GL_EXT_float_blend",
 		"GL_EXT_instanced_arrays",
 		"GL_EXT_occlusion_query_boolean",
 		"GL_EXT_read_format_bgra",

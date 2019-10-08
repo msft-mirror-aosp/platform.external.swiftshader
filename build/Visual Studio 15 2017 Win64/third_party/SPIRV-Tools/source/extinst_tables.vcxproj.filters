@@ -1,9 +1,13 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <CustomBuild Include="$(SolutionDir)third_party\SPIRV-Headers\include\spirv\unified1\extinst.opencl.std.100.grammar.json" />
-    <CustomBuild Include="$(SolutionDir)third_party\SPIRV-Headers\include\spirv\unified1\extinst.glsl.std.450.grammar.json" />
-    <CustomBuild Include="$(SolutionDir)build\Visual Studio 15 2017 Win64\CMakeFiles\fa8e48db237811ef620e7518b63250dd\extinst_tables.rule">
+    <CustomBuild Include="$(SolutionDir)build\Visual Studio 15 2017 Win64\CMakeFiles\91e8d4b9222111077126a1169fd3e172\opencl.std.insts.inc.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="$(SolutionDir)build\Visual Studio 15 2017 Win64\CMakeFiles\91e8d4b9222111077126a1169fd3e172\glsl.std.450.insts.inc.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="$(SolutionDir)build\Visual Studio 15 2017 Win64\CMakeFiles\298c9f9d2535f81bde02602c22b93442\extinst_tables.rule">
       <Filter>CMake Rules</Filter>
     </CustomBuild>
   </ItemGroup>
@@ -12,7 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <Filter Include="CMake Rules">
-      <UniqueIdentifier>{5EE6D6AB-26DF-38FF-B736-7FAA511DFF82}</UniqueIdentifier>
+      <UniqueIdentifier>{93F83FFB-0A66-3FBE-A52D-9C65B5A808F7}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

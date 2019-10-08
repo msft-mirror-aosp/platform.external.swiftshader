@@ -1,8 +1,10 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <CustomBuild Include="$(SolutionDir)third_party\SPIRV-Tools\utils\generate_language_headers.py" />
-    <CustomBuild Include="$(SolutionDir)build\Visual Studio 15 2017 Win64\CMakeFiles\fa8e48db237811ef620e7518b63250dd\spirv-tools-header-DebugInfo.rule">
+    <CustomBuild Include="$(SolutionDir)build\Visual Studio 15 2017 Win64\CMakeFiles\91e8d4b9222111077126a1169fd3e172\DebugInfo.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="$(SolutionDir)build\Visual Studio 15 2017 Win64\CMakeFiles\298c9f9d2535f81bde02602c22b93442\spirv-tools-header-DebugInfo.rule">
       <Filter>CMake Rules</Filter>
     </CustomBuild>
   </ItemGroup>
@@ -11,7 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <Filter Include="CMake Rules">
-      <UniqueIdentifier>{5EE6D6AB-26DF-38FF-B736-7FAA511DFF82}</UniqueIdentifier>
+      <UniqueIdentifier>{93F83FFB-0A66-3FBE-A52D-9C65B5A808F7}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

@@ -303,6 +303,8 @@
 #define LLVM_DEFAULT_TARGET_TRIPLE "mipsel-linux-gnu"
 #elif defined(__mips64)
 #define LLVM_DEFAULT_TARGET_TRIPLE "mips64el-linux-gnuabi64"
+#elif defined(__powerpc64__)
+#define LLVM_DEFAULT_TARGET_TRIPLE "powerpc64le-unknown-linux-gnu"
 #else
 #error "unknown architecture"
 #endif
@@ -332,10 +334,10 @@
 #define PACKAGE_NAME "LLVM"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "LLVM 7.0.0"
+#define PACKAGE_STRING "LLVM 7.0.1"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "7.0.0"
+#define PACKAGE_VERSION "7.0.1"
 
 /* Define to the vendor of this package. */
 /* #undef PACKAGE_VENDOR */

@@ -19,14 +19,9 @@
 
 namespace sw
 {
-	class Resource;
-
 	enum StreamType ENUM_UNDERLYING_TYPE_UNSIGNED_INT
 	{
 		STREAMTYPE_COLOR,     // 4 normalized unsigned bytes, ZYXW order
-		STREAMTYPE_UDEC3,     // 3 unsigned 10-bit fields
-		STREAMTYPE_DEC3N,     // 3 normalized signed 10-bit fields
-		STREAMTYPE_INDICES,   // 4 unsigned bytes, stored unconverted into X component
 		STREAMTYPE_FLOAT,     // Normalization ignored
 		STREAMTYPE_BYTE,
 		STREAMTYPE_SBYTE,
@@ -34,7 +29,6 @@ namespace sw
 		STREAMTYPE_USHORT,
 		STREAMTYPE_INT,
 		STREAMTYPE_UINT,
-		STREAMTYPE_FIXED,     // Normalization ignored (16.16 format)
 		STREAMTYPE_HALF,      // Normalization ignored
 		STREAMTYPE_2_10_10_10_INT,
 		STREAMTYPE_2_10_10_10_UINT,
@@ -42,63 +36,17 @@ namespace sw
 		STREAMTYPE_LAST = STREAMTYPE_2_10_10_10_UINT
 	};
 
-	struct StreamResource
+	struct Stream
 	{
-		Resource *resource;
-		const void *buffer;
-		unsigned int stride;
-	};
-
-	struct Stream : public StreamResource
-	{
-		Stream(Resource *resource = 0, const void *buffer = 0, unsigned int stride = 0)
-		{
-			this->resource = resource;
-			this->buffer = buffer;
-			this->stride = stride;
-		}
-
-		Stream &define(StreamType type, unsigned int count, bool normalized = false)
-		{
-			this->type = type;
-			this->count = count;
-			this->normalized = normalized;
-
-			return *this;
-		}
-
-		Stream &define(const void *buffer, StreamType type, unsigned int count, bool normalized = false)
-		{
-			this->buffer = buffer;
-			this->type = type;
-			this->count = count;
-			this->normalized = normalized;
-
-			return *this;
-		}
-
-		Stream &defaults()
-		{
-			static const float4 null = {0, 0, 0, 1};
-
-			resource = 0;
-			buffer = &null;
-			stride = 0;
-			type = STREAMTYPE_FLOAT;
-			count = 0;
-			normalized = false;
-
-			return *this;
-		}
-
-		operator bool() const   // Returns true if stream contains data
-		{
-			return count != 0;
-		}
-
-		StreamType type;
-		unsigned char count;
-		bool normalized;
+		const void *buffer = nullptr;
+		unsigned int robustnessSize = 0;
+		unsigned int vertexStride = 0;
+		unsigned int instanceStride = 0;
+		StreamType type = STREAMTYPE_FLOAT;
+		unsigned char count = 0;
+		bool normalized = false;
+		unsigned int offset = 0;
+		unsigned int binding = 0;
 	};
 }
 

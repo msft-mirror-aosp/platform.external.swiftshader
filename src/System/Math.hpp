@@ -16,7 +16,8 @@
 #define sw_Math_hpp
 
 #include "Types.hpp"
-#include "Half.hpp"
+
+#include "Vulkan/VkDebug.hpp"
 
 #include <cmath>
 #if defined(_MSC_VER)
@@ -64,14 +65,6 @@ namespace sw
 	inline T min(T a, T b, T c, T d)
 	{
 		return min(min(a, b), min(c, d));
-	}
-
-	template<class T>
-	inline void swap(T &a, T &b)
-	{
-		T t = a;
-		a = b;
-		b = t;
 	}
 
 	template <typename destType, typename sourceType>
@@ -144,17 +137,7 @@ namespace sw
 	#define MAX(x, y) ((x) > (y) ? (x) : (y))
 	#define MIN(x, y) ((x) < (y) ? (x) : (y))
 
-	inline float exp2(float x)
-	{
-		return exp2f(x);
-	}
-
-	inline int exp2(int x)
-	{
-		return 1 << x;
-	}
-
-	inline unsigned long log2(int x)
+	inline unsigned long log2i(int x)
 	{
 		#if defined(_MSC_VER)
 			unsigned long y;
@@ -165,18 +148,6 @@ namespace sw
 		#endif
 	}
 
-	inline int ilog2(float x)
-	{
-		unsigned int y = *(unsigned int*)&x;
-
-		return ((y & 0x7F800000) >> 23) - 127;
-	}
-
-	inline float log2(float x)
-	{
-		return logf(x) * 1.44269504f;   // 1.0 / log[e](2)
-	}
-
 	inline bool isPow2(int x)
 	{
 		return (x & -x) == x;
@@ -185,6 +156,7 @@ namespace sw
 	template<class T>
 	inline T clamp(T x, T a, T b)
 	{
+		ASSERT(a <= b);
 		if(x < a) x = a;
 		if(x > b) x = b;
 

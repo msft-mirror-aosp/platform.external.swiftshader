@@ -25,6 +25,35 @@ namespace sw
 	extern bool halfIntegerCoordinates;     // Pixel centers are not at integer coordinates
 	extern bool fullPixelPositionRegister;
 
+	PixelProgram::PixelProgram(const PixelProcessor::State &state, const PixelShader *shader) :
+			PixelRoutine(state, shader),
+			r(shader->indirectAddressableTemporaries),
+			aL(shader->getLimits().loops),
+			increment(shader->getLimits().loops),
+			iteration(shader->getLimits().loops),
+			callStack(shader->getLimits().stack)
+	{
+		auto limits = shader->getLimits();
+		ifFalseBlock.resize(limits.ifs);
+		loopRepTestBlock.resize(limits.loops);
+		loopRepEndBlock.resize(limits.loops);
+		labelBlock.resize(limits.maxLabel + 1);
+		isConditionalIf.resize(limits.ifs);
+
+		loopDepth = -1;
+		enableStack[0] = Int4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+
+		if(shader->containsBreakInstruction())
+		{
+			enableBreak = Int4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+		}
+
+		if(shader->containsContinueInstruction())
+		{
+			enableContinue = Int4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+		}
+	}
+
 	void PixelProgram::setBuiltins(Int &x, Int &y, Float4(&z)[4], Float4 &w)
 	{
 		if(shader->getShaderModel() >= 0x0300)
@@ -916,10 +945,13 @@ namespace sw
 		case Shader::PARAMETER_PREDICATE:   return reg; // Dummy
 		case Shader::PARAMETER_VOID:        return reg; // Dummy
 		case Shader::PARAMETER_FLOAT4LITERAL:
-			reg.x = Float4(src.value[0]);
-			reg.y = Float4(src.value[1]);
-			reg.z = Float4(src.value[2]);
-			reg.w = Float4(src.value[3]);
+			// This is used for all literal types, and since Reactor doesn't guarantee
+			// preserving the bit pattern of float constants, we must construct them
+			// as integer constants and bitcast.
+			reg.x = As<Float4>(Int4(src.integer[0]));
+			reg.y = As<Float4>(Int4(src.integer[1]));
+			reg.z = As<Float4>(Int4(src.integer[2]));
+			reg.w = As<Float4>(Int4(src.integer[3]));
 			break;
 		case Shader::PARAMETER_CONSTINT:    return reg; // Dummy
 		case Shader::PARAMETER_CONSTBOOL:   return reg; // Dummy
@@ -1419,7 +1451,7 @@ namespace sw
 
 		if(callRetBlock[labelIndex].size() > 1)
 		{
-			callStack[Min(stackIndex++, Int(MAX_SHADER_CALL_STACK_SIZE))] = UInt(callSiteIndex);
+			callStack[stackIndex++] = UInt(callSiteIndex);
 		}
 
 		Int4 restoreLeave = enableLeave;
@@ -1459,7 +1491,7 @@ namespace sw
 
 		if(callRetBlock[labelIndex].size() > 1)
 		{
-			callStack[Min(stackIndex++, Int(MAX_SHADER_CALL_STACK_SIZE))] = UInt(callSiteIndex);
+			callStack[stackIndex++] = UInt(callSiteIndex);
 		}
 
 		Int4 restoreLeave = enableLeave;
@@ -1488,7 +1520,7 @@ namespace sw
 
 		if(callRetBlock[labelIndex].size() > 1)
 		{
-			callStack[Min(stackIndex++, Int(MAX_SHADER_CALL_STACK_SIZE))] = UInt(callSiteIndex);
+			callStack[stackIndex++] = UInt(callSiteIndex);
 		}
 
 		enableIndex++;

@@ -17,7 +17,7 @@
 
 #include "Version.h"
 
-#include <vulkan/vulkan_core.h>
+#include <Vulkan/VulkanPlatform.h>
 
 namespace vk
 {
@@ -31,16 +31,19 @@ enum
 {
 	API_VERSION = VK_API_VERSION_1_1,
 	DRIVER_VERSION = VK_MAKE_VERSION(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION),
-	VENDOR_ID = 0x1AE0, // Google
-	DEVICE_ID = 0xC0DE, // SwiftShader
+	VENDOR_ID = 0x1AE0, // Google, Inc.: https://pcisig.com/google-inc-1
+	DEVICE_ID = 0xC0DE, // SwiftShader (placeholder)
 };
 
 enum
 {
-	REQUIRED_MEMORY_ALIGNMENT = 8, // For 64 bit formats on ARM64
+	// Alignment of all Vulkan objects, pools, device memory, images, buffers, descriptors.
+	REQUIRED_MEMORY_ALIGNMENT = 16,  // 16 bytes for 128-bit vector types.
+
 	MIN_TEXEL_BUFFER_OFFSET_ALIGNMENT = 256,
 	MIN_UNIFORM_BUFFER_OFFSET_ALIGNMENT = 256,
 	MIN_STORAGE_BUFFER_OFFSET_ALIGNMENT = 256,
+
 	MEMORY_TYPE_GENERIC_BIT = 0x1, // Generic system memory.
 };
 
@@ -50,12 +53,29 @@ enum
 	MAX_IMAGE_LEVELS_2D = 14,
 	MAX_IMAGE_LEVELS_3D = 11,
 	MAX_IMAGE_LEVELS_CUBE = 14,
-	MAX_IMAGE_ARRAY_LAYERS = 11,
+	MAX_IMAGE_ARRAY_LAYERS = 2048,
+	MAX_SAMPLER_LOD_BIAS = 15,
 };
 
 enum
 {
+	MAX_BOUND_DESCRIPTOR_SETS = 4,
 	MAX_VERTEX_INPUT_BINDINGS = 16,
+	MAX_PUSH_CONSTANT_SIZE = 128,
+};
+
+enum
+{
+	MAX_DESCRIPTOR_SET_UNIFORM_BUFFERS_DYNAMIC = 8,
+	MAX_DESCRIPTOR_SET_STORAGE_BUFFERS_DYNAMIC = 4,
+	MAX_DESCRIPTOR_SET_COMBINED_BUFFERS_DYNAMIC =
+			MAX_DESCRIPTOR_SET_UNIFORM_BUFFERS_DYNAMIC +
+			MAX_DESCRIPTOR_SET_STORAGE_BUFFERS_DYNAMIC,
+};
+
+enum
+{
+	MAX_POINT_SIZE = 1,		// Large points are not supported. If/when we turn this on, must be >= 64.
 };
 
 }

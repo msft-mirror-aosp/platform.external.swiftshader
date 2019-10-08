@@ -17,6 +17,9 @@
 
 #include "System/Math.hpp"
 
+#include <type_traits>
+#include <unordered_map>
+
 namespace sw
 {
 	template<class Key, class Data>
@@ -25,15 +28,15 @@ namespace sw
 	public:
 		LRUCache(int n);
 
-		~LRUCache();
+		virtual ~LRUCache();
 
-		Data *query(const Key &key) const;
-		Data *add(const Key &key, Data *data);
-	
+		Data query(const Key &key) const;
+		virtual Data add(const Key &key, const Data &data);
+
 		int getSize() {return size;}
 		Key &getKey(int i) {return key[i];}
 
-	private:
+	protected:
 		int size;
 		int mask;
 		int top;
@@ -41,7 +44,44 @@ namespace sw
 
 		Key *key;
 		Key **ref;
-		Data **data;
+		Data *data;
+	};
+
+	template<class Key, class Data, class Hasher = std::hash<Key>>
+	class LRUConstCache : public LRUCache<Key, Data>
+	{
+		using LRUBase = LRUCache<Key, Data>;
+	public:
+		LRUConstCache(int n) : LRUBase(n) {}
+		~LRUConstCache() { clearConstCache(); }
+
+		Data add(const Key &key, const Data& data) override
+		{
+			constCacheNeedsUpdate = true;
+			return LRUBase::add(key, data);
+		}
+
+		void updateConstCache();
+		const Data& queryConstCache(const Key &key) const;
+
+	private:
+		void clearConstCache();
+		bool constCacheNeedsUpdate = false;
+		std::unordered_map<Key, Data, Hasher> constCache;
+	};
+
+	// Traits-like helper class for checking if objects can be compared using memcmp().
+	// Useful for statically asserting if a cache key can implement operator==() with memcmp().
+	template<typename T>
+	struct is_memcmparable
+	{
+		// std::is_trivially_copyable is not available in older GCC versions.
+		#if !defined(__GNUC__) || __GNUC__ > 5
+			static const bool value = std::is_trivially_copyable<T>::value;
+		#else
+			// At least check it doesn't have virtual methods.
+			static const bool value = !std::is_polymorphic<T>::value;
+		#endif
 	};
 }
 
@@ -57,12 +97,10 @@ namespace sw
 
 		key = new Key[size];
 		ref = new Key*[size];
-		data = new Data*[size];
+		data = new Data[size];
 
 		for(int i = 0; i < size; i++)
 		{
-			data[i] = nullptr;
-
 			ref[i] = &key[i];
 		}
 	}
@@ -76,21 +114,12 @@ namespace sw
 		delete[] ref;
 		ref = nullptr;
 
-		for(int i = 0; i < size; i++)
-		{
-			if(data[i])
-			{
-				data[i]->unbind();
-				data[i] = nullptr;
-			}
-		}
-
 		delete[] data;
 		data = nullptr;
 	}
 
 	template<class Key, class Data>
-	Data *LRUCache<Key, Data>::query(const Key &key) const
+	Data LRUCache<Key, Data>::query(const Key &key) const
 	{
 		for(int i = top; i > top - fill; i--)
 		{
@@ -98,14 +127,14 @@ namespace sw
 
 			if(key == *ref[j])
 			{
-				Data *hit = data[j];
+				Data hit = data[j];
 
 				if(i != top)
 				{
 					// Move one up
 					int k = (j + 1) & mask;
 
-					Data *swapD = data[k];
+					Data swapD = data[k];
 					data[k] = data[j];
 					data[j] = swapD;
 
@@ -122,23 +151,48 @@ namespace sw
 	}
 
 	template<class Key, class Data>
-	Data *LRUCache<Key, Data>::add(const Key &key, Data *data)
+	Data LRUCache<Key, Data>::add(const Key &key, const Data &data)
 	{
 		top = (top + 1) & mask;
 		fill = fill + 1 < size ? fill + 1 : size;
 
 		*ref[top] = key;
-
-		data->bind();
-
-		if(this->data[top])
-		{
-			this->data[top]->unbind();
-		}
-
 		this->data[top] = data;
 
 		return data;
+	}
+
+	template<class Key, class Data, class Hasher>
+	void LRUConstCache<Key, Data, Hasher>::clearConstCache()
+	{
+		constCache.clear();
+	}
+
+	template<class Key, class Data, class Hasher>
+	void LRUConstCache<Key, Data, Hasher>::updateConstCache()
+	{
+		if(constCacheNeedsUpdate)
+		{
+			clearConstCache();
+
+			for(int i = 0; i < LRUBase::size; i++)
+			{
+				if(LRUBase::data[i])
+				{
+					constCache[*LRUBase::ref[i]] = LRUBase::data[i];
+				}
+			}
+
+			constCacheNeedsUpdate = false;
+		}
+	}
+
+	template<class Key, class Data, class Hasher>
+	const Data& LRUConstCache<Key, Data, Hasher>::queryConstCache(const Key &key) const
+	{
+		auto it = constCache.find(key);
+		static Data null = {};
+		return (it != constCache.end()) ? it->second : null;
 	}
 }
 
