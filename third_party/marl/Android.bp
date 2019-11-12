@@ -19,6 +19,7 @@ cc_library_static {
     vendor_available: true,
     srcs: [
         "src/debug.cpp",
+        "src/memory.cpp",
         "src/scheduler.cpp",
         "src/thread.cpp",
         "src/trace.cpp",

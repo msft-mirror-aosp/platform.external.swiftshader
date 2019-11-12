@@ -1567,15 +1567,34 @@ Buffer *Context::getGenericUniformBuffer() const
 	return mState.genericUniformBuffer;
 }
 
-GLsizei Context::getRequiredBufferSize(GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type) const
+// The "required buffer size" is the number of bytes from the start of the
+// buffer to the last byte referenced within the buffer. If the caller of this
+// function has to worry about offsets within the buffer, it only needs to add
+// that byte offset to this function's return value to get its required buffer
+// size.
+size_t Context::getRequiredBufferSize(GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type) const
 {
-	GLsizei inputWidth = (mState.unpackParameters.rowLength == 0) ? width : mState.unpackParameters.rowLength;
-	GLsizei inputPitch = gl::ComputePitch(inputWidth, format, type, mState.unpackParameters.alignment);
-	GLsizei inputHeight = (mState.unpackParameters.imageHeight == 0) ? height : mState.unpackParameters.imageHeight;
-	return inputPitch * inputHeight * depth;
+	// 0-dimensional images have no bytes in them.
+	if (width == 0 || height == 0 || depth == 0)
+	{
+		return 0;
+	}
+
+	GLint pixelsPerRow = (mState.unpackParameters.rowLength) > 0 ? mState.unpackParameters.rowLength : width;
+	GLint rowsPerImage = (mState.unpackParameters.imageHeight) > 0 ? mState.unpackParameters.imageHeight : height;
+
+	GLint bytesPerPixel = gl::ComputePixelSize(format, type);
+	GLint bytesPerRow = gl::ComputePitch(pixelsPerRow, format, type, mState.unpackParameters.alignment);
+	GLint bytesPerImage = rowsPerImage * bytesPerRow;
+
+	// Depth and height are subtracted by 1, while width is not, because we're not
+	// reading the full last row or image, but we are reading the full last pixel.
+	return (mState.unpackParameters.skipImages + (depth - 1))  * bytesPerImage
+		 + (mState.unpackParameters.skipRows   + (height - 1)) * bytesPerRow
+		 + (mState.unpackParameters.skipPixels + (width))      * bytesPerPixel;
 }
 
-GLenum Context::getPixels(const GLvoid **pixels, GLenum type, GLsizei imageSize) const
+GLenum Context::getPixels(const GLvoid **pixels, GLenum type, size_t imageSize) const
 {
 	if(mState.pixelUnpackBuffer)
 	{
@@ -1598,7 +1617,7 @@ GLenum Context::getPixels(const GLvoid **pixels, GLenum type, GLsizei imageSize)
 			return GL_INVALID_OPERATION;
 		}
 
-		if(mState.pixelUnpackBuffer->size() - offset < static_cast<size_t>(imageSize))
+		if(mState.pixelUnpackBuffer->size() - offset < imageSize)
 		{
 			return GL_INVALID_OPERATION;
 		}

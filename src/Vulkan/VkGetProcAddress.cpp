@@ -106,6 +106,7 @@ static const std::unordered_map<std::string, PFN_vkVoidFunction> instanceFunctio
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 	// VK_KHR_win32_surface
 	MAKE_VULKAN_INSTANCE_ENTRY(vkCreateWin32SurfaceKHR),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceWin32PresentationSupportKHR),
 #endif
 };
 #undef MAKE_VULKAN_INSTANCE_ENTRY
@@ -331,6 +332,28 @@ static const std::vector<std::pair<const char*, std::unordered_map<std::string, 
 			MAKE_VULKAN_DEVICE_ENTRY(vkQueuePresentKHR),
 			MAKE_VULKAN_DEVICE_ENTRY(vkGetDeviceGroupPresentCapabilitiesKHR),
 			MAKE_VULKAN_DEVICE_ENTRY(vkGetDeviceGroupSurfacePresentModesKHR),
+		}
+	},
+#endif
+
+#if SWIFTSHADER_EXTERNAL_SEMAPHORE_LINUX_MEMFD
+	// VK_KHR_external_semaphore_fd
+	{
+		VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
+		{
+			MAKE_VULKAN_DEVICE_ENTRY(vkGetSemaphoreFdKHR),
+			MAKE_VULKAN_DEVICE_ENTRY(vkImportSemaphoreFdKHR),
+		}
+	},
+#endif
+
+#if SWIFTSHADER_EXTERNAL_SEMAPHORE_ZIRCON_EVENT
+	// VK_FUCHSIA_external_semaphore
+	{
+		VK_FUCHSIA_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+		{
+			MAKE_VULKAN_DEVICE_ENTRY(vkGetSemaphoreZirconHandleFUCHSIA),
+			MAKE_VULKAN_DEVICE_ENTRY(vkImportSemaphoreZirconHandleFUCHSIA),
 		}
 	},
 #endif

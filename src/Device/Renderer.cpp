@@ -46,8 +46,10 @@ unsigned int maxPrimitives = 1 << 21;
 namespace sw
 {
 	template<typename T>
-	inline bool setBatchIndices(unsigned int batch[128][3], VkPrimitiveTopology topology, T indices, unsigned int start, unsigned int triangleCount)
+	inline bool setBatchIndices(unsigned int batch[128][3], VkPrimitiveTopology topology, VkProvokingVertexModeEXT provokingVertexMode, T indices, unsigned int start, unsigned int triangleCount)
 	{
+		bool provokeFirst = (provokingVertexMode == VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT);
+
 		switch(topology)
 		{
 		case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
@@ -72,8 +74,8 @@ namespace sw
 			auto index = 2 * start;
 			for(unsigned int i = 0; i < triangleCount; i++)
 			{
-				batch[i][0] = indices[index + 0];
-				batch[i][1] = indices[index + 1];
+				batch[i][0] = indices[index + (provokeFirst ? 0 : 1)];
+				batch[i][1] = indices[index + (provokeFirst ? 1 : 0)];
 				batch[i][2] = indices[index + 1];
 
 				index += 2;
@@ -85,8 +87,8 @@ namespace sw
 			auto index = start;
 			for(unsigned int i = 0; i < triangleCount; i++)
 			{
-				batch[i][0] = indices[index + 0];
-				batch[i][1] = indices[index + 1];
+				batch[i][0] = indices[index + (provokeFirst ? 0 : 1)];
+				batch[i][1] = indices[index + (provokeFirst ? 1 : 0)];
 				batch[i][2] = indices[index + 1];
 
 				index += 1;
@@ -98,9 +100,9 @@ namespace sw
 			auto index = 3 * start;
 			for(unsigned int i = 0; i < triangleCount; i++)
 			{
-				batch[i][0] = indices[index + 0];
-				batch[i][1] = indices[index + 1];
-				batch[i][2] = indices[index + 2];
+				batch[i][0] = indices[index + (provokeFirst ? 0 : 2)];
+				batch[i][1] = indices[index + (provokeFirst ? 1 : 0)];
+				batch[i][2] = indices[index + (provokeFirst ? 2 : 1)];
 
 				index += 3;
 			}
@@ -111,9 +113,9 @@ namespace sw
 			auto index = start;
 			for(unsigned int i = 0; i < triangleCount; i++)
 			{
-				batch[i][0] = indices[index + 0];
-				batch[i][1] = indices[index + ((start + i) & 1) + 1];
-				batch[i][2] = indices[index + (~(start + i) & 1) + 1];
+				batch[i][0] = indices[index + (provokeFirst ? 0 : 2)];
+				batch[i][1] = indices[index + ((start + i) & 1) + (provokeFirst ? 1 : 0)];
+				batch[i][2] = indices[index + (~(start + i) & 1) + (provokeFirst ? 1 : 0)];
 
 				index += 1;
 			}
@@ -124,9 +126,9 @@ namespace sw
 			auto index = start + 1;
 			for(unsigned int i = 0; i < triangleCount; i++)
 			{
-				batch[i][0] = indices[index + 0];
-				batch[i][1] = indices[index + 1];
-				batch[i][2] = indices[0];
+				batch[i][provokeFirst ? 0 : 2] = indices[index + 0];
+				batch[i][provokeFirst ? 1 : 0] = indices[index + 1];
+				batch[i][provokeFirst ? 2 : 1] = indices[0];
 
 				index += 1;
 			}
@@ -260,14 +262,13 @@ namespace sw
 		draw->numPrimitivesPerBatch = numPrimitivesPerBatch;
 		draw->numBatches = (count + draw->numPrimitivesPerBatch - 1) / draw->numPrimitivesPerBatch;
 		draw->topology = context->topology;
+		draw->provokingVertexMode = context->provokingVertexMode;
 		draw->indexType = indexType;
+		draw->lineRasterizationMode = context->lineRasterizationMode;
 
 		draw->vertexRoutine = vertexRoutine;
 		draw->setupRoutine = setupRoutine;
 		draw->pixelRoutine = pixelRoutine;
-		draw->vertexPointer = (VertexProcessor::RoutinePointer)vertexRoutine->getEntry();
-		draw->setupPointer = (SetupProcessor::RoutinePointer)setupRoutine->getEntry();
-		draw->pixelPointer = (PixelProcessor::RoutinePointer)pixelRoutine->getEntry();
 		draw->setupPrimitives = setupPrimitives;
 		draw->setupState = setupState;
 
@@ -330,16 +331,17 @@ namespace sw
 			float N = viewport.minDepth;
 			float F = viewport.maxDepth;
 			float Z = F - N;
+			constexpr float subPixF = vk::SUBPIXEL_PRECISION_FACTOR;
 
 			if(context->isDrawTriangle(false))
 			{
 				N += context->depthBias;
 			}
 
-			data->Wx16 = replicate(W * 16);
-			data->Hx16 = replicate(H * 16);
-			data->X0x16 = replicate(X0 * 16 - 8);
-			data->Y0x16 = replicate(Y0 * 16 - 8);
+			data->WxF = replicate(W * subPixF);
+			data->HxF = replicate(H * subPixF);
+			data->X0xF = replicate(X0 * subPixF - subPixF / 2);
+			data->Y0xF = replicate(Y0 * subPixF - subPixF / 2);
 			data->halfPixelX = replicate(0.5f / W);
 			data->halfPixelY = replicate(0.5f / H);
 			data->viewportHeight = abs(viewport.height);
@@ -428,9 +430,9 @@ namespace sw
 			occlusionQuery->finish();
 		}
 
-		vertexRoutine.reset();
-		setupRoutine.reset();
-		pixelRoutine.reset();
+		vertexRoutine = {};
+		setupRoutine = {};
+		pixelRoutine = {};
 	}
 
 	void DrawCall::run(const marl::Loan<DrawCall>& draw, marl::Ticket::Queue* tickets, marl::Ticket::Queue clusterQueues[MaxClusterCount])
@@ -496,7 +498,8 @@ namespace sw
 				draw->indexType,
 				batch->firstPrimitive,
 				batch->numPrimitives,
-				draw->topology);
+				draw->topology,
+				draw->provokingVertexMode);
 		}
 
 		auto& vertexTask = batch->vertexTask;
@@ -509,7 +512,7 @@ namespace sw
 			vertexTask.vertexCache.drawCall = draw->id;
 		}
 
-		draw->vertexPointer(&batch->triangles.front().v0, &triangleIndices[0][0], &vertexTask, draw->data);
+		draw->vertexRoutine(&batch->triangles.front().v0, &triangleIndices[0][0], &vertexTask, draw->data);
 	}
 
 	void DrawCall::processPrimitives(DrawCall* draw, BatchData* batch)
@@ -538,7 +541,7 @@ namespace sw
 				auto& draw = data->draw;
 				auto& batch = data->batch;
 				MARL_SCOPED_EVENT("PIXEL draw %d, batch %d, cluster %d", draw->id, batch->id, cluster);
-				draw->pixelPointer(&batch->primitives.front(), batch->numVisible, cluster, MaxClusterCount, draw->data);
+				draw->pixelRoutine(&batch->primitives.front(), batch->numVisible, cluster, MaxClusterCount, draw->data);
 				batch->clusterTickets[cluster].done();
 			});
 		}
@@ -559,7 +562,8 @@ namespace sw
 		VkIndexType indexType,
 		unsigned int start,
 		unsigned int triangleCount,
-		VkPrimitiveTopology topology)
+		VkPrimitiveTopology topology,
+		VkProvokingVertexModeEXT provokingVertexMode)
 	{
 		if(!primitiveIndices)
 		{
@@ -568,7 +572,7 @@ namespace sw
 				unsigned int operator[](unsigned int i) { return i; }
 			};
 
-			if(!setBatchIndices(triangleIndicesOut, topology, LinearIndex(), start, triangleCount))
+			if(!setBatchIndices(triangleIndicesOut, topology, provokingVertexMode, LinearIndex(), start, triangleCount))
 			{
 				return;
 			}
@@ -578,13 +582,13 @@ namespace sw
 			switch(indexType)
 			{
 			case VK_INDEX_TYPE_UINT16:
-				if(!setBatchIndices(triangleIndicesOut, topology, static_cast<const uint16_t*>(primitiveIndices), start, triangleCount))
+				if(!setBatchIndices(triangleIndicesOut, topology, provokingVertexMode, static_cast<const uint16_t*>(primitiveIndices), start, triangleCount))
 				{
 					return;
 				}
 				break;
 			case VK_INDEX_TYPE_UINT32:
-				if(!setBatchIndices(triangleIndicesOut, topology, static_cast<const uint32_t*>(primitiveIndices), start, triangleCount))
+				if(!setBatchIndices(triangleIndicesOut, topology, provokingVertexMode, static_cast<const uint32_t*>(primitiveIndices), start, triangleCount))
 				{
 					return;
 				}
@@ -609,7 +613,6 @@ namespace sw
 	int DrawCall::setupSolidTriangles(Triangle *triangles, Primitive *primitives, const DrawCall *drawCall, int count)
 	{
 		auto &state = drawCall->setupState;
-		auto setupRoutine = drawCall->setupPointer;
 
 		int ms = state.multiSample;
 		const DrawData *data = drawCall->data;
@@ -635,7 +638,7 @@ namespace sw
 					}
 				}
 
-				if(setupRoutine(primitives, triangles, &polygon, data))
+				if(drawCall->setupRoutine(primitives, triangles, &polygon, data))
 				{
 					primitives += ms;
 					visible++;
@@ -783,7 +786,6 @@ namespace sw
 
 	bool DrawCall::setupLine(Primitive &primitive, Triangle &triangle, const DrawCall &draw)
 	{
-		const SetupProcessor::RoutinePointer &setupRoutine = draw.setupPointer;
 		const DrawData &data = *draw.data;
 
 		float lineWidth = data.lineWidth;
@@ -799,8 +801,10 @@ namespace sw
 			return false;
 		}
 
-		const float W = data.Wx16[0] * (1.0f / 16.0f);
-		const float H = data.Hx16[0] * (1.0f / 16.0f);
+		constexpr float subPixF = vk::SUBPIXEL_PRECISION_FACTOR;
+
+		const float W = data.WxF[0] * (1.0f / subPixF);
+		const float H = data.HxF[0] * (1.0f / subPixF);
 
 		float dx = W * (P1.x / P1.w - P0.x / P0.w);
 		float dy = H * (P1.y / P1.w - P0.y / P0.w);
@@ -810,7 +814,15 @@ namespace sw
 			return false;
 		}
 
-		if(true)   // Rectangle centered on the line segment
+		// TODO(b/142965928): Bresenham lines should render the same with or without
+		//                    multisampling, which will require a special case in the
+		//                    code when multisampling is on. For now, we just use
+		//                    rectangular lines when multisampling is enabled.
+
+		// We use rectangular lines for non Bresenham lines and
+		// for Bresenham lines when multiSampling is enabled
+		if((draw.setupState.multiSample > 1) ||
+		   (draw.lineRasterizationMode != VK_LINE_RASTERIZATION_MODE_BRESENHAM_EXT))   // Rectangle centered on the line segment
 		{
 			float4 P[4];
 			int C[4];
@@ -861,7 +873,7 @@ namespace sw
 					}
 				}
 
-				return setupRoutine(&primitive, &triangle, &polygon, &data);
+				return draw.setupRoutine(&primitive, &triangle, &polygon, &data);
 			}
 		}
 		else   // Diamond test convention
@@ -967,7 +979,7 @@ namespace sw
 					}
 				}
 
-				return setupRoutine(&primitive, &triangle, &polygon, &data);
+				return draw.setupRoutine(&primitive, &triangle, &polygon, &data);
 			}
 		}
 
@@ -976,7 +988,6 @@ namespace sw
 
 	bool DrawCall::setupPoint(Primitive &primitive, Triangle &triangle, const DrawCall &draw)
 	{
-		const SetupProcessor::RoutinePointer &setupRoutine = draw.setupPointer;
 		const DrawData &data = *draw.data;
 
 		Vertex &v = triangle.v0;
@@ -1029,9 +1040,11 @@ namespace sw
 			triangle.v1 = triangle.v0;
 			triangle.v2 = triangle.v0;
 
-			triangle.v1.projected.x += iround(16 * 0.5f * pSize);
-			triangle.v2.projected.y -= iround(16 * 0.5f * pSize) * (data.Hx16[0] > 0.0f ? 1 : -1);   // Both Direct3D and OpenGL expect (0, 0) in the top-left corner
-			return setupRoutine(&primitive, &triangle, &polygon, &data);
+			constexpr float subPixF = vk::SUBPIXEL_PRECISION_FACTOR;
+
+			triangle.v1.projected.x += iround(subPixF * 0.5f * pSize);
+			triangle.v2.projected.y -= iround(subPixF * 0.5f * pSize) * (data.HxF[0] > 0.0f ? 1 : -1);   // Both Direct3D and OpenGL expect (0, 0) in the top-left corner
+			return draw.setupRoutine(&primitive, &triangle, &polygon, &data);
 		}
 
 		return false;

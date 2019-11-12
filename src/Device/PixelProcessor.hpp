@@ -28,11 +28,35 @@ namespace sw
 	struct DrawData;
 	struct Primitive;
 
+	using RasterizerFunction = FunctionT<void(const Primitive* primitive, int count, int cluster, int clusterCount, DrawData* draw)>;
+
 	class PixelProcessor
 	{
 	public:
 		struct States : Memset<States>
 		{
+			// Same as VkStencilOpState, but with no reference, as it's not part of the state
+			// (it doesn't require a different program to be generated)
+			struct StencilOpState
+			{
+				VkStencilOp    failOp;
+				VkStencilOp    passOp;
+				VkStencilOp    depthFailOp;
+				VkCompareOp    compareOp;
+				uint32_t       compareMask;
+				uint32_t       writeMask;
+
+				void operator=(const VkStencilOpState &rhs)
+				{
+					failOp = rhs.failOp;
+					passOp = rhs.passOp;
+					depthFailOp = rhs.depthFailOp;
+					compareOp = rhs.compareOp;
+					compareMask = rhs.compareMask;
+					writeMask = rhs.writeMask;
+				}
+			};
+
 			States() : Memset(this, 0) {}
 
 			uint32_t computeHash();
@@ -44,8 +68,8 @@ namespace sw
 			bool quadLayoutDepthBuffer;
 
 			bool stencilActive;
-			VkStencilOpState frontStencil;
-			VkStencilOpState backStencil;
+			StencilOpState frontStencil;
+			StencilOpState backStencil;
 
 			bool depthTestActive;
 			bool occlusionEnabled;
@@ -114,7 +138,7 @@ namespace sw
 		};
 
 	public:
-		typedef void (*RoutinePointer)(const Primitive *primitive, int count, int cluster, int clusterCount, DrawData *draw);
+		using RoutineType = RasterizerFunction::RoutineType;
 
 		PixelProcessor();
 
@@ -124,7 +148,7 @@ namespace sw
 
 	protected:
 		const State update(const Context* context) const;
-		std::shared_ptr<Routine> routine(const State &state, vk::PipelineLayout const *pipelineLayout,
+		RoutineType routine(const State &state, vk::PipelineLayout const *pipelineLayout,
 		                                 SpirvShader const *pixelShader, const vk::DescriptorSet::Bindings &descriptorSets);
 		void setRoutineCacheSize(int routineCacheSize);
 
@@ -132,7 +156,8 @@ namespace sw
 		Factor factor;
 
 	private:
-		RoutineCache<State> *routineCache;
+		using RoutineCacheType = RoutineCacheT<State, RasterizerFunction::CFunctionType>;
+		RoutineCacheType *routineCache;
 	};
 }
 

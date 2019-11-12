@@ -78,6 +78,18 @@ enum
 	MAX_POINT_SIZE = 1,		// Large points are not supported. If/when we turn this on, must be >= 64.
 };
 
+constexpr int SUBPIXEL_PRECISION_BITS = 4;
+constexpr float SUBPIXEL_PRECISION_FACTOR = static_cast<float>(1 << SUBPIXEL_PRECISION_BITS);
+constexpr int SUBPIXEL_PRECISION_MASK = 0xFFFFFFFF >> (32 - SUBPIXEL_PRECISION_BITS);
+
 }
+
+#if VK_USE_PLATFORM_XLIB_KHR || VK_USE_PLATFORM_ANDROID_KHR
+#define SWIFTSHADER_EXTERNAL_SEMAPHORE_LINUX_MEMFD     1
+#endif
+
+#if VK_USE_PLATFORM_FUCHSIA
+#define SWIFTSHADER_EXTERNAL_SEMAPHORE_ZIRCON_EVENT  1
+#endif
 
 #endif // VK_CONFIG_HPP_

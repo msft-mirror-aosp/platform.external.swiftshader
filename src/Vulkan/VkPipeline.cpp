@@ -397,6 +397,35 @@ GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo* pCreateIn
 	context.depthBias = (rasterizationState->depthBiasEnable != VK_FALSE) ? rasterizationState->depthBiasConstantFactor : 0.0f;
 	context.slopeDepthBias = (rasterizationState->depthBiasEnable != VK_FALSE) ? rasterizationState->depthBiasSlopeFactor : 0.0f;
 
+	const VkBaseInStructure* extensionCreateInfo = reinterpret_cast<const VkBaseInStructure*>(rasterizationState->pNext);
+	while(extensionCreateInfo)
+	{
+		// Casting to a long since some structures, such as
+		// VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_FEATURES_EXT
+		// are not enumerated in the official Vulkan header
+		switch((long)(extensionCreateInfo->sType))
+		{
+		case VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO_EXT:
+		{
+			const VkPipelineRasterizationLineStateCreateInfoEXT* lineStateCreateInfo = reinterpret_cast<const VkPipelineRasterizationLineStateCreateInfoEXT*>(extensionCreateInfo);
+			context.lineRasterizationMode = lineStateCreateInfo->lineRasterizationMode;
+		}
+		break;
+		case VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_PROVOKING_VERTEX_STATE_CREATE_INFO_EXT:
+		{
+			const VkPipelineRasterizationProvokingVertexStateCreateInfoEXT* provokingVertexModeCreateInfo =
+				reinterpret_cast<const VkPipelineRasterizationProvokingVertexStateCreateInfoEXT*>(extensionCreateInfo);
+			context.provokingVertexMode = provokingVertexModeCreateInfo->provokingVertexMode;
+		}
+		break;
+		default:
+			UNIMPLEMENTED("extensionCreateInfo->sType");
+			break;
+		}
+
+		extensionCreateInfo = extensionCreateInfo->pNext;
+	}
+
 	const VkPipelineMultisampleStateCreateInfo* multisampleState = pCreateInfo->pMultisampleState;
 	if(multisampleState)
 	{
