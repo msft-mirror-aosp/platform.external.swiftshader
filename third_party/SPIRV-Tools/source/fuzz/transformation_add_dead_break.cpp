@@ -111,15 +111,8 @@ bool TransformationAddDeadBreak::IsApplicable(
     opt::IRContext* context, const FactManager& /*unused*/) const {
   // First, we check that a constant with the same value as
   // |message_.break_condition_value| is present.
-  opt::analysis::Bool bool_type;
-  auto registered_bool_type =
-      context->get_type_mgr()->GetRegisteredType(&bool_type);
-  if (!registered_bool_type) {
-    return false;
-  }
-  opt::analysis::BoolConstant bool_constant(registered_bool_type->AsBool(),
-                                            message_.break_condition_value());
-  if (!context->get_constant_mgr()->FindConstant(&bool_constant)) {
+  if (!fuzzerutil::MaybeGetBoolConstantId(context,
+                                          message_.break_condition_value())) {
     // The required constant is not present, so the transformation cannot be
     // applied.
     return false;
@@ -135,6 +128,13 @@ bool TransformationAddDeadBreak::IsApplicable(
   opt::BasicBlock* bb_to =
       fuzzerutil::MaybeFindBlock(context, message_.to_block());
   if (bb_to == nullptr) {
+    return false;
+  }
+
+  if (!fuzzerutil::BlockIsReachableInItsFunction(context, bb_to)) {
+    // If the target of the break is unreachable, we conservatively do not
+    // allow adding a dead break, to avoid the compilations that arise due to
+    // the lack of sensible dominance information for unreachable blocks.
     return false;
   }
 
@@ -162,18 +162,29 @@ bool TransformationAddDeadBreak::IsApplicable(
     return false;
   }
 
-  // Finally, check that adding the break would respect the rules of structured
+  // Check that adding the break would respect the rules of structured
   // control flow.
-  return AddingBreakRespectsStructuredControlFlow(context, bb_from);
+  if (!AddingBreakRespectsStructuredControlFlow(context, bb_from)) {
+    return false;
+  }
+
+  // Adding the dead break is only valid if SPIR-V rules related to dominance
+  // hold.  Rather than checking these rules explicitly, we defer to the
+  // validator.  We make a clone of the module, apply the transformation to the
+  // clone, and check whether the transformed clone is valid.
+  //
+  // In principle some of the above checks could be removed, with more reliance
+  // being places on the validator.  This should be revisited if we are sure
+  // the validator is complete with respect to checking structured control flow
+  // rules.
+  auto cloned_context = fuzzerutil::CloneIRContext(context);
+  ApplyImpl(cloned_context.get());
+  return fuzzerutil::IsValid(cloned_context.get());
 }
 
 void TransformationAddDeadBreak::Apply(opt::IRContext* context,
                                        FactManager* /*unused*/) const {
-  fuzzerutil::AddUnreachableEdgeAndUpdateOpPhis(
-      context, context->cfg()->block(message_.from_block()),
-      context->cfg()->block(message_.to_block()),
-      message_.break_condition_value(), message_.phi_id());
-
+  ApplyImpl(context);
   // Invalidate all analyses
   context->InvalidateAnalysesExceptFor(opt::IRContext::Analysis::kAnalysisNone);
 }
@@ -182,6 +193,14 @@ protobufs::Transformation TransformationAddDeadBreak::ToMessage() const {
   protobufs::Transformation result;
   *result.mutable_add_dead_break() = message_;
   return result;
+}
+
+void TransformationAddDeadBreak::ApplyImpl(
+    spvtools::opt::IRContext* context) const {
+  fuzzerutil::AddUnreachableEdgeAndUpdateOpPhis(
+      context, context->cfg()->block(message_.from_block()),
+      context->cfg()->block(message_.to_block()),
+      message_.break_condition_value(), message_.phi_id());
 }
 
 }  // namespace fuzz
