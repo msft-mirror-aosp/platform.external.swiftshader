@@ -525,19 +525,6 @@ int Texture2D::getTopLevel() const
 	return level - 1;
 }
 
-bool Texture2D::hasNonBaseLevels() const
-{
-	for(int level = 1; level < IMPLEMENTATION_MAX_TEXTURE_LEVELS; level++)
-	{
-		if (image[level])
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
 bool Texture2D::requiresSync() const
 {
 	for(int level = 0; level < IMPLEMENTATION_MAX_TEXTURE_LEVELS; level++)
@@ -573,8 +560,6 @@ void Texture2D::bindTexImage(gl::Surface *surface)
 	image.release();
 
 	image[0] = surface->getRenderTarget();
-
-	assert(!mSurface); // eglBindTexImage called before eglReleaseTexImage
 
 	mSurface = surface;
 	mSurface->setBoundTexture(this);
@@ -699,7 +684,8 @@ void Texture2D::setSharedImage(egl::Image *sharedImage)
 	image[0] = sharedImage;
 }
 
-bool Texture2D::isBaseLevelDefined() const
+// Tests for 2D texture sampling completeness. [OpenGL ES 3.0.5] section 3.8.13 page 160.
+bool Texture2D::isSamplerComplete(Sampler *sampler) const
 {
 	if(!image[mBaseLevel])
 	{
@@ -710,17 +696,6 @@ bool Texture2D::isBaseLevelDefined() const
 	GLsizei height = image[mBaseLevel]->getHeight();
 
 	if(width <= 0 || height <= 0)
-	{
-		return false;
-	}
-
-	return true;
-}
-
-// Tests for 2D texture sampling completeness. [OpenGL ES 3.0.5] section 3.8.13 page 160.
-bool Texture2D::isSamplerComplete(Sampler *sampler) const
-{
-	if(!isBaseLevelDefined())
 	{
 		return false;
 	}
@@ -1020,22 +995,6 @@ int TextureCubeMap::getTopLevel() const
 	return level - 1;
 }
 
-bool TextureCubeMap::hasNonBaseLevels() const
-{
-	for(int level = 1; level < IMPLEMENTATION_MAX_TEXTURE_LEVELS; level++)
-	{
-		for(int face = 0; face < 6; face++)
-		{
-			if (image[face][level])
-			{
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
-
 bool TextureCubeMap::requiresSync() const
 {
 	for(int level = 0; level < IMPLEMENTATION_MAX_TEXTURE_LEVELS; level++)
@@ -1081,7 +1040,8 @@ void TextureCubeMap::subImageCompressed(GLenum target, GLint level, GLint xoffse
 	Texture::subImageCompressed(xoffset, yoffset, 0, width, height, 1, format, imageSize, pixels, image[CubeFaceIndex(target)][level]);
 }
 
-bool TextureCubeMap::isBaseLevelDefined() const
+// Tests for cube map sampling completeness. [OpenGL ES 3.0.5] section 3.8.13 page 161.
+bool TextureCubeMap::isSamplerComplete(Sampler *sampler) const
 {
 	for(int face = 0; face < 6; face++)
 	{
@@ -1094,17 +1054,6 @@ bool TextureCubeMap::isBaseLevelDefined() const
 	int size = image[0][mBaseLevel]->getWidth();
 
 	if(size <= 0)
-	{
-		return false;
-	}
-
-	return true;
-}
-
-// Tests for cube map sampling completeness. [OpenGL ES 3.0.5] section 3.8.13 page 161.
-bool TextureCubeMap::isSamplerComplete(Sampler *sampler) const
-{
-	if(!isBaseLevelDefined())
 	{
 		return false;
 	}
@@ -1130,11 +1079,6 @@ bool TextureCubeMap::isSamplerComplete(Sampler *sampler) const
 // Tests for cube texture completeness. [OpenGL ES 3.0.5] section 3.8.13 page 160.
 bool TextureCubeMap::isCubeComplete() const
 {
-	if(!isBaseLevelDefined())
-	{
-		return false;
-	}
-
 	if(image[0][mBaseLevel]->getWidth() <= 0 || image[0][mBaseLevel]->getHeight() != image[0][mBaseLevel]->getWidth())
 	{
 		return false;
@@ -1562,19 +1506,6 @@ int Texture3D::getTopLevel() const
 	return level - 1;
 }
 
-bool Texture3D::hasNonBaseLevels() const
-{
-	for(int level = 1; level < IMPLEMENTATION_MAX_TEXTURE_LEVELS; level++)
-	{
-		if (image[level])
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
 bool Texture3D::requiresSync() const
 {
 	for(int level = 0; level < IMPLEMENTATION_MAX_TEXTURE_LEVELS; level++)
@@ -1716,7 +1647,8 @@ void Texture3D::setSharedImage(egl::Image *sharedImage)
 	image[0] = sharedImage;
 }
 
-bool Texture3D::isBaseLevelDefined() const
+// Tests for 3D texture sampling completeness. [OpenGL ES 3.0.5] section 3.8.13 page 160.
+bool Texture3D::isSamplerComplete(Sampler *sampler) const
 {
 	if(!image[mBaseLevel])
 	{
@@ -1728,17 +1660,6 @@ bool Texture3D::isBaseLevelDefined() const
 	GLsizei depth = image[mBaseLevel]->getDepth();
 
 	if(width <= 0 || height <= 0 || depth <= 0)
-	{
-		return false;
-	}
-
-	return true;
-}
-
-// Tests for 3D texture sampling completeness. [OpenGL ES 3.0.5] section 3.8.13 page 160.
-bool Texture3D::isSamplerComplete(Sampler *sampler) const
-{
-	if(!isBaseLevelDefined())
 	{
 		return false;
 	}

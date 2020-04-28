@@ -21,23 +21,30 @@
 #include "Pipeline/SetupRoutine.hpp"
 #include "Pipeline/Constants.hpp"
 #include "Vulkan/VkDebug.hpp"
-#include "Pipeline/SpirvShader.hpp"
-
-#include <cstring>
 
 namespace sw
 {
-	uint32_t SetupProcessor::States::computeHash()
-	{
-		uint32_t *state = reinterpret_cast<uint32_t*>(this);
-		uint32_t hash = 0;
+	extern bool complementaryDepthBuffer;
+	extern bool fullPixelPositionRegister;
 
-		for(unsigned int i = 0; i < sizeof(States) / sizeof(uint32_t); i++)
+	bool precacheSetup = false;
+
+	unsigned int SetupProcessor::States::computeHash()
+	{
+		unsigned int *state = (unsigned int*)this;
+		unsigned int hash = 0;
+
+		for(unsigned int i = 0; i < sizeof(States) / 4; i++)
 		{
 			hash ^= state[i];
 		}
 
 		return hash;
+	}
+
+	SetupProcessor::State::State(int i)
+	{
+		memset(this, 0, sizeof(State));
 	}
 
 	bool SetupProcessor::State::operator==(const State &state) const
@@ -47,11 +54,10 @@ namespace sw
 			return false;
 		}
 
-		static_assert(is_memcmparable<State>::value, "Cannot memcmp States");
 		return memcmp(static_cast<const States*>(this), static_cast<const States*>(&state), sizeof(States)) == 0;
 	}
 
-	SetupProcessor::SetupProcessor()
+	SetupProcessor::SetupProcessor(Context *context) : context(context)
 	{
 		routineCache = nullptr;
 		setRoutineCacheSize(1024);
@@ -63,29 +69,73 @@ namespace sw
 		routineCache = nullptr;
 	}
 
-	SetupProcessor::State SetupProcessor::update(const sw::Context* context) const
+	SetupProcessor::State SetupProcessor::update() const
 	{
 		State state;
 
-		bool vPosZW = (context->pixelShader && context->pixelShader->hasBuiltinInput(spv::BuiltInFragCoord));
+		bool vPosZW = (context->pixelShader && context->pixelShader->isVPosDeclared() && fullPixelPositionRegister);
 
-		state.isDrawPoint = context->isDrawPoint(true);
-		state.isDrawLine = context->isDrawLine(true);
-		state.isDrawTriangle = context->isDrawTriangle(true);
-		state.applySlopeDepthBias = context->isDrawTriangle(false) && (context->slopeDepthBias != 0.0f);
+		state.isDrawPoint = context->isDrawPoint();
+		state.isDrawLine = context->isDrawLine();
+		state.isDrawTriangle = context->isDrawTriangle();
 		state.interpolateZ = context->depthBufferActive() || vPosZW;
-		state.interpolateW = context->pixelShader != nullptr;
-		state.frontFace = context->frontFace;
+		state.interpolateW = context->perspectiveActive() || vPosZW;
+		state.perspective = context->perspectiveActive();
 		state.cullMode = context->cullMode;
+		state.twoSidedStencil = context->stencilActive() && context->twoSidedStencil;
+		state.slopeDepthBias = context->slopeDepthBias != 0.0f;
+		state.vFace = context->pixelShader && context->pixelShader->isVFaceDeclared();
 
-		state.multiSample = context->sampleCount;
+		state.positionRegister = Pos;
+		state.pointSizeRegister = Unused;
+
+		state.multiSample = context->getMultiSampleCount();
 		state.rasterizerDiscard = context->rasterizerDiscard;
 
-		if (context->pixelShader)
+		state.positionRegister = context->vertexShader->getPositionRegister();
+		state.pointSizeRegister = context->vertexShader->getPointSizeRegister();
+
+		for(int interpolant = 0; interpolant < MAX_FRAGMENT_INPUTS; interpolant++)
 		{
-			for (int interpolant = 0; interpolant < MAX_INTERFACE_COMPONENTS; interpolant++)
+			for(int component = 0; component < 4; component++)
 			{
-				state.gradient[interpolant] = context->pixelShader->inputs[interpolant];
+				state.gradient[interpolant][component].attribute = Unused;
+				state.gradient[interpolant][component].flat = false;
+				state.gradient[interpolant][component].wrap = false;
+			}
+		}
+
+		const bool point = context->isDrawPoint();
+
+		for(int interpolant = 0; interpolant < MAX_FRAGMENT_INPUTS; interpolant++)
+		{
+			for(int component = 0; component < 4; component++)
+			{
+				const Shader::Semantic& semantic = context->pixelShader->getInput(interpolant, component);
+
+				if(semantic.active())
+				{
+					int input = interpolant;
+					for(int i = 0; i < MAX_VERTEX_OUTPUTS; i++)
+					{
+						if(semantic == context->vertexShader->getOutput(i, component))
+						{
+							input = i;
+							break;
+						}
+					}
+
+					bool flat = point;
+
+					switch(semantic.usage)
+					{
+					case Shader::USAGE_TEXCOORD: flat = false;                  break;
+					case Shader::USAGE_COLOR:    flat = semantic.flat || point; break;
+					}
+
+					state.gradient[interpolant][component].attribute = input;
+					state.gradient[interpolant][component].flat = flat;
+				}
 			}
 		}
 
@@ -94,9 +144,9 @@ namespace sw
 		return state;
 	}
 
-	std::shared_ptr<Routine> SetupProcessor::routine(const State &state)
+	Routine *SetupProcessor::routine(const State &state)
 	{
-		auto routine = routineCache->query(state);
+		Routine *routine = routineCache->query(state);
 
 		if(!routine)
 		{
@@ -114,6 +164,6 @@ namespace sw
 	void SetupProcessor::setRoutineCacheSize(int cacheSize)
 	{
 		delete routineCache;
-		routineCache = new RoutineCache<State>(clamp(cacheSize, 1, 65536));
+		routineCache = new RoutineCache<State>(clamp(cacheSize, 1, 65536), precacheSetup ? "sw-setup" : 0);
 	}
 }

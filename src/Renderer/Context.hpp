@@ -442,7 +442,7 @@ namespace sw
 		Sampler sampler[TOTAL_IMAGE_UNITS];
 
 		Format renderTargetInternalFormat(int index);
-		bool colorWriteActive();
+		int colorWriteActive();
 		int colorWriteActive(int index);
 		bool colorUsed();
 

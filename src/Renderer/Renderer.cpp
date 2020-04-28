@@ -209,10 +209,7 @@ namespace sw
 
 	Renderer::~Renderer()
 	{
-		sync->lock(EXCLUSIVE);
 		sync->destruct();
-		terminateThreads();
-		sync->unlock();
 
 		delete clipper;
 		clipper = nullptr;
@@ -220,17 +217,15 @@ namespace sw
 		delete blitter;
 		blitter = nullptr;
 
+		terminateThreads();
 		delete resumeApp;
-		resumeApp = nullptr;
 
 		for(int draw = 0; draw < DRAW_COUNT; draw++)
 		{
 			delete drawCall[draw];
-			drawCall[draw] = nullptr;
 		}
 
 		delete swiftConfig;
-		swiftConfig = nullptr;
 	}
 
 	// This object has to be mem aligned
@@ -359,6 +354,10 @@ namespace sw
 
 			draw->drawType = drawType;
 			draw->batchSize = batch;
+
+			vertexRoutine->bind();
+			setupRoutine->bind();
+			pixelRoutine->bind();
 
 			draw->vertexRoutine = vertexRoutine;
 			draw->setupRoutine = setupRoutine;
@@ -1101,9 +1100,9 @@ namespace sw
 					}
 				}
 
-				draw.vertexRoutine.reset();
-				draw.setupRoutine.reset();
-				draw.pixelRoutine.reset();
+				draw.vertexRoutine->unbind();
+				draw.setupRoutine->unbind();
+				draw.pixelRoutine->unbind();
 
 				sync->unlock();
 
@@ -2006,6 +2005,12 @@ namespace sw
 		P[3].y -= Y;
 		C[3] = clipper->computeClipFlags(P[3]);
 
+		triangle.v1 = triangle.v0;
+		triangle.v2 = triangle.v0;
+
+		triangle.v1.X += iround(16 * 0.5f * pSize);
+		triangle.v2.Y -= iround(16 * 0.5f * pSize) * (data.Hx16[0] > 0.0f ? 1 : -1);   // Both Direct3D and OpenGL expect (0, 0) in the top-left corner
+
 		Polygon polygon(P, 4);
 
 		if((C[0] & C[1] & C[2] & C[3]) == Clipper::CLIP_FINITE)
@@ -2020,11 +2025,6 @@ namespace sw
 				}
 			}
 
-			triangle.v1 = triangle.v0;
-			triangle.v2 = triangle.v0;
-
-			triangle.v1.X += iround(16 * 0.5f * pSize);
-			triangle.v2.Y -= iround(16 * 0.5f * pSize) * (data.Hx16[0] > 0.0f ? 1 : -1);   // Both Direct3D and OpenGL expect (0, 0) in the top-left corner
 			return setupRoutine(&primitive, &triangle, &polygon, &data);
 		}
 
@@ -2850,13 +2850,10 @@ namespace sw
 			CPUID::setEnableSSE2(configuration.enableSSE2);
 			CPUID::setEnableSSE(configuration.enableSSE);
 
-			rr::Config::Edit cfg;
-			cfg.clearOptimizationPasses();
-			for(auto pass : configuration.optimization)
+			for(int pass = 0; pass < 10; pass++)
 			{
-				if (pass != rr::Optimization::Pass::Disabled) { cfg.add(pass); }
+				optimization[pass] = configuration.optimization[pass];
 			}
-			rr::Nucleus::adjustDefaultConfig(cfg);
 
 			forceWindowed = configuration.forceWindowed;
 			complementaryDepthBuffer = configuration.complementaryDepthBuffer;

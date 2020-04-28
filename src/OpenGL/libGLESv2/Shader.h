@@ -28,7 +28,6 @@
 
 #include <string>
 #include <list>
-#include <mutex>
 #include <vector>
 
 namespace glsl
@@ -70,9 +69,7 @@ public:
 	static void releaseCompiler();
 
 protected:
-	static std::mutex mutex;
 	static bool compilerInitialized;
-
 	TranslatorASM *createCompiler(GLenum shaderType);
 	void clear();
 

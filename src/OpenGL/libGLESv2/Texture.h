@@ -146,10 +146,8 @@ public:
 	virtual GLsizei getDepth(GLenum target, GLint level) const;
 	virtual GLint getFormat(GLenum target, GLint level) const = 0;
 	virtual int getTopLevel() const = 0;
-	virtual bool hasNonBaseLevels() const = 0;
 	virtual bool requiresSync() const = 0;
 
-	virtual bool isBaseLevelDefined() const = 0;
 	virtual bool isSamplerComplete(Sampler *sampler) const = 0;
 	virtual bool isCompressed(GLenum target, GLint level) const = 0;
 	virtual bool isDepth(GLenum target, GLint level) const = 0;
@@ -211,7 +209,6 @@ public:
 	GLsizei getHeight(GLenum target, GLint level) const override;
 	GLint getFormat(GLenum target, GLint level) const override;
 	int getTopLevel() const override;
-	bool hasNonBaseLevels() const override;
 	bool requiresSync() const override;
 
 	void setImage(GLint level, GLsizei width, GLsizei height, GLint internalformat, GLenum format, GLenum type, const gl::PixelStorageModes &unpackParameters, const void *pixels);
@@ -223,11 +220,9 @@ public:
 
 	void setSharedImage(egl::Image *image);
 
-	bool isBaseLevelDefined() const override;
 	bool isSamplerComplete(Sampler *sampler) const override;
 	bool isCompressed(GLenum target, GLint level) const override;
 	bool isDepth(GLenum target, GLint level) const override;
-
 	void bindTexImage(gl::Surface *surface);
 	void releaseTexImage() override;
 
@@ -282,7 +277,6 @@ public:
 	GLsizei getHeight(GLenum target, GLint level) const override;
 	GLint getFormat(GLenum target, GLint level) const override;
 	int getTopLevel() const override;
-	bool hasNonBaseLevels() const override;
 	bool requiresSync() const override;
 
 	void setImage(GLenum target, GLint level, GLsizei width, GLsizei height, GLint internalformat, GLenum format, GLenum type, const gl::PixelStorageModes &unpackParameters, const void *pixels);
@@ -293,7 +287,6 @@ public:
 	void copyImage(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, Renderbuffer *source);
 	void copySubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height, Renderbuffer *source) override;
 
-	bool isBaseLevelDefined() const override;
 	bool isSamplerComplete(Sampler *sampler) const override;
 	bool isCompressed(GLenum target, GLint level) const override;
 	bool isDepth(GLenum target, GLint level) const override;
@@ -346,7 +339,6 @@ public:
 	GLsizei getDepth(GLenum target, GLint level) const override;
 	GLint getFormat(GLenum target, GLint level) const override;
 	int getTopLevel() const override;
-	bool hasNonBaseLevels() const override;
 	bool requiresSync() const override;
 
 	void setImage(GLint level, GLsizei width, GLsizei height, GLsizei depth, GLint internalformat, GLenum format, GLenum type, const gl::PixelStorageModes &unpackParameters, const void *pixels);
@@ -358,7 +350,6 @@ public:
 
 	void setSharedImage(egl::Image *image);
 
-	bool isBaseLevelDefined() const override;
 	bool isSamplerComplete(Sampler *sampler) const override;
 	bool isCompressed(GLenum target, GLint level) const override;
 	bool isDepth(GLenum target, GLint level) const override;

@@ -333,6 +333,8 @@ TIntermTyped* TIntermediate::addBinaryMath(TOperator op, TIntermTyped* left, TIn
 	switch (op) {
 	case EOpEqual:
 	case EOpNotEqual:
+		if (left->isArray())
+			return 0;
 		break;
 	case EOpLessThan:
 	case EOpGreaterThan:
@@ -495,7 +497,7 @@ TIntermTyped* TIntermediate::addUnaryMath(TOperator op, TIntermTyped* child, con
 	case EOpPostDecrement:
 	case EOpPreDecrement:
 	case EOpNegative:
-		if (!child->getType().isScalar() && !child->getType().isVector() && !child->getType().isMatrix())
+		if (child->getType().getBasicType() == EbtStruct || child->getType().isArray())
 			return 0;
 	default: break;
 	}

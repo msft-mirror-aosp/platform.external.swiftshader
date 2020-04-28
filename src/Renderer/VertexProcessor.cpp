@@ -22,7 +22,7 @@
 #include "Common/Math.hpp"
 #include "Common/Debug.hpp"
 
-#include <cstring>
+#include <string.h>
 
 namespace sw
 {
@@ -36,17 +36,22 @@ namespace sw
 		}
 	}
 
-	uint32_t VertexProcessor::States::computeHash()
+	unsigned int VertexProcessor::States::computeHash()
 	{
-		uint32_t *state = reinterpret_cast<uint32_t*>(this);
-		uint32_t hash = 0;
+		unsigned int *state = (unsigned int*)this;
+		unsigned int hash = 0;
 
-		for(unsigned int i = 0; i < sizeof(States) / sizeof(uint32_t); i++)
+		for(unsigned int i = 0; i < sizeof(States) / 4; i++)
 		{
 			hash ^= state[i];
 		}
 
 		return hash;
+	}
+
+	VertexProcessor::State::State()
+	{
+		memset(this, 0, sizeof(State));
 	}
 
 	bool VertexProcessor::State::operator==(const State &state) const
@@ -56,7 +61,6 @@ namespace sw
 			return false;
 		}
 
-		static_assert(is_memcmparable<State>::value, "Cannot memcmp States");
 		return memcmp(static_cast<const States*>(this), static_cast<const States*>(&state), sizeof(States)) == 0;
 	}
 
@@ -114,14 +118,14 @@ namespace sw
 			updateModelMatrix[i] = true;
 		}
 
-		routineCache = nullptr;
+		routineCache = 0;
 		setRoutineCacheSize(1024);
 	}
 
 	VertexProcessor::~VertexProcessor()
 	{
 		delete routineCache;
-		routineCache = nullptr;
+		routineCache = 0;
 	}
 
 	void VertexProcessor::setInputStream(int index, const Stream &stream)
@@ -895,7 +899,7 @@ namespace sw
 	void VertexProcessor::setRoutineCacheSize(int cacheSize)
 	{
 		delete routineCache;
-		routineCache = new RoutineCache<State>(clamp(cacheSize, 1, 65536));
+		routineCache = new RoutineCache<State>(clamp(cacheSize, 1, 65536), precacheVertex ? "sw-vertex" : 0);
 	}
 
 	const VertexProcessor::State VertexProcessor::update(DrawType drawType)
@@ -966,6 +970,7 @@ namespace sw
 
 		state.preTransformed = context->preTransformed;
 		state.superSampling = context->getSuperSampleCount() > 1;
+		state.multiSampling = context->getMultiSampleCount() > 1;
 
 		state.transformFeedbackQueryEnabled = context->transformFeedbackQueryEnabled;
 		state.transformFeedbackEnabled = context->transformFeedbackEnabled;
@@ -1084,9 +1089,9 @@ namespace sw
 		return state;
 	}
 
-	std::shared_ptr<Routine> VertexProcessor::routine(const State &state)
+	Routine *VertexProcessor::routine(const State &state)
 	{
-		auto routine = routineCache->query(state);
+		Routine *routine = routineCache->query(state);
 
 		if(!routine)   // Create one
 		{

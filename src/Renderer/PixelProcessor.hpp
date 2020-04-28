@@ -28,11 +28,9 @@ namespace sw
 	class PixelProcessor
 	{
 	public:
-		struct States : Memset<States>
+		struct States
 		{
-			States() : Memset(this, 0) {}
-
-			uint32_t computeHash();
+			unsigned int computeHash();
 
 			int shaderID;
 
@@ -115,6 +113,8 @@ namespace sw
 
 		struct State : States
 		{
+			State();
+
 			bool operator==(const State &state) const;
 
 			int colorWriteActive(int index) const
@@ -132,7 +132,7 @@ namespace sw
 				return pixelFogMode != FOG_NONE;
 			}
 
-			uint32_t hash;
+			unsigned int hash;
 		};
 
 		struct Stencil
@@ -306,7 +306,7 @@ namespace sw
 
 	protected:
 		const State update() const;
-		std::shared_ptr<Routine> routine(const State &state);
+		Routine *routine(const State &state);
 		void setRoutineCacheSize(int routineCacheSize);
 
 		// Shader constants

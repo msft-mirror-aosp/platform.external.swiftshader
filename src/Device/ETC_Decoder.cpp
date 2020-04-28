@@ -16,21 +16,21 @@
 
 namespace
 {
-	inline unsigned char clampByte(int value)
+	inline int clampByte(int value)
 	{
-		return static_cast<unsigned char>((value < 0) ? 0 : ((value > 255) ? 255 : value));
+		return (value < 0) ? 0 : ((value > 255) ? 255 : value);
 	}
 
-	inline signed char clampSByte(int value)
+	inline int clampSByte(int value)
 	{
-		return static_cast<signed char>((value < -128) ? -128 : ((value > 127) ? 127 : value));
+		return (value < -128) ? -128 : ((value > 127) ? 127 : value);
 	}
 
-	inline short clampEAC(int value, bool isSigned)
+	inline int clampEAC(int value, bool isSigned)
 	{
-		short min = isSigned ? -1023 : 0;
-		short max = isSigned ? 1023 : 2047;
-		return static_cast<short>(((value < min) ? min : ((value > max) ? max : value)) << 5);
+		int min = isSigned ? -1023 : 0;
+		int max = isSigned ? 1023 : 2047;
+		return (value < min) ? min : ((value > max) ? max : value);
 	}
 
 	struct bgra8
@@ -46,20 +46,20 @@ namespace
 
 		inline void set(int red, int green, int blue)
 		{
-			r = clampByte(red);
-			g = clampByte(green);
-			b = clampByte(blue);
+			r = static_cast<unsigned char>(clampByte(red));
+			g = static_cast<unsigned char>(clampByte(green));
+			b = static_cast<unsigned char>(clampByte(blue));
 		}
 
 		inline void set(int red, int green, int blue, int alpha)
 		{
-			r = clampByte(red);
-			g = clampByte(green);
-			b = clampByte(blue);
-			a = clampByte(alpha);
+			r = static_cast<unsigned char>(clampByte(red));
+			g = static_cast<unsigned char>(clampByte(green));
+			b = static_cast<unsigned char>(clampByte(blue));
+			a = static_cast<unsigned char>(clampByte(alpha));
 		}
 
-		const bgra8& addA(unsigned char alpha)
+		const bgra8& addA(int alpha)
 		{
 			a = alpha;
 			return *this;
@@ -95,7 +95,7 @@ namespace
 			{
 				for(int j = 0; j < 4 && (y + j) < h; j++)
 				{
-					short* sDst = reinterpret_cast<short*>(dest);
+					int* sDst = reinterpret_cast<int*>(dest);
 					for(int i = 0; i < 4 && (x + i) < w; i++)
 					{
 						for(int c = nbChannels - 1; c >= 0; c--)

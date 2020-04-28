@@ -22,8 +22,6 @@
 #include "Shader/Constants.hpp"
 #include "Common/Debug.hpp"
 
-#include <cstring>
-
 namespace sw
 {
 	extern bool complementaryDepthBuffer;
@@ -31,17 +29,22 @@ namespace sw
 
 	bool precacheSetup = false;
 
-	uint32_t SetupProcessor::States::computeHash()
+	unsigned int SetupProcessor::States::computeHash()
 	{
-		uint32_t *state = reinterpret_cast<uint32_t*>(this);
-		uint32_t hash = 0;
+		unsigned int *state = (unsigned int*)this;
+		unsigned int hash = 0;
 
-		for(unsigned int i = 0; i < sizeof(States) / sizeof(uint32_t); i++)
+		for(unsigned int i = 0; i < sizeof(States) / 4; i++)
 		{
 			hash ^= state[i];
 		}
 
 		return hash;
+	}
+
+	SetupProcessor::State::State(int i)
+	{
+		memset(this, 0, sizeof(State));
 	}
 
 	bool SetupProcessor::State::operator==(const State &state) const
@@ -51,20 +54,19 @@ namespace sw
 			return false;
 		}
 
-		static_assert(is_memcmparable<State>::value, "Cannot memcmp States");
 		return memcmp(static_cast<const States*>(this), static_cast<const States*>(&state), sizeof(States)) == 0;
 	}
 
 	SetupProcessor::SetupProcessor(Context *context) : context(context)
 	{
-		routineCache = nullptr;
+		routineCache = 0;
 		setRoutineCacheSize(1024);
 	}
 
 	SetupProcessor::~SetupProcessor()
 	{
 		delete routineCache;
-		routineCache = nullptr;
+		routineCache = 0;
 	}
 
 	SetupProcessor::State SetupProcessor::update() const
@@ -221,9 +223,9 @@ namespace sw
 		return state;
 	}
 
-	std::shared_ptr<Routine> SetupProcessor::routine(const State &state)
+	Routine *SetupProcessor::routine(const State &state)
 	{
-		auto routine = routineCache->query(state);
+		Routine *routine = routineCache->query(state);
 
 		if(!routine)
 		{
@@ -241,6 +243,6 @@ namespace sw
 	void SetupProcessor::setRoutineCacheSize(int cacheSize)
 	{
 		delete routineCache;
-		routineCache = new RoutineCache<State>(clamp(cacheSize, 1, 65536));
+		routineCache = new RoutineCache<State>(clamp(cacheSize, 1, 65536), precacheSetup ? "sw-setup" : 0);
 	}
 }

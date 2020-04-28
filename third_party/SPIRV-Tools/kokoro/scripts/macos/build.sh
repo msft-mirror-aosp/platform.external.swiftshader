@@ -35,27 +35,13 @@ git clone --depth=1 https://github.com/KhronosGroup/SPIRV-Headers external/spirv
 git clone --depth=1 https://github.com/google/googletest          external/googletest
 git clone --depth=1 https://github.com/google/effcee              external/effcee
 git clone --depth=1 https://github.com/google/re2                 external/re2
-git clone --depth=1 https://github.com/protocolbuffers/protobuf   external/protobuf
-pushd external/protobuf
-git fetch --all --tags --prune
-git checkout v3.7.1
-popd
 
 mkdir build && cd $SRC/build
 
 # Invoke the build.
 BUILD_SHA=${KOKORO_GITHUB_COMMIT:-$KOKORO_GITHUB_PULL_REQUEST_COMMIT}
 echo $(date): Starting build...
-# We need Python 3.  At the moment python3.7 is the newest Python on Kokoro.
-cmake \
-  -GNinja \
-  -DCMAKE_INSTALL_PREFIX=$KOKORO_ARTIFACTS_DIR/install \
-  -DPYTHON_EXECUTABLE:FILEPATH=/usr/local/bin/python3.7 \
-  -DCMAKE_C_COMPILER=clang \
-  -DCMAKE_CXX_COMPILER=clang++ \
-  -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
-  -DSPIRV_BUILD_FUZZER=ON \
-  ..
+cmake -GNinja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=$BUILD_TYPE ..
 
 echo $(date): Build everything...
 ninja
@@ -64,9 +50,4 @@ echo $(date): Build completed.
 echo $(date): Starting ctest...
 ctest -j4 --output-on-failure --timeout 300
 echo $(date): ctest completed.
-
-# Package the build.
-ninja install
-cd $KOKORO_ARTIFACTS_DIR
-tar czf install.tgz install
 

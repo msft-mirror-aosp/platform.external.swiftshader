@@ -33,11 +33,9 @@ namespace sw
 	class SetupProcessor
 	{
 	public:
-		struct States : Memset<States>
+		struct States
 		{
-			States() : Memset(this, 0) {}
-
-			uint32_t computeHash();
+			unsigned int computeHash();
 
 			bool isDrawPoint               : 1;
 			bool isDrawLine                : 1;
@@ -78,9 +76,11 @@ namespace sw
 
 		struct State : States
 		{
+			State(int i = 0);
+
 			bool operator==(const State &states) const;
 
-			uint32_t hash;
+			unsigned int hash;
 		};
 
 		typedef bool (*RoutinePointer)(Primitive *primitive, const Triangle *triangle, const Polygon *polygon, const DrawData *draw);
@@ -91,7 +91,7 @@ namespace sw
 
 	protected:
 		State update() const;
-		std::shared_ptr<Routine> routine(const State &state);
+		Routine *routine(const State &state);
 
 		void setRoutineCacheSize(int cacheSize);
 

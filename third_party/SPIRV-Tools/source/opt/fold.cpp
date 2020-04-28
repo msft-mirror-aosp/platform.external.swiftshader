@@ -234,12 +234,13 @@ bool InstructionFolder::FoldInstructionInternal(Instruction* inst) const {
     return true;
   }
 
+  SpvOp opcode = inst->opcode();
   analysis::ConstantManager* const_manager = context_->get_constant_mgr();
+
   std::vector<const analysis::Constant*> constants =
       const_manager->GetOperandConstants(inst);
 
-  for (const FoldingRule& rule :
-       GetFoldingRules().GetRulesForInstruction(inst)) {
+  for (const FoldingRule& rule : GetFoldingRules().GetRulesForOpcode(opcode)) {
     if (rule(context_, inst, constants)) {
       return true;
     }
@@ -622,7 +623,7 @@ Instruction* InstructionFolder::FoldInstructionToConstant(
   analysis::ConstantManager* const_mgr = context_->get_constant_mgr();
 
   if (!inst->IsFoldableByFoldScalar() &&
-      !GetConstantFoldingRules().HasFoldingRule(inst)) {
+      !GetConstantFoldingRules().HasFoldingRule(inst->opcode())) {
     return nullptr;
   }
   // Collect the values of the constant parameters.
@@ -640,16 +641,19 @@ Instruction* InstructionFolder::FoldInstructionToConstant(
     }
   });
 
-  const analysis::Constant* folded_const = nullptr;
-  for (auto rule : GetConstantFoldingRules().GetRulesForInstruction(inst)) {
-    folded_const = rule(context_, inst, constants);
-    if (folded_const != nullptr) {
-      Instruction* const_inst =
-          const_mgr->GetDefiningInstruction(folded_const, inst->type_id());
-      assert(const_inst->type_id() == inst->type_id());
-      // May be a new instruction that needs to be analysed.
-      context_->UpdateDefUse(const_inst);
-      return const_inst;
+  if (GetConstantFoldingRules().HasFoldingRule(inst->opcode())) {
+    const analysis::Constant* folded_const = nullptr;
+    for (auto rule :
+         GetConstantFoldingRules().GetRulesForOpcode(inst->opcode())) {
+      folded_const = rule(context_, inst, constants);
+      if (folded_const != nullptr) {
+        Instruction* const_inst =
+            const_mgr->GetDefiningInstruction(folded_const, inst->type_id());
+        assert(const_inst->type_id() == inst->type_id());
+        // May be a new instruction that needs to be analysed.
+        context_->UpdateDefUse(const_inst);
+        return const_inst;
+      }
     }
   }
 

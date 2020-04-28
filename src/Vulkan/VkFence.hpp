@@ -16,71 +16,47 @@
 #define VK_FENCE_HPP_
 
 #include "VkObject.hpp"
-#include "System/Synchronization.hpp"
 
 namespace vk
 {
 
-class Fence : public Object<Fence, VkFence>, public sw::TaskEvents
+class Fence : public Object<Fence, VkFence>
 {
 public:
 	Fence(const VkFenceCreateInfo* pCreateInfo, void* mem) :
-		signaled(sw::Event::ClearMode::Manual, (pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) != 0) {}
+		status((pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) ? VK_SUCCESS : VK_NOT_READY)
+	{
+	}
+
+	~Fence() = delete;
 
 	static size_t ComputeRequiredAllocationSize(const VkFenceCreateInfo* pCreateInfo)
 	{
 		return 0;
 	}
 
+	void signal()
+	{
+		status = VK_SUCCESS;
+	}
+
 	void reset()
 	{
-		ASSERT_MSG(wg.count() == 0, "Fence::reset() called when work is in flight");
-		signaled.clear();
+		status = VK_NOT_READY;
 	}
 
-	VkResult getStatus()
+	VkResult getStatus() const
 	{
-		return signaled ? VK_SUCCESS : VK_NOT_READY;
-	}
-
-	VkResult wait()
-	{
-		signaled.wait();
-		return VK_SUCCESS;
-	}
-
-    template <class CLOCK, class DURATION>
-	VkResult wait(const std::chrono::time_point<CLOCK, DURATION>& timeout)
-	{
-		return signaled.wait(timeout) ? VK_SUCCESS : VK_TIMEOUT;
-	}
-
-	// TaskEvents compliance
-	void start() override
-	{
-		ASSERT(!signaled);
-		wg.add();
-	}
-
-	void finish() override
-	{
-		ASSERT(!signaled);
-		if (wg.done())
-		{
-			signaled.signal();
-		}
+		return status;
 	}
 
 private:
-	Fence(const Fence&) = delete;
-
-	sw::WaitGroup wg;
-	sw::Event signaled;
+	VkResult status = VK_NOT_READY;
 };
 
 static inline Fence* Cast(VkFence object)
 {
-	return Fence::Cast(object);
+	return reinterpret_cast<Fence*>(object);
 }
 
 } // namespace vk

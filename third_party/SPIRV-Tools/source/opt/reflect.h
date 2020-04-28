@@ -45,8 +45,7 @@ inline bool IsAnnotationInst(SpvOp opcode) {
 inline bool IsTypeInst(SpvOp opcode) {
   return (opcode >= SpvOpTypeVoid && opcode <= SpvOpTypeForwardPointer) ||
          opcode == SpvOpTypePipeStorage || opcode == SpvOpTypeNamedBarrier ||
-         opcode == SpvOpTypeAccelerationStructureNV ||
-         opcode == SpvOpTypeCooperativeMatrixNV;
+         opcode == SpvOpTypeAccelerationStructureNV;
 }
 inline bool IsConstantInst(SpvOp opcode) {
   return opcode >= SpvOpConstantTrue && opcode <= SpvOpSpecConstantOp;

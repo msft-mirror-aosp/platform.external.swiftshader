@@ -66,6 +66,8 @@ namespace sw
 			blitThread->join();
 			delete blitThread;
 		}
+
+		delete blitRoutine;
 	}
 
 	void FrameBuffer::setCursorImage(sw::Surface *cursorImage)
@@ -152,6 +154,8 @@ namespace sw
 		if(memcmp(&blitState, &updateState, sizeof(BlitState)) != 0)
 		{
 			blitState = updateState;
+			delete blitRoutine;
+
 			blitRoutine = copyRoutine(blitState);
 			blitFunction = (void(*)(void*, void*, Cursor*))blitRoutine->getEntry();
 		}
@@ -159,7 +163,7 @@ namespace sw
 		blitFunction(framebuffer, renderbuffer, &cursor);
 	}
 
-	std::shared_ptr<Routine> FrameBuffer::copyRoutine(const BlitState &state)
+	Routine *FrameBuffer::copyRoutine(const BlitState &state)
 	{
 		const int width = state.width;
 		const int height = state.height;

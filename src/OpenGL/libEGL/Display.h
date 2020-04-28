@@ -20,8 +20,8 @@
 #define INCLUDE_DISPLAY_H_
 
 #include "Config.h"
+#include "Common/MutexLock.hpp"
 #include "Sync.hpp"
-#include "Common/RecursiveLock.hpp"
 #include "common/NameSpace.hpp"
 
 #include <set>
@@ -86,8 +86,6 @@ namespace egl
 		bool destroySharedImage(EGLImageKHR);
 		virtual Image *getSharedImage(EGLImageKHR name) = 0;
 
-		sw::RecursiveLock *getLock() { return &mApiMutex; }
-
 	private:
 		sw::Format getDisplayFormat() const;
 
@@ -106,10 +104,10 @@ namespace egl
 		ContextSet mContextSet;
 
 		typedef std::set<FenceSync*> SyncSet;
+		sw::MutexLock mSyncSetMutex;
 		SyncSet mSyncSet;
 
 		gl::NameSpace<Image> mSharedImageNameSpace;
-		sw::RecursiveLock mApiMutex;
 	};
 }
 

@@ -398,13 +398,8 @@ class Instruction : public utils::IntrusiveNodeBase<Instruction> {
   inline bool operator!=(const Instruction&) const;
   inline bool operator<(const Instruction&) const;
 
-  // Takes ownership of the instruction owned by |i| and inserts it immediately
-  // before |this|. Returns the inserted instruction.
-  Instruction* InsertBefore(std::unique_ptr<Instruction>&& i);
-  // Takes ownership of the instructions in |list| and inserts them in order
-  // immediately before |this|.  Returns the first inserted instruction.
-  // Assumes the list is non-empty.
   Instruction* InsertBefore(std::vector<std::unique_ptr<Instruction>>&& list);
+  Instruction* InsertBefore(std::unique_ptr<Instruction>&& i);
   using utils::IntrusiveNodeBase<Instruction>::InsertBefore;
 
   // Returns true if |this| is an instruction defining a constant, but not a

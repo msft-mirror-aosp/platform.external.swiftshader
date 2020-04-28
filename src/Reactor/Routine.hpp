@@ -20,10 +20,18 @@ namespace rr
 	class Routine
 	{
 	public:
-		Routine() = default;
-		virtual ~Routine() = default;
+		Routine();
 
-		virtual const void *getEntry(int index = 0) = 0;
+		virtual ~Routine();
+
+		virtual const void *getEntry() = 0;
+
+		// Reference counting
+		void bind();
+		void unbind();
+
+	private:
+		volatile int bindCount;
 	};
 }
 

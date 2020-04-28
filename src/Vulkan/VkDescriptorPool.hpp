@@ -24,6 +24,7 @@ namespace vk
 	{
 	public:
 		DescriptorPool(const VkDescriptorPoolCreateInfo* pCreateInfo, void* mem);
+		~DescriptorPool() = delete;
 		void destroy(const VkAllocationCallbacks* pAllocator);
 
 		static size_t ComputeRequiredAllocationSize(const VkDescriptorPoolCreateInfo* pCreateInfo);
@@ -34,28 +35,28 @@ namespace vk
 
 	private:
 		VkResult allocateSets(size_t* sizes, uint32_t numAllocs, VkDescriptorSet* pDescriptorSets);
-		uint8_t* findAvailableMemory(size_t size);
+		VkDescriptorSet findAvailableMemory(size_t size);
 		void freeSet(const VkDescriptorSet descriptorSet);
 		size_t computeTotalFreeSize() const;
 
 		struct Node
 		{
-			Node(uint8_t* set, size_t size) : set(set), size(size) {}
-			bool operator<(const Node& node) const { return set < node.set; }
-			bool operator==(const uint8_t* other) const { return set == other; }
+			Node(VkDescriptorSet set, size_t size) : set(set), size(size) {}
+			bool operator<(const Node& node) const { return this->set < node.set; }
+			bool operator==(VkDescriptorSet set) const { return this->set == set; }
 
-			uint8_t* set = nullptr;
-			size_t size = 0;
+			VkDescriptorSet set;
+			size_t size;
 		};
 		std::set<Node> nodes;
 
-		uint8_t* pool = nullptr;
+		VkDescriptorSet pool = nullptr;
 		size_t poolSize = 0;
 	};
 
 	static inline DescriptorPool* Cast(VkDescriptorPool object)
 	{
-		return DescriptorPool::Cast(object);
+		return reinterpret_cast<DescriptorPool*>(object);
 	}
 
 } // namespace vk

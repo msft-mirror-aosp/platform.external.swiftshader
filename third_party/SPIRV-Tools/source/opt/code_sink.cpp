@@ -80,10 +80,7 @@ BasicBlock* CodeSinkingPass::FindNewBasicBlockFor(Instruction* inst) {
   get_def_use_mgr()->ForEachUse(
       inst, [&bbs_with_uses, this](Instruction* use, uint32_t idx) {
         if (use->opcode() != SpvOpPhi) {
-          BasicBlock* use_bb = context()->get_instr_block(use);
-          if (use_bb) {
-            bbs_with_uses.insert(use_bb->id());
-          }
+          bbs_with_uses.insert(context()->get_instr_block(use)->id());
         } else {
           bbs_with_uses.insert(use->GetSingleWordOperand(idx + 1));
         }

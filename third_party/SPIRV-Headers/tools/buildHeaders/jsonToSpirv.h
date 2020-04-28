@@ -38,7 +38,7 @@ namespace spv {
 std::pair<bool, std::string> ReadFile(const std::string& path);
 
 // Fill in all the parameters
-void jsonToSpirv(const std::string& jsonPath, bool buildingHeaders);
+void jsonToSpirv(const std::string& jsonPath);
 
 // For parameterizing operands.
 enum OperandClass {
@@ -47,7 +47,6 @@ enum OperandClass {
     OperandVariableIds,
     OperandOptionalLiteral,
     OperandOptionalLiteralString,
-    OperandOptionalLiteralStrings,
     OperandVariableLiterals,
     OperandVariableIdLiteral,
     OperandVariableLiteralId,
@@ -77,7 +76,7 @@ enum OperandClass {
     OperandLoop,
     OperandFunction,
     OperandMemorySemantics,
-    OperandMemoryOperands,
+    OperandMemoryAccess,
     OperandScope,
 	OperandGroupOperation,
     OperandKernelEnqueueFlags,
@@ -146,12 +145,6 @@ public:
         assert((where != end()) && "Could not find enum in the enum list");
         return *where;
     }
-    // gets *all* entries for the value, including the first one
-    void gatherAliases(unsigned value, std::vector<EValue*>& aliases) {
-        std::for_each(begin(), end(), [&](EValue& e) {
-            if (value == e.value)
-                aliases.push_back(&e);});
-    }
     // Returns the EValue with the given name.  We assume uniqueness
     // by name.
     EValue& at(std::string name) {
@@ -174,11 +167,9 @@ private:
 class EnumValue {
 public:
     EnumValue() : value(0), desc(nullptr) {}
-    EnumValue(unsigned int the_value, const std::string& the_name, EnumCaps&& the_caps,
-        const std::string& the_firstVersion, const std::string& the_lastVersion,
-        Extensions&& the_extensions, OperandParameters&& the_operands) :
-      value(the_value), name(the_name), capabilities(std::move(the_caps)),
-      firstVersion(std::move(the_firstVersion)), lastVersion(std::move(the_lastVersion)),
+    EnumValue(unsigned int the_value, const std::string& the_name, EnumCaps&& the_caps, const std::string& the_version,
+              Extensions&& the_extensions, OperandParameters&& the_operands) :
+      value(the_value), name(the_name), capabilities(std::move(the_caps)), version(std::move(the_version)),
       extensions(std::move(the_extensions)), operands(std::move(the_operands)), desc(nullptr) { }
 
     // For ValueEnum, the value from the JSON file.
@@ -187,8 +178,7 @@ public:
     unsigned value;
     std::string name;
     EnumCaps capabilities;
-    std::string firstVersion;
-    std::string lastVersion;
+    std::string version;
     // A feature only be enabled by certain extensions.
     // An empty list means the feature does not require an extension.
     // Normally, only Capability enums are enabled by extension.  In turn,
@@ -243,19 +233,10 @@ public:
        opDesc("TBD"),
        opClass(0),
        typePresent(has_type),
-       resultPresent(has_result),
-       alias(this) { }
-    InstructionValue(const InstructionValue& v)
-    {
-        *this = v;
-        alias = this;
-    }
+       resultPresent(has_result) {}
 
     bool hasResult() const { return resultPresent != 0; }
     bool hasType()   const { return typePresent != 0; }
-    void setAlias(const InstructionValue& a) { alias = &a; }
-    const InstructionValue& getAlias() const { return *alias; }
-    bool isAlias() const { return alias != this; }
 
     const char* opDesc;
     int opClass;
@@ -263,7 +244,6 @@ public:
 protected:
     int typePresent   : 1;
     int resultPresent : 1;
-    const InstructionValue* alias;    // correct only after discovering the aliases; otherwise points to this
 };
 
 using InstructionValues = EnumValuesContainer<InstructionValue>;

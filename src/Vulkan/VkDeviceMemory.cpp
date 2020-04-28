@@ -63,7 +63,7 @@ VkDeviceSize DeviceMemory::getCommittedMemoryInBytes() const
 	return size;
 }
 
-void* DeviceMemory::getOffsetPointer(VkDeviceSize pOffset) const
+void* DeviceMemory::getOffsetPointer(VkDeviceSize pOffset)
 {
 	ASSERT(buffer);
 

@@ -44,11 +44,9 @@ namespace sw
 	class VertexProcessor
 	{
 	public:
-		struct States : Memset<States>
+		struct States
 		{
-			States() : Memset(this, 0) {}
-
-			uint32_t computeHash();
+			unsigned int computeHash();
 
 			uint64_t shaderID;
 
@@ -82,6 +80,7 @@ namespace sw
 
 			bool preTransformed : 1;
 			bool superSampling  : 1;
+			bool multiSampling  : 1;
 
 			struct TextureState
 			{
@@ -142,9 +141,11 @@ namespace sw
 
 		struct State : States
 		{
+			State();
+
 			bool operator==(const State &state) const;
 
-			uint32_t hash;
+			unsigned int hash;
 		};
 
 		struct FixedFunction
@@ -284,7 +285,7 @@ namespace sw
 		const Matrix &getViewTransform();
 
 		const State update(DrawType drawType);
-		std::shared_ptr<Routine> routine(const State &state);
+		Routine *routine(const State &state);
 
 		bool isFixedFunction();
 		void setRoutineCacheSize(int cacheSize);

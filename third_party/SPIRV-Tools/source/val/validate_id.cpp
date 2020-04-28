@@ -167,10 +167,7 @@ spv_result_t IdPass(ValidationState_t& _, Instruction* inst) {
           const auto opcode = inst->opcode();
           if (spvOpcodeGeneratesType(def->opcode()) &&
               !spvOpcodeGeneratesType(opcode) && !spvOpcodeIsDebug(opcode) &&
-              !spvOpcodeIsDecoration(opcode) && opcode != SpvOpFunction &&
-              opcode != SpvOpCooperativeMatrixLengthNV &&
-              !(opcode == SpvOpSpecConstantOp &&
-                inst->word(3) == SpvOpCooperativeMatrixLengthNV)) {
+              !spvOpcodeIsDecoration(opcode) && opcode != SpvOpFunction) {
             return _.diag(SPV_ERROR_INVALID_ID, inst)
                    << "Operand " << _.getIdName(operand_word)
                    << " cannot be a type";
@@ -180,10 +177,7 @@ spv_result_t IdPass(ValidationState_t& _, Instruction* inst) {
                      !spvOpcodeIsBranch(opcode) && opcode != SpvOpPhi &&
                      opcode != SpvOpExtInst && opcode != SpvOpExtInstImport &&
                      opcode != SpvOpSelectionMerge &&
-                     opcode != SpvOpLoopMerge && opcode != SpvOpFunction &&
-                     opcode != SpvOpCooperativeMatrixLengthNV &&
-                     !(opcode == SpvOpSpecConstantOp &&
-                       inst->word(3) == SpvOpCooperativeMatrixLengthNV)) {
+                     opcode != SpvOpLoopMerge && opcode != SpvOpFunction) {
             return _.diag(SPV_ERROR_INVALID_ID, inst)
                    << "Operand " << _.getIdName(operand_word)
                    << " requires a type";

@@ -31,7 +31,6 @@
 #endif
 
 #include <cstring>
-#include <cstdlib>
 
 #undef allocate
 #undef deallocate
@@ -55,23 +54,16 @@ void *allocateRaw(size_t bytes, size_t alignment)
 	ASSERT((alignment & (alignment - 1)) == 0);   // Power of 2 alignment.
 
 	#if defined(LINUX_ENABLE_NAMED_MMAP)
-		if(alignment < sizeof(void*))
+		void *allocation;
+		int result = posix_memalign(&allocation, alignment, bytes);
+		if(result != 0)
 		{
-			return malloc(bytes);
+			errno = result;
+			allocation = nullptr;
 		}
-		else
-		{
-			void *allocation;
-			int result = posix_memalign(&allocation, alignment, bytes);
-			if(result != 0)
-			{
-				errno = result;
-				allocation = nullptr;
-			}
-			return allocation;
-		}
+		return allocation;
 	#else
-		unsigned char *block = (unsigned char*)malloc(bytes + sizeof(Allocation) + alignment);
+		unsigned char *block = new unsigned char[bytes + sizeof(Allocation) + alignment];
 		unsigned char *aligned = nullptr;
 
 		if(block)
@@ -128,7 +120,7 @@ void deallocate(void *memory)
 			unsigned char *aligned = (unsigned char*)memory;
 			Allocation *allocation = (Allocation*)(aligned - sizeof(Allocation));
 
-			free(allocation->block);
+			delete[] allocation->block;
 		}
 	#endif
 }
@@ -138,7 +130,7 @@ void clear(uint16_t *memory, uint16_t element, size_t count)
 	#if defined(_MSC_VER) && defined(__x86__) && !defined(MEMORY_SANITIZER)
 		__stosw(memory, element, count);
 	#elif defined(__GNUC__) && defined(__x86__) && !defined(MEMORY_SANITIZER)
-		__asm__ __volatile__("rep stosw" : "+D"(memory), "+c"(count) : "a"(element) : "memory");
+		__asm__("rep stosw" : : "D"(memory), "a"(element), "c"(count));
 	#else
 		for(size_t i = 0; i < count; i++)
 		{
@@ -152,7 +144,7 @@ void clear(uint32_t *memory, uint32_t element, size_t count)
 	#if defined(_MSC_VER) && defined(__x86__) && !defined(MEMORY_SANITIZER)
 		__stosd((unsigned long*)memory, element, count);
 	#elif defined(__GNUC__) && defined(__x86__) && !defined(MEMORY_SANITIZER)
-		__asm__ __volatile__("rep stosl" : "+D"(memory), "+c"(count) : "a"(element) : "memory");
+		__asm__("rep stosl" : : "D"(memory), "a"(element), "c"(count));
 	#else
 		for(size_t i = 0; i < count; i++)
 		{

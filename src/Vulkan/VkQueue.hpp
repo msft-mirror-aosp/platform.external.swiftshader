@@ -16,16 +16,7 @@
 #define VK_QUEUE_HPP_
 
 #include "VkObject.hpp"
-#include "Device/Renderer.hpp"
-#include <thread>
 #include <vulkan/vk_icd.h>
-
-#include "System/Synchronization.hpp"
-
-namespace marl
-{
-	class Scheduler;
-}
 
 namespace sw
 {
@@ -36,48 +27,28 @@ namespace sw
 namespace vk
 {
 
-class Device;
-class Fence;
-
 class Queue
 {
 	VK_LOADER_DATA loaderData = { ICD_LOADER_MAGIC };
 
 public:
-	Queue(Device* device, marl::Scheduler *scheduler);
-	~Queue();
+	Queue(uint32_t pFamilyIndex, float pPriority);
+	~Queue() = delete;
 
 	operator VkQueue()
 	{
 		return reinterpret_cast<VkQueue>(this);
 	}
 
-	VkResult submit(uint32_t submitCount, const VkSubmitInfo* pSubmits, Fence* fence);
-	VkResult waitIdle();
-#ifndef __ANDROID__
-	void present(const VkPresentInfoKHR* presentInfo);
-#endif
+	void destroy();
+	void submit(uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence);
+	void waitIdle();
 
 private:
-	struct Task
-	{
-		uint32_t submitCount = 0;
-		VkSubmitInfo* pSubmits = nullptr;
-		sw::TaskEvents* events = nullptr;
-
-		enum Type { KILL_THREAD, SUBMIT_QUEUE };
-		Type type = SUBMIT_QUEUE;
-	};
-
-	void taskLoop(marl::Scheduler* scheduler);
-	void garbageCollect();
-	void submitQueue(const Task& task);
-
-	Device* device;
-	std::unique_ptr<sw::Renderer> renderer;
-	sw::Chan<Task> pending;
-	sw::Chan<VkSubmitInfo*> toDelete;
-	std::thread queueThread;
+	sw::Context* context = nullptr;
+	sw::Renderer* renderer = nullptr;
+	uint32_t familyIndex = 0;
+	float    priority = 0.0f;
 };
 
 static inline Queue* Cast(VkQueue object)

@@ -23,14 +23,11 @@ namespace vk
 
 Buffer::Buffer(const VkBufferCreateInfo* pCreateInfo, void* mem) :
 	flags(pCreateInfo->flags), size(pCreateInfo->size), usage(pCreateInfo->usage),
-	sharingMode(pCreateInfo->sharingMode)
+	sharingMode(pCreateInfo->sharingMode), queueFamilyIndexCount(pCreateInfo->queueFamilyIndexCount),
+	queueFamilyIndices(reinterpret_cast<uint32_t*>(mem))
 {
-	if(pCreateInfo->sharingMode == VK_SHARING_MODE_CONCURRENT)
-	{
-		queueFamilyIndexCount = pCreateInfo->queueFamilyIndexCount;
-		queueFamilyIndices = reinterpret_cast<uint32_t*>(mem);
-		memcpy(queueFamilyIndices, pCreateInfo->pQueueFamilyIndices, sizeof(uint32_t) * queueFamilyIndexCount);
-	}
+	size_t queueFamilyIndicesSize = sizeof(uint32_t) * queueFamilyIndexCount;
+	memcpy(queueFamilyIndices, pCreateInfo->pQueueFamilyIndices, queueFamilyIndicesSize);
 }
 
 void Buffer::destroy(const VkAllocationCallbacks* pAllocator)
@@ -40,7 +37,7 @@ void Buffer::destroy(const VkAllocationCallbacks* pAllocator)
 
 size_t Buffer::ComputeRequiredAllocationSize(const VkBufferCreateInfo* pCreateInfo)
 {
-	return (pCreateInfo->sharingMode == VK_SHARING_MODE_CONCURRENT) ? sizeof(uint32_t) * pCreateInfo->queueFamilyIndexCount : 0;
+	return sizeof(uint32_t) * pCreateInfo->queueFamilyIndexCount;
 }
 
 const VkMemoryRequirements Buffer::getMemoryRequirements() const
@@ -68,9 +65,9 @@ const VkMemoryRequirements Buffer::getMemoryRequirements() const
 	return memoryRequirements;
 }
 
-void Buffer::bind(DeviceMemory* pDeviceMemory, VkDeviceSize pMemoryOffset)
+void Buffer::bind(VkDeviceMemory pDeviceMemory, VkDeviceSize pMemoryOffset)
 {
-	memory = pDeviceMemory->getOffsetPointer(pMemoryOffset);
+	memory = Cast(pDeviceMemory)->getOffsetPointer(pMemoryOffset);
 }
 
 void Buffer::copyFrom(const void* srcMemory, VkDeviceSize pSize, VkDeviceSize pOffset)
@@ -94,18 +91,9 @@ void Buffer::copyTo(Buffer* dstBuffer, const VkBufferCopy& pRegion) const
 
 void Buffer::fill(VkDeviceSize dstOffset, VkDeviceSize fillSize, uint32_t data)
 {
-	size_t bytes = (fillSize == VK_WHOLE_SIZE) ? (size - dstOffset) : fillSize;
+	ASSERT((fillSize + dstOffset) <= size);
 
-	ASSERT((bytes + dstOffset) <= size);
-
-	uint32_t* memToWrite = static_cast<uint32_t*>(getOffsetPointer(dstOffset));
-
-	// Vulkan 1.1 spec: "If VK_WHOLE_SIZE is used and the remaining size of the buffer is
-	//                   not a multiple of 4, then the nearest smaller multiple is used."
-	for(; bytes >= 4; bytes -= 4, memToWrite++)
-	{
-		*memToWrite = data;
-	}
+	memset(getOffsetPointer(dstOffset), data, fillSize);
 }
 
 void Buffer::update(VkDeviceSize dstOffset, VkDeviceSize dataSize, const void* pData)
@@ -117,12 +105,7 @@ void Buffer::update(VkDeviceSize dstOffset, VkDeviceSize dataSize, const void* p
 
 void* Buffer::getOffsetPointer(VkDeviceSize offset) const
 {
-	return reinterpret_cast<uint8_t*>(memory) + offset;
-}
-
-uint8_t* Buffer::end() const
-{
-	return reinterpret_cast<uint8_t*>(getOffsetPointer(size + 1));
+	return reinterpret_cast<char*>(memory) + offset;
 }
 
 } // namespace vk

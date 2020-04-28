@@ -18,14 +18,33 @@
 #include "PixelRoutine.hpp"
 #include "SamplerCore.hpp"
 
-#include <unordered_map>
-
 namespace sw
 {
 	class PixelProgram : public PixelRoutine
 	{
 	public:
-		PixelProgram(const PixelProcessor::State &state, const PixelShader *shader);
+		PixelProgram(const PixelProcessor::State &state, const PixelShader *shader) :
+			PixelRoutine(state, shader), r(shader->indirectAddressableTemporaries)
+		{
+			for(int i = 0; i < MAX_SHADER_CALL_SITES; ++i)
+			{
+				labelBlock[i] = 0;
+			}
+
+			loopDepth = -1;
+			enableStack[0] = Int4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+
+			if(shader->containsBreakInstruction())
+			{
+				enableBreak = Int4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+			}
+
+			if(shader->containsContinueInstruction())
+			{
+				enableContinue = Int4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+			}
+		}
+
 		virtual ~PixelProgram() {}
 
 	protected:
@@ -48,13 +67,13 @@ namespace sw
 
 		// DX9 specific variables
 		Vector4f p0;
-		Array<Int> aL; // loop counter register
-		Array<Int> increment; // increment value per loop
-		Array<Int> iteration; // iteration count
+		Array<Int, MAX_SHADER_NESTED_LOOPS> aL;
+		Array<Int, MAX_SHADER_NESTED_LOOPS> increment;
+		Array<Int, MAX_SHADER_NESTED_LOOPS> iteration;
 
 		Int loopDepth;    // FIXME: Add support for switch
 		Int stackIndex;   // FIXME: Inc/decrement callStack
-		Array<UInt> callStack;
+		Array<UInt, MAX_SHADER_CALL_STACK_SIZE> callStack;
 
 		// Per pixel based on conditions reached
 		Int enableIndex;
@@ -134,18 +153,18 @@ namespace sw
 		void RET();
 		void LEAVE();
 
-		int ifDepth = 0;
-		int loopRepDepth = 0;
-		int currentLabel = -1;
+		BoundedIndex<MAX_SHADER_NESTED_IFS> ifDepth = 0;
+		BoundedIndex<MAX_SHADER_NESTED_LOOPS> loopRepDepth = 0;
+		BoundedIndex<MAX_SHADER_CALL_SITES> currentLabel = -1;
 		bool scalar = false;
 
-		std::vector<BasicBlock*> ifFalseBlock;
-		std::vector<BasicBlock*> loopRepTestBlock;
-		std::vector<BasicBlock*> loopRepEndBlock;
-		std::vector<BasicBlock*> labelBlock;
-		std::unordered_map<unsigned int, std::vector<BasicBlock*>> callRetBlock; // label -> list of call sites
+		BasicBlock *ifFalseBlock[MAX_SHADER_NESTED_IFS];
+		BasicBlock *loopRepTestBlock[MAX_SHADER_NESTED_LOOPS];
+		BasicBlock *loopRepEndBlock[MAX_SHADER_NESTED_LOOPS];
+		BasicBlock *labelBlock[MAX_SHADER_CALL_SITES];
+		std::vector<BasicBlock*> callRetBlock[MAX_SHADER_CALL_SITES];
 		BasicBlock *returnBlock;
-		std::vector<bool> isConditionalIf;
+		bool isConditionalIf[MAX_SHADER_NESTED_IFS];
 		std::vector<Int4> restoreContinue;
 	};
 }

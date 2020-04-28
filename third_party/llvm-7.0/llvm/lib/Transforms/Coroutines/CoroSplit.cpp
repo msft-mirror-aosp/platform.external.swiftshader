@@ -873,12 +873,7 @@ struct CoroSplit : public CallGraphSCCPass {
 
 char CoroSplit::ID = 0;
 
-INITIALIZE_PASS_BEGIN(
-    CoroSplit, "coro-split",
-    "Split coroutine into a set of functions driving its state machine", false,
-    false)
-INITIALIZE_PASS_DEPENDENCY(CallGraphWrapperPass)
-INITIALIZE_PASS_END(
+INITIALIZE_PASS(
     CoroSplit, "coro-split",
     "Split coroutine into a set of functions driving its state machine", false,
     false)

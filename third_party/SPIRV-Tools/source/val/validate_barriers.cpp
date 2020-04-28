@@ -14,6 +14,8 @@
 
 // Validates correctness of barrier SPIR-V instructions.
 
+#include "source/val/validate.h"
+
 #include <string>
 
 #include "source/diagnostic.h"
@@ -22,7 +24,6 @@
 #include "source/spirv_target_env.h"
 #include "source/util/bitutils.h"
 #include "source/val/instruction.h"
-#include "source/val/validate.h"
 #include "source/val/validate_memory_semantics.h"
 #include "source/val/validate_scopes.h"
 #include "source/val/validation_state.h"
@@ -37,7 +38,8 @@ spv_result_t BarriersPass(ValidationState_t& _, const Instruction* inst) {
 
   switch (opcode) {
     case SpvOpControlBarrier: {
-      if (_.version() < SPV_SPIRV_VERSION_WORD(1, 3)) {
+      if (spvVersionForTargetEnv(_.context()->target_env) <
+          SPV_SPIRV_VERSION_WORD(1, 3)) {
         _.function(inst->function()->id())
             ->RegisterExecutionModelLimitation(
                 [](SpvExecutionModel model, std::string* message) {

@@ -183,10 +183,8 @@ bool ValidateTexParamParameters(GLenum pname, GLint param)
 		return true;
 
 	default:
-		break;
+		return error(GL_INVALID_ENUM, false);
 	}
-
-	return error(GL_INVALID_ENUM, false);
 }
 
 static bool ValidateSamplerObjectParameter(GLenum pname)
@@ -212,7 +210,7 @@ static bool ValidateSamplerObjectParameter(GLenum pname)
 namespace gl
 {
 
-void GL_APIENTRY ReadBuffer(GLenum src)
+void ReadBuffer(GLenum src)
 {
 	TRACE("(GLenum src = 0x%X)", src);
 
@@ -285,7 +283,7 @@ void GL_APIENTRY ReadBuffer(GLenum src)
 	}
 }
 
-void GL_APIENTRY DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void *indices)
+void DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void *indices)
 {
 	TRACE("(GLenum mode = 0x%X, GLuint start = %d, GLuint end = %d, "
 		  "GLsizei count = %d, GLenum type = 0x%x, const void* indices = %p)",
@@ -334,7 +332,7 @@ void GL_APIENTRY DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsize
 	}
 }
 
-void GL_APIENTRY TexImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const void *data)
+void TexImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const void *data)
 {
 	TRACE("(GLenum target = 0x%X, GLint level = %d, GLenum internalformat = 0x%X, "
 	      "GLsizei width = %d, GLsizei height = %d, GLsizei depth = %d, GLint border = %d, "
@@ -394,7 +392,7 @@ void GL_APIENTRY TexImage3D(GLenum target, GLint level, GLint internalformat, GL
 	}
 }
 
-void GL_APIENTRY TexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void *data)
+void TexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void *data)
 {
 	TRACE("(GLenum target = 0x%X, GLint level = %d, GLint xoffset = %d, GLint yoffset = %d, "
 		"GLint zoffset = %d, GLsizei width = %d, GLsizei height = %d, GLsizei depth = %d, "
@@ -442,7 +440,7 @@ void GL_APIENTRY TexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint 
 	}
 }
 
-void GL_APIENTRY CopyTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height)
+void CopyTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height)
 {
 	TRACE("(GLenum target = 0x%X, GLint level = %d, GLint xoffset = %d, GLint yoffset = %d, "
 		"GLint zoffset = %d, GLint x = %d, GLint y = %d, GLsizei width = %d, GLsizei height = %d)",
@@ -505,7 +503,7 @@ void GL_APIENTRY CopyTexSubImage3D(GLenum target, GLint level, GLint xoffset, GL
 	}
 }
 
-void GL_APIENTRY CompressedTexImage3D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, const void *data)
+void CompressedTexImage3D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, const void *data)
 {
 	TRACE("(GLenum target = 0x%X, GLint level = %d, GLenum internalformat = 0x%X, GLsizei width = %d, "
 		"GLsizei height = %d, GLsizei depth = %d, GLint border = %d, GLsizei imageSize = %d, const GLvoid* data = %p)",
@@ -562,7 +560,7 @@ void GL_APIENTRY CompressedTexImage3D(GLenum target, GLint level, GLenum interna
 	}
 }
 
-void GL_APIENTRY CompressedTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const void *data)
+void CompressedTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const void *data)
 {
 	TRACE("(GLenum target = 0x%X, GLint level = %d, GLint xoffset = %d, GLint yoffset = %d, "
 	      "GLint zoffset = %d, GLsizei width = %d, GLsizei height = %d, GLsizei depth = %d, "
@@ -659,7 +657,7 @@ void GL_APIENTRY CompressedTexSubImage3D(GLenum target, GLint level, GLint xoffs
 	}
 }
 
-void GL_APIENTRY GenQueries(GLsizei n, GLuint *ids)
+void GenQueries(GLsizei n, GLuint *ids)
 {
 	TRACE("(GLsizei n = %d, GLuint* ids = %p)", n, ids);
 
@@ -679,7 +677,7 @@ void GL_APIENTRY GenQueries(GLsizei n, GLuint *ids)
 	}
 }
 
-void GL_APIENTRY DeleteQueries(GLsizei n, const GLuint *ids)
+void DeleteQueries(GLsizei n, const GLuint *ids)
 {
 	TRACE("(GLsizei n = %d, GLuint* ids = %p)", n, ids);
 
@@ -699,7 +697,7 @@ void GL_APIENTRY DeleteQueries(GLsizei n, const GLuint *ids)
 	}
 }
 
-GLboolean GL_APIENTRY IsQuery(GLuint id)
+GLboolean IsQuery(GLuint id)
 {
 	TRACE("(GLuint id = %d)", id);
 
@@ -723,7 +721,7 @@ GLboolean GL_APIENTRY IsQuery(GLuint id)
 	return GL_FALSE;
 }
 
-void GL_APIENTRY BeginQuery(GLenum target, GLuint id)
+void BeginQuery(GLenum target, GLuint id)
 {
 	TRACE("(GLenum target = 0x%X, GLuint id = %d)", target, id);
 
@@ -745,7 +743,7 @@ void GL_APIENTRY BeginQuery(GLenum target, GLuint id)
 	}
 }
 
-void GL_APIENTRY EndQuery(GLenum target)
+void EndQuery(GLenum target)
 {
 	TRACE("(GLenum target = 0x%X)", target);
 
@@ -762,7 +760,7 @@ void GL_APIENTRY EndQuery(GLenum target)
 	}
 }
 
-void GL_APIENTRY GetQueryiv(GLenum target, GLenum pname, GLint *params)
+void GetQueryiv(GLenum target, GLenum pname, GLint *params)
 {
 	TRACE("(GLenum target = 0x%X, GLenum pname = 0x%X, GLint *params = %p)",
 		  target, pname, params);
@@ -780,7 +778,7 @@ void GL_APIENTRY GetQueryiv(GLenum target, GLenum pname, GLint *params)
 	}
 }
 
-void GL_APIENTRY GetQueryObjectuiv(GLuint id, GLenum pname, GLuint *params)
+void GetQueryObjectuiv(GLuint id, GLenum pname, GLuint *params)
 {
 	TRACE("(GLuint id = %d, GLenum pname = 0x%X, GLint *params = %p)",
 	      id, pname, params);
@@ -824,7 +822,7 @@ void GL_APIENTRY GetQueryObjectuiv(GLuint id, GLenum pname, GLuint *params)
 	}
 }
 
-GLboolean GL_APIENTRY UnmapBuffer(GLenum target)
+GLboolean UnmapBuffer(GLenum target)
 {
 	TRACE("(GLenum target = 0x%X)", target);
 
@@ -856,7 +854,7 @@ GLboolean GL_APIENTRY UnmapBuffer(GLenum target)
 	return GL_TRUE;
 }
 
-void GL_APIENTRY GetBufferPointerv(GLenum target, GLenum pname, void **params)
+void GetBufferPointerv(GLenum target, GLenum pname, void **params)
 {
 	TRACE("(GLenum target = 0x%X, GLenum pname = 0x%X, GLint *params = %p)",
 	      target, pname, params);
@@ -886,7 +884,7 @@ void GL_APIENTRY GetBufferPointerv(GLenum target, GLenum pname, void **params)
 	}
 }
 
-void GL_APIENTRY DrawBuffers(GLsizei n, const GLenum *bufs)
+void DrawBuffers(GLsizei n, const GLenum *bufs)
 {
 	TRACE("(GLsizei n = %d, const GLenum *bufs = %p)", n, bufs);
 
@@ -978,7 +976,7 @@ void GL_APIENTRY DrawBuffers(GLsizei n, const GLenum *bufs)
 	}
 }
 
-void GL_APIENTRY UniformMatrix2x3fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
+void UniformMatrix2x3fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
 {
 	TRACE("(GLint location = %d, GLsizei count = %d, GLboolean transpose = %d, const GLfloat *value = %p)", location, count, transpose, value);
 
@@ -1010,7 +1008,7 @@ void GL_APIENTRY UniformMatrix2x3fv(GLint location, GLsizei count, GLboolean tra
 	}
 }
 
-void GL_APIENTRY UniformMatrix3x2fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
+void UniformMatrix3x2fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
 {
 	TRACE("(GLint location = %d, GLsizei count = %d, GLboolean transpose = %d, const GLfloat *value = %p)", location, count, transpose, value);
 
@@ -1042,7 +1040,7 @@ void GL_APIENTRY UniformMatrix3x2fv(GLint location, GLsizei count, GLboolean tra
 	}
 }
 
-void GL_APIENTRY UniformMatrix2x4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
+void UniformMatrix2x4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
 {
 	TRACE("(GLint location = %d, GLsizei count = %d, GLboolean transpose = %d, const GLfloat *value = %p)", location, count, transpose, value);
 
@@ -1074,7 +1072,7 @@ void GL_APIENTRY UniformMatrix2x4fv(GLint location, GLsizei count, GLboolean tra
 	}
 }
 
-void GL_APIENTRY UniformMatrix4x2fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
+void UniformMatrix4x2fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
 {
 	TRACE("(GLint location = %d, GLsizei count = %d, GLboolean transpose = %d, const GLfloat *value = %p)", location, count, transpose, value);
 
@@ -1106,7 +1104,7 @@ void GL_APIENTRY UniformMatrix4x2fv(GLint location, GLsizei count, GLboolean tra
 	}
 }
 
-void GL_APIENTRY UniformMatrix3x4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
+void UniformMatrix3x4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
 {
 	TRACE("(GLint location = %d, GLsizei count = %d, GLboolean transpose = %d, const GLfloat *value = %p)", location, count, transpose, value);
 
@@ -1138,7 +1136,7 @@ void GL_APIENTRY UniformMatrix3x4fv(GLint location, GLsizei count, GLboolean tra
 	}
 }
 
-void GL_APIENTRY UniformMatrix4x3fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
+void UniformMatrix4x3fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
 {
 	TRACE("(GLint location = %d, GLsizei count = %d, GLboolean transpose = %d, const GLfloat *value = %p)", location, count, transpose, value);
 
@@ -1170,12 +1168,12 @@ void GL_APIENTRY UniformMatrix4x3fv(GLint location, GLsizei count, GLboolean tra
 	}
 }
 
-void GL_APIENTRY BlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter)
+void BlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter)
 {
 	TRACE("(GLint srcX0 = %d, GLint srcY0 = %d, GLint srcX1 = %d, GLint srcY1 = %d, "
 	      "GLint dstX0 = %d, GLint dstY0 = %d, GLint dstX1 = %d, GLint dstY1 = %d, "
 	      "GLbitfield mask = 0x%X, GLenum filter = 0x%X)",
-	      srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
+	      srcX0, srcY0, srcX1, srcX1, dstX0, dstY0, dstX1, dstY1, mask, filter);
 
 	switch(filter)
 	{
@@ -1210,7 +1208,7 @@ void GL_APIENTRY BlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint sr
 	}
 }
 
-void GL_APIENTRY FramebufferTextureLayer(GLenum target, GLenum attachment, GLuint texture, GLint level, GLint layer)
+void FramebufferTextureLayer(GLenum target, GLenum attachment, GLuint texture, GLint level, GLint layer)
 {
 	TRACE("(GLenum target = 0x%X, GLenum attachment = 0x%X, GLuint texture = %d, GLint level = %d, GLint layer = %d)",
 	      target, attachment, texture, level, layer);
@@ -1323,7 +1321,7 @@ void GL_APIENTRY FramebufferTextureLayer(GLenum target, GLenum attachment, GLuin
 	}
 }
 
-void *GL_APIENTRY MapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access)
+void *MapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access)
 {
 	TRACE("(GLenum target = 0x%X,  GLintptr offset = %d, GLsizeiptr length = %d, GLbitfield access = %X)",
 	      target, offset, length, access);
@@ -1393,7 +1391,7 @@ void *GL_APIENTRY MapBufferRange(GLenum target, GLintptr offset, GLsizeiptr leng
 	return nullptr;
 }
 
-void GL_APIENTRY FlushMappedBufferRange(GLenum target, GLintptr offset, GLsizeiptr length)
+void FlushMappedBufferRange(GLenum target, GLintptr offset, GLsizeiptr length)
 {
 	TRACE("(GLenum target = 0x%X,  GLintptr offset = %d, GLsizeiptr length = %d)",
 	      target, offset, length);
@@ -1441,7 +1439,7 @@ void GL_APIENTRY FlushMappedBufferRange(GLenum target, GLintptr offset, GLsizeip
 	}
 }
 
-void GL_APIENTRY BindVertexArray(GLuint array)
+void BindVertexArray(GLuint array)
 {
 	TRACE("(GLuint array = %d)", array);
 
@@ -1458,12 +1456,12 @@ void GL_APIENTRY BindVertexArray(GLuint array)
 	}
 }
 
-void GL_APIENTRY BindVertexArrayOES(GLuint array)
+void BindVertexArrayOES(GLuint array)
 {
 	BindVertexArray(array);
 }
 
-void GL_APIENTRY DeleteVertexArrays(GLsizei n, const GLuint *arrays)
+void DeleteVertexArrays(GLsizei n, const GLuint *arrays)
 {
 	TRACE("(GLsizei n = %d, const GLuint *arrays = %p)", n, arrays);
 
@@ -1486,12 +1484,12 @@ void GL_APIENTRY DeleteVertexArrays(GLsizei n, const GLuint *arrays)
 	}
 }
 
-void GL_APIENTRY DeleteVertexArraysOES(GLsizei n, const GLuint *arrays)
+void DeleteVertexArraysOES(GLsizei n, const GLuint *arrays)
 {
 	DeleteVertexArrays(n, arrays);
 }
 
-void GL_APIENTRY GenVertexArrays(GLsizei n, GLuint *arrays)
+void GenVertexArrays(GLsizei n, GLuint *arrays)
 {
 	TRACE("(GLsizei n = %d, const GLuint *arrays = %p)", n, arrays);
 
@@ -1511,12 +1509,12 @@ void GL_APIENTRY GenVertexArrays(GLsizei n, GLuint *arrays)
 	}
 }
 
-void GL_APIENTRY GenVertexArraysOES(GLsizei n, GLuint *arrays)
+void GenVertexArraysOES(GLsizei n, GLuint *arrays)
 {
 	GenVertexArrays(n, arrays);
 }
 
-GLboolean GL_APIENTRY IsVertexArray(GLuint array)
+GLboolean IsVertexArray(GLuint array)
 {
 	TRACE("(GLuint array = %d)", array);
 
@@ -1540,12 +1538,12 @@ GLboolean GL_APIENTRY IsVertexArray(GLuint array)
 	return GL_FALSE;
 }
 
-GLboolean GL_APIENTRY IsVertexArrayOES(GLuint array)
+GLboolean IsVertexArrayOES(GLuint array)
 {
 	return IsVertexArray(array);
 }
 
-void GL_APIENTRY GetIntegeri_v(GLenum target, GLuint index, GLint *data)
+void GetIntegeri_v(GLenum target, GLuint index, GLint *data)
 {
 	TRACE("(GLenum target = 0x%X, GLuint index = %d, GLint* data = %p)",
 	      target, index, data);
@@ -1605,7 +1603,7 @@ void GL_APIENTRY GetIntegeri_v(GLenum target, GLuint index, GLint *data)
 	}
 }
 
-void GL_APIENTRY BeginTransformFeedback(GLenum primitiveMode)
+void BeginTransformFeedback(GLenum primitiveMode)
 {
 	TRACE("(GLenum primitiveMode = 0x%X)", primitiveMode);
 
@@ -1640,7 +1638,7 @@ void GL_APIENTRY BeginTransformFeedback(GLenum primitiveMode)
 	}
 }
 
-void GL_APIENTRY EndTransformFeedback(void)
+void EndTransformFeedback(void)
 {
 	TRACE("()");
 
@@ -1665,7 +1663,7 @@ void GL_APIENTRY EndTransformFeedback(void)
 	}
 }
 
-void GL_APIENTRY BindBufferRange(GLenum target, GLuint index, GLuint buffer, GLintptr offset, GLsizeiptr size)
+void BindBufferRange(GLenum target, GLuint index, GLuint buffer, GLintptr offset, GLsizeiptr size)
 {
 	TRACE("(GLenum target = 0x%X, GLuint index = %d, GLuint buffer = %d, GLintptr offset = %d, GLsizeiptr size = %d)",
 	      target, index, buffer, offset, size);
@@ -1711,7 +1709,7 @@ void GL_APIENTRY BindBufferRange(GLenum target, GLuint index, GLuint buffer, GLi
 	}
 }
 
-void GL_APIENTRY BindBufferBase(GLenum target, GLuint index, GLuint buffer)
+void BindBufferBase(GLenum target, GLuint index, GLuint buffer)
 {
 	TRACE("(GLenum target = 0x%X, GLuint index = %d, GLuint buffer = %d)",
 	      target, index, buffer);
@@ -1744,7 +1742,7 @@ void GL_APIENTRY BindBufferBase(GLenum target, GLuint index, GLuint buffer)
 	}
 }
 
-void GL_APIENTRY TransformFeedbackVaryings(GLuint program, GLsizei count, const GLchar *const*varyings, GLenum bufferMode)
+void TransformFeedbackVaryings(GLuint program, GLsizei count, const GLchar *const*varyings, GLenum bufferMode)
 {
 	TRACE("(GLuint program = %d, GLsizei count = %d, const GLchar *const*varyings = %p, GLenum bufferMode = 0x%X)",
 	      program, count, varyings, bufferMode);
@@ -1777,7 +1775,7 @@ void GL_APIENTRY TransformFeedbackVaryings(GLuint program, GLsizei count, const 
 	}
 }
 
-void GL_APIENTRY GetTransformFeedbackVarying(GLuint program, GLuint index, GLsizei bufSize, GLsizei *length, GLsizei *size, GLenum *type, GLchar *name)
+void GetTransformFeedbackVarying(GLuint program, GLuint index, GLsizei bufSize, GLsizei *length, GLsizei *size, GLenum *type, GLchar *name)
 {
 	TRACE("(GLuint program = %d, GLuint index = %d, GLsizei bufSize = %d, GLsizei *length = %p, GLsizei *size = %p, GLenum *type = %p, GLchar *name = %p)",
 	      program, index, bufSize, length, size, type, name);
@@ -1807,7 +1805,7 @@ void GL_APIENTRY GetTransformFeedbackVarying(GLuint program, GLuint index, GLsiz
 	}
 }
 
-void GL_APIENTRY VertexAttribIPointer(GLuint index, GLint size, GLenum type, GLsizei stride, const void *pointer)
+void VertexAttribIPointer(GLuint index, GLint size, GLenum type, GLsizei stride, const void *pointer)
 {
 	TRACE("(GLuint program = %d, GLuint index = %d, GLsizei bufSize = %d, GLsizei *length = %p, GLsizei *size = %p, GLenum *type = %p, GLchar *name = %p)",
 	      index, size, type, stride, pointer);
@@ -1851,7 +1849,7 @@ void GL_APIENTRY VertexAttribIPointer(GLuint index, GLint size, GLenum type, GLs
 	}
 }
 
-void GL_APIENTRY GetVertexAttribIiv(GLuint index, GLenum pname, GLint *params)
+void GetVertexAttribIiv(GLuint index, GLenum pname, GLint *params)
 {
 	TRACE("(GLuint index = %d, GLenum pname = 0x%X, GLint *params = %p)",
 	      index, pname, params);
@@ -1907,7 +1905,7 @@ void GL_APIENTRY GetVertexAttribIiv(GLuint index, GLenum pname, GLint *params)
 	}
 }
 
-void GL_APIENTRY GetVertexAttribIuiv(GLuint index, GLenum pname, GLuint *params)
+void GetVertexAttribIuiv(GLuint index, GLenum pname, GLuint *params)
 {
 	TRACE("(GLuint index = %d, GLenum pname = 0x%X, GLuint *params = %p)",
 		index, pname, params);
@@ -1963,7 +1961,7 @@ void GL_APIENTRY GetVertexAttribIuiv(GLuint index, GLenum pname, GLuint *params)
 	}
 }
 
-void GL_APIENTRY VertexAttribI4i(GLuint index, GLint x, GLint y, GLint z, GLint w)
+void VertexAttribI4i(GLuint index, GLint x, GLint y, GLint z, GLint w)
 {
 	TRACE("(GLuint index = %d, GLint x = %d, GLint y = %d, GLint z = %d, GLint w = %d)",
 	      index, x, y, z, w);
@@ -1982,7 +1980,7 @@ void GL_APIENTRY VertexAttribI4i(GLuint index, GLint x, GLint y, GLint z, GLint 
 	}
 }
 
-void GL_APIENTRY VertexAttribI4ui(GLuint index, GLuint x, GLuint y, GLuint z, GLuint w)
+void VertexAttribI4ui(GLuint index, GLuint x, GLuint y, GLuint z, GLuint w)
 {
 	TRACE("(GLuint index = %d, GLint x = %d, GLint y = %d, GLint z = %d, GLint w = %d)",
 	      index, x, y, z, w);
@@ -2001,7 +1999,7 @@ void GL_APIENTRY VertexAttribI4ui(GLuint index, GLuint x, GLuint y, GLuint z, GL
 	}
 }
 
-void GL_APIENTRY VertexAttribI4iv(GLuint index, const GLint *v)
+void VertexAttribI4iv(GLuint index, const GLint *v)
 {
 	TRACE("(GLuint index = %d, GLint *v = %p)", index, v);
 
@@ -2018,7 +2016,7 @@ void GL_APIENTRY VertexAttribI4iv(GLuint index, const GLint *v)
 	}
 }
 
-void GL_APIENTRY VertexAttribI4uiv(GLuint index, const GLuint *v)
+void VertexAttribI4uiv(GLuint index, const GLuint *v)
 {
 	TRACE("(GLuint index = %d, GLint *v = %p)", index, v);
 
@@ -2035,7 +2033,7 @@ void GL_APIENTRY VertexAttribI4uiv(GLuint index, const GLuint *v)
 	}
 }
 
-void GL_APIENTRY GetUniformuiv(GLuint program, GLint location, GLuint *params)
+void GetUniformuiv(GLuint program, GLint location, GLuint *params)
 {
 	TRACE("(GLuint program = %d, GLint location = %d, GLuint *params = %p)",
 	      program, location, params);
@@ -2070,7 +2068,7 @@ void GL_APIENTRY GetUniformuiv(GLuint program, GLint location, GLuint *params)
 	}
 }
 
-GLint GL_APIENTRY GetFragDataLocation(GLuint program, const GLchar *name)
+GLint GetFragDataLocation(GLuint program, const GLchar *name)
 {
 	TRACE("(GLuint program = %d, const GLchar *name = %p)", program, name);
 
@@ -2103,7 +2101,7 @@ GLint GL_APIENTRY GetFragDataLocation(GLuint program, const GLchar *name)
 	return -1;
 }
 
-void GL_APIENTRY Uniform1uiv(GLint location, GLsizei count, const GLuint *value)
+void Uniform1uiv(GLint location, GLsizei count, const GLuint *value)
 {
 	TRACE("(GLint location = %d, GLsizei count = %d, const GLuint *value = %p)",
 	      location, count, value);
@@ -2136,7 +2134,7 @@ void GL_APIENTRY Uniform1uiv(GLint location, GLsizei count, const GLuint *value)
 	}
 }
 
-void GL_APIENTRY Uniform2uiv(GLint location, GLsizei count, const GLuint *value)
+void Uniform2uiv(GLint location, GLsizei count, const GLuint *value)
 {
 	TRACE("(GLint location = %d, GLsizei count = %d, const GLuint *value = %p)",
 	      location, count, value);
@@ -2169,7 +2167,7 @@ void GL_APIENTRY Uniform2uiv(GLint location, GLsizei count, const GLuint *value)
 	}
 }
 
-void GL_APIENTRY Uniform3uiv(GLint location, GLsizei count, const GLuint *value)
+void Uniform3uiv(GLint location, GLsizei count, const GLuint *value)
 {
 	TRACE("(GLint location = %d, GLsizei count = %d, const GLuint *value = %p)",
 	      location, count, value);
@@ -2202,7 +2200,7 @@ void GL_APIENTRY Uniform3uiv(GLint location, GLsizei count, const GLuint *value)
 	}
 }
 
-void GL_APIENTRY Uniform4uiv(GLint location, GLsizei count, const GLuint *value)
+void Uniform4uiv(GLint location, GLsizei count, const GLuint *value)
 {
 	TRACE("(GLint location = %d, GLsizei count = %d, const GLuint *value = %p)",
 	      location, count, value);
@@ -2235,33 +2233,33 @@ void GL_APIENTRY Uniform4uiv(GLint location, GLsizei count, const GLuint *value)
 	}
 }
 
-void GL_APIENTRY Uniform1ui(GLint location, GLuint v0)
+void Uniform1ui(GLint location, GLuint v0)
 {
 	Uniform1uiv(location, 1, &v0);
 }
 
-void GL_APIENTRY Uniform2ui(GLint location, GLuint v0, GLuint v1)
+void Uniform2ui(GLint location, GLuint v0, GLuint v1)
 {
 	GLuint xy[2] = { v0, v1 };
 
 	Uniform2uiv(location, 1, (GLuint*)&xy);
 }
 
-void GL_APIENTRY Uniform3ui(GLint location, GLuint v0, GLuint v1, GLuint v2)
+void Uniform3ui(GLint location, GLuint v0, GLuint v1, GLuint v2)
 {
 	GLuint xyz[3] = { v0, v1, v2 };
 
 	Uniform3uiv(location, 1, (GLuint*)&xyz);
 }
 
-void GL_APIENTRY Uniform4ui(GLint location, GLuint v0, GLuint v1, GLuint v2, GLuint v3)
+void Uniform4ui(GLint location, GLuint v0, GLuint v1, GLuint v2, GLuint v3)
 {
 	GLuint xyzw[4] = { v0, v1, v2, v3 };
 
 	Uniform4uiv(location, 1, (GLuint*)&xyzw);
 }
 
-void GL_APIENTRY ClearBufferiv(GLenum buffer, GLint drawbuffer, const GLint *value)
+void ClearBufferiv(GLenum buffer, GLint drawbuffer, const GLint *value)
 {
 	TRACE("(GLenum buffer = 0x%X, GLint drawbuffer = %d, const GLint *value = %p)",
 	      buffer, drawbuffer, value);
@@ -2298,7 +2296,7 @@ void GL_APIENTRY ClearBufferiv(GLenum buffer, GLint drawbuffer, const GLint *val
 	}
 }
 
-void GL_APIENTRY ClearBufferuiv(GLenum buffer, GLint drawbuffer, const GLuint *value)
+void ClearBufferuiv(GLenum buffer, GLint drawbuffer, const GLuint *value)
 {
 	TRACE("(GLenum buffer = 0x%X, GLint drawbuffer = %d, const GLuint *value = %p)",
 	      buffer, drawbuffer, value);
@@ -2325,7 +2323,7 @@ void GL_APIENTRY ClearBufferuiv(GLenum buffer, GLint drawbuffer, const GLuint *v
 	}
 }
 
-void GL_APIENTRY ClearBufferfv(GLenum buffer, GLint drawbuffer, const GLfloat *value)
+void ClearBufferfv(GLenum buffer, GLint drawbuffer, const GLfloat *value)
 {
 	TRACE("(GLenum buffer = 0x%X, GLint drawbuffer = %d, const GLfloat *value = %p)",
 	      buffer, drawbuffer, value);
@@ -2362,7 +2360,7 @@ void GL_APIENTRY ClearBufferfv(GLenum buffer, GLint drawbuffer, const GLfloat *v
 	}
 }
 
-void GL_APIENTRY ClearBufferfi(GLenum buffer, GLint drawbuffer, GLfloat depth, GLint stencil)
+void ClearBufferfi(GLenum buffer, GLint drawbuffer, GLfloat depth, GLint stencil)
 {
 	TRACE("(GLenum buffer = 0x%X, GLint drawbuffer = %d, GLfloat depth = %f, GLint stencil = %d)",
 	      buffer, drawbuffer, depth, stencil);
@@ -2390,7 +2388,7 @@ void GL_APIENTRY ClearBufferfi(GLenum buffer, GLint drawbuffer, GLfloat depth, G
 	}
 }
 
-const GLubyte *GL_APIENTRY GetStringi(GLenum name, GLuint index)
+const GLubyte *GetStringi(GLenum name, GLuint index)
 {
 	TRACE("(GLenum name = 0x%X, GLuint index = %d)", name, index);
 
@@ -2417,7 +2415,7 @@ const GLubyte *GL_APIENTRY GetStringi(GLenum name, GLuint index)
 	return (GLubyte*)nullptr;
 }
 
-void GL_APIENTRY CopyBufferSubData(GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size)
+void CopyBufferSubData(GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size)
 {
 	TRACE("(GLenum readTarget = 0x%X, GLenum writeTarget = 0x%X,  GLintptr readOffset = %d, GLintptr writeOffset = %d, GLsizeiptr size = %d)",
 	      readTarget, writeTarget, readOffset, writeOffset, size);
@@ -2460,7 +2458,7 @@ void GL_APIENTRY CopyBufferSubData(GLenum readTarget, GLenum writeTarget, GLintp
 	}
 }
 
-void GL_APIENTRY GetUniformIndices(GLuint program, GLsizei uniformCount, const GLchar *const*uniformNames, GLuint *uniformIndices)
+void GetUniformIndices(GLuint program, GLsizei uniformCount, const GLchar *const*uniformNames, GLuint *uniformIndices)
 {
 	TRACE("(GLuint program = %d, GLsizei uniformCount = %d, const GLchar *const*uniformNames = %p, GLuint *uniformIndices = %p)",
 	      program, uniformCount, uniformNames, uniformIndices);
@@ -2505,7 +2503,7 @@ void GL_APIENTRY GetUniformIndices(GLuint program, GLsizei uniformCount, const G
 	}
 }
 
-void GL_APIENTRY GetActiveUniformsiv(GLuint program, GLsizei uniformCount, const GLuint *uniformIndices, GLenum pname, GLint *params)
+void GetActiveUniformsiv(GLuint program, GLsizei uniformCount, const GLuint *uniformIndices, GLenum pname, GLint *params)
 {
 	TRACE("(GLuint program = %d, GLsizei uniformCount = %d, const GLchar *const*uniformNames = %p, GLenum pname = 0x%X, GLuint *uniformIndices = %p)",
 	      program, uniformCount, uniformIndices, pname, uniformIndices);
@@ -2566,7 +2564,7 @@ void GL_APIENTRY GetActiveUniformsiv(GLuint program, GLsizei uniformCount, const
 	}
 }
 
-GLuint GL_APIENTRY GetUniformBlockIndex(GLuint program, const GLchar *uniformBlockName)
+GLuint GetUniformBlockIndex(GLuint program, const GLchar *uniformBlockName)
 {
 	TRACE("(GLuint program = %d, const GLchar *uniformBlockName = %p)",
 	      program, uniformBlockName);
@@ -2595,7 +2593,7 @@ GLuint GL_APIENTRY GetUniformBlockIndex(GLuint program, const GLchar *uniformBlo
 	return GL_INVALID_INDEX;
 }
 
-void GL_APIENTRY GetActiveUniformBlockiv(GLuint program, GLuint uniformBlockIndex, GLenum pname, GLint *params)
+void GetActiveUniformBlockiv(GLuint program, GLuint uniformBlockIndex, GLenum pname, GLint *params)
 {
 	TRACE("(GLuint program = %d, GLuint uniformBlockIndex = %d, GLenum pname = 0x%X, GLint *params = %p)",
 	      program, uniformBlockIndex, pname, params);
@@ -2635,7 +2633,7 @@ void GL_APIENTRY GetActiveUniformBlockiv(GLuint program, GLuint uniformBlockInde
 	}
 }
 
-void GL_APIENTRY GetActiveUniformBlockName(GLuint program, GLuint uniformBlockIndex, GLsizei bufSize, GLsizei *length, GLchar *uniformBlockName)
+void GetActiveUniformBlockName(GLuint program, GLuint uniformBlockIndex, GLsizei bufSize, GLsizei *length, GLchar *uniformBlockName)
 {
 	TRACE("(GLuint program = %d, GLuint uniformBlockIndex = %d, GLsizei bufSize = %d, GLsizei *length = %p, GLchar *uniformBlockName = %p)",
 	      program, uniformBlockIndex, bufSize, length, uniformBlockName);
@@ -2665,7 +2663,7 @@ void GL_APIENTRY GetActiveUniformBlockName(GLuint program, GLuint uniformBlockIn
 	}
 }
 
-void GL_APIENTRY UniformBlockBinding(GLuint program, GLuint uniformBlockIndex, GLuint uniformBlockBinding)
+void UniformBlockBinding(GLuint program, GLuint uniformBlockIndex, GLuint uniformBlockBinding)
 {
 	TRACE("(GLuint program = %d, GLuint uniformBlockIndex = %d, GLuint uniformBlockBinding = %d)",
 	      program, uniformBlockIndex, uniformBlockBinding);
@@ -2695,7 +2693,7 @@ void GL_APIENTRY UniformBlockBinding(GLuint program, GLuint uniformBlockIndex, G
 	}
 }
 
-void GL_APIENTRY DrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instanceCount)
+void DrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instanceCount)
 {
 	TRACE("(GLenum mode = 0x%X, GLint first = %d, GLsizei count = %d, GLsizei instanceCount = %d)",
 	      mode, first, count, instanceCount);
@@ -2733,7 +2731,7 @@ void GL_APIENTRY DrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GL
 	}
 }
 
-void GL_APIENTRY DrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instanceCount)
+void DrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instanceCount)
 {
 	TRACE("(GLenum mode = 0x%X, GLsizei count = %d, GLenum type = 0x%X, const void *indices = %p, GLsizei instanceCount = %d)",
 	      mode, count, type, indices, instanceCount);
@@ -2781,7 +2779,7 @@ void GL_APIENTRY DrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, 
 	}
 }
 
-GLsync GL_APIENTRY FenceSync(GLenum condition, GLbitfield flags)
+GLsync FenceSync(GLenum condition, GLbitfield flags)
 {
 	TRACE("(GLenum condition = 0x%X, GLbitfield flags = %X)", condition, flags);
 
@@ -2808,7 +2806,7 @@ GLsync GL_APIENTRY FenceSync(GLenum condition, GLbitfield flags)
 	return nullptr;
 }
 
-GLboolean GL_APIENTRY IsSync(GLsync sync)
+GLboolean IsSync(GLsync sync)
 {
 	TRACE("(GLsync sync = %p)", sync);
 
@@ -2827,7 +2825,7 @@ GLboolean GL_APIENTRY IsSync(GLsync sync)
 	return GL_FALSE;
 }
 
-void GL_APIENTRY DeleteSync(GLsync sync)
+void DeleteSync(GLsync sync)
 {
 	TRACE("(GLsync sync = %p)", sync);
 
@@ -2849,7 +2847,7 @@ void GL_APIENTRY DeleteSync(GLsync sync)
 	}
 }
 
-GLenum GL_APIENTRY ClientWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout)
+GLenum ClientWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout)
 {
 	TRACE("(GLsync sync = %p, GLbitfield flags = %X, GLuint64 timeout = %llu)", sync, flags, timeout);
 
@@ -2877,7 +2875,7 @@ GLenum GL_APIENTRY ClientWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeou
 	return GL_FALSE;
 }
 
-void GL_APIENTRY WaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout)
+void WaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout)
 {
 	TRACE("(GLsync sync = %p, GLbitfield flags = %X, GLuint64 timeout = %llu)", sync, flags, timeout);
 
@@ -2908,7 +2906,7 @@ void GL_APIENTRY WaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout)
 	}
 }
 
-void GL_APIENTRY GetInteger64v(GLenum pname, GLint64 *data)
+void GetInteger64v(GLenum pname, GLint64 *data)
 {
 	TRACE("(GLenum pname = 0x%X, GLint64 *data = %p)", pname, data);
 
@@ -2965,7 +2963,7 @@ void GL_APIENTRY GetInteger64v(GLenum pname, GLint64 *data)
 	}
 }
 
-void GL_APIENTRY GetSynciv(GLsync sync, GLenum pname, GLsizei bufSize, GLsizei *length, GLint *values)
+void GetSynciv(GLsync sync, GLenum pname, GLsizei bufSize, GLsizei *length, GLint *values)
 {
 	TRACE("(GLsync sync = %p, GLenum pname = 0x%X, GLsizei bufSize = %d, GLsizei *length = %p, GLint *values = %p)",
 	      sync, pname, bufSize, length, values);
@@ -2989,7 +2987,7 @@ void GL_APIENTRY GetSynciv(GLsync sync, GLenum pname, GLsizei bufSize, GLsizei *
 	}
 }
 
-void GL_APIENTRY GetInteger64i_v(GLenum target, GLuint index, GLint64 *data)
+void GetInteger64i_v(GLenum target, GLuint index, GLint64 *data)
 {
 	TRACE("(GLenum target = 0x%X, GLuint index = %d, GLint64 *data = %p)", target, index, data);
 
@@ -3048,7 +3046,7 @@ void GL_APIENTRY GetInteger64i_v(GLenum target, GLuint index, GLint64 *data)
 	}
 }
 
-void GL_APIENTRY GetBufferParameteri64v(GLenum target, GLenum pname, GLint64 *params)
+void GetBufferParameteri64v(GLenum target, GLenum pname, GLint64 *params)
 {
 	TRACE("(GLenum target = 0x%X, GLenum pname = 0x%X, GLint64 *params = %p)", target, pname, params);
 
@@ -3095,7 +3093,7 @@ void GL_APIENTRY GetBufferParameteri64v(GLenum target, GLenum pname, GLint64 *pa
 	}
 }
 
-void GL_APIENTRY GenSamplers(GLsizei count, GLuint *samplers)
+void GenSamplers(GLsizei count, GLuint *samplers)
 {
 	TRACE("(GLsizei count = %d, GLuint *samplers = %p)", count, samplers);
 
@@ -3115,7 +3113,7 @@ void GL_APIENTRY GenSamplers(GLsizei count, GLuint *samplers)
 	}
 }
 
-void GL_APIENTRY DeleteSamplers(GLsizei count, const GLuint *samplers)
+void DeleteSamplers(GLsizei count, const GLuint *samplers)
 {
 	TRACE("(GLsizei count = %d, GLuint *samplers = %p)", count, samplers);
 
@@ -3135,7 +3133,7 @@ void GL_APIENTRY DeleteSamplers(GLsizei count, const GLuint *samplers)
 	}
 }
 
-GLboolean GL_APIENTRY IsSampler(GLuint sampler)
+GLboolean IsSampler(GLuint sampler)
 {
 	TRACE("(GLuint sampler = %d)", sampler);
 
@@ -3157,7 +3155,7 @@ GLboolean GL_APIENTRY IsSampler(GLuint sampler)
 	return GL_FALSE;
 }
 
-void GL_APIENTRY BindSampler(GLuint unit, GLuint sampler)
+void BindSampler(GLuint unit, GLuint sampler)
 {
 	TRACE("(GLuint unit = %d, GLuint sampler = %d)", unit, sampler);
 
@@ -3179,7 +3177,7 @@ void GL_APIENTRY BindSampler(GLuint unit, GLuint sampler)
 	}
 }
 
-void GL_APIENTRY SamplerParameteriv(GLuint sampler, GLenum pname, const GLint *param)
+void SamplerParameteriv(GLuint sampler, GLenum pname, const GLint *param)
 {
 	TRACE("(GLuint sampler = %d, GLenum pname = 0x%X, const GLint *param = %p)",
 	      sampler, pname, param);
@@ -3207,7 +3205,7 @@ void GL_APIENTRY SamplerParameteriv(GLuint sampler, GLenum pname, const GLint *p
 	}
 }
 
-void GL_APIENTRY SamplerParameteri(GLuint sampler, GLenum pname, GLint param)
+void SamplerParameteri(GLuint sampler, GLenum pname, GLint param)
 {
 	TRACE("(GLuint sampler = %d, GLenum pname = 0x%X, GLint param = %d)",
 	      sampler, pname, param);
@@ -3215,7 +3213,7 @@ void GL_APIENTRY SamplerParameteri(GLuint sampler, GLenum pname, GLint param)
 	SamplerParameteriv(sampler, pname, &param);
 }
 
-void GL_APIENTRY SamplerParameterfv(GLuint sampler, GLenum pname, const GLfloat *param)
+void SamplerParameterfv(GLuint sampler, GLenum pname, const GLfloat *param)
 {
 	TRACE("(GLuint sampler = %d, GLenum pname = 0x%X, const GLfloat *param = %p)",
 	      sampler, pname, param);
@@ -3241,7 +3239,7 @@ void GL_APIENTRY SamplerParameterfv(GLuint sampler, GLenum pname, const GLfloat 
 	}
 }
 
-void GL_APIENTRY SamplerParameterf(GLuint sampler, GLenum pname, GLfloat param)
+void SamplerParameterf(GLuint sampler, GLenum pname, GLfloat param)
 {
 	TRACE("(GLuint sampler = %d, GLenum pname = 0x%X, GLfloat param = %f)",
 	      sampler, pname, param);
@@ -3249,7 +3247,7 @@ void GL_APIENTRY SamplerParameterf(GLuint sampler, GLenum pname, GLfloat param)
 	SamplerParameterfv(sampler, pname, &param);
 }
 
-void GL_APIENTRY GetSamplerParameteriv(GLuint sampler, GLenum pname, GLint *params)
+void GetSamplerParameteriv(GLuint sampler, GLenum pname, GLint *params)
 {
 	TRACE("(GLuint sampler = %d, GLenum pname = 0x%X, GLint *params = %p)",
 	      sampler, pname, params);
@@ -3272,7 +3270,7 @@ void GL_APIENTRY GetSamplerParameteriv(GLuint sampler, GLenum pname, GLint *para
 	}
 }
 
-void GL_APIENTRY GetSamplerParameterfv(GLuint sampler, GLenum pname, GLfloat *params)
+void GetSamplerParameterfv(GLuint sampler, GLenum pname, GLfloat *params)
 {
 	TRACE("(GLuint sampler = %d, GLenum pname = 0x%X, GLfloat *params = %p)",
 	      sampler, pname, params);
@@ -3295,7 +3293,7 @@ void GL_APIENTRY GetSamplerParameterfv(GLuint sampler, GLenum pname, GLfloat *pa
 	}
 }
 
-void GL_APIENTRY VertexAttribDivisor(GLuint index, GLuint divisor)
+void VertexAttribDivisor(GLuint index, GLuint divisor)
 {
 	TRACE("(GLuint index = %d, GLuint divisor = %d)", index, divisor);
 
@@ -3312,7 +3310,7 @@ void GL_APIENTRY VertexAttribDivisor(GLuint index, GLuint divisor)
 	}
 }
 
-void GL_APIENTRY BindTransformFeedback(GLenum target, GLuint id)
+void BindTransformFeedback(GLenum target, GLuint id)
 {
 	TRACE("(GLenum target = 0x%X, GLuint id = %d)", target, id);
 
@@ -3341,7 +3339,7 @@ void GL_APIENTRY BindTransformFeedback(GLenum target, GLuint id)
 	}
 }
 
-void GL_APIENTRY DeleteTransformFeedbacks(GLsizei n, const GLuint *ids)
+void DeleteTransformFeedbacks(GLsizei n, const GLuint *ids)
 {
 	TRACE("(GLsizei n = %d, const GLuint *ids = %p)", n, ids);
 
@@ -3371,7 +3369,7 @@ void GL_APIENTRY DeleteTransformFeedbacks(GLsizei n, const GLuint *ids)
 	}
 }
 
-void GL_APIENTRY GenTransformFeedbacks(GLsizei n, GLuint *ids)
+void GenTransformFeedbacks(GLsizei n, GLuint *ids)
 {
 	TRACE("(GLsizei n = %d, const GLuint *ids = %p)", n, ids);
 
@@ -3391,7 +3389,7 @@ void GL_APIENTRY GenTransformFeedbacks(GLsizei n, GLuint *ids)
 	}
 }
 
-GLboolean GL_APIENTRY IsTransformFeedback(GLuint id)
+GLboolean IsTransformFeedback(GLuint id)
 {
 	TRACE("(GLuint id = %d)", id);
 
@@ -3415,7 +3413,7 @@ GLboolean GL_APIENTRY IsTransformFeedback(GLuint id)
 	return GL_FALSE;
 }
 
-void GL_APIENTRY PauseTransformFeedback(void)
+void PauseTransformFeedback(void)
 {
 	TRACE("()");
 
@@ -3436,7 +3434,7 @@ void GL_APIENTRY PauseTransformFeedback(void)
 	}
 }
 
-void GL_APIENTRY ResumeTransformFeedback(void)
+void ResumeTransformFeedback(void)
 {
 	TRACE("()");
 
@@ -3457,7 +3455,7 @@ void GL_APIENTRY ResumeTransformFeedback(void)
 	}
 }
 
-void GL_APIENTRY GetProgramBinary(GLuint program, GLsizei bufSize, GLsizei *length, GLenum *binaryFormat, void *binary)
+void GetProgramBinary(GLuint program, GLsizei bufSize, GLsizei *length, GLenum *binaryFormat, void *binary)
 {
 	TRACE("(GLuint program = %d, GLsizei bufSize = %d, GLsizei *length = %p, GLenum *binaryFormat = %p, void *binary = %p)",
 	      program, bufSize, length, binaryFormat, binary);
@@ -3483,7 +3481,7 @@ void GL_APIENTRY GetProgramBinary(GLuint program, GLsizei bufSize, GLsizei *leng
 	return error(GL_INVALID_OPERATION);
 }
 
-void GL_APIENTRY ProgramBinary(GLuint program, GLenum binaryFormat, const void *binary, GLsizei length)
+void ProgramBinary(GLuint program, GLenum binaryFormat, const void *binary, GLsizei length)
 {
 	TRACE("(GLuint program = %d, GLenum binaryFormat = 0x%X, const void *binary = %p, GLsizei length = %d)",
 	      program, binaryFormat, binaryFormat, length);
@@ -3509,7 +3507,7 @@ void GL_APIENTRY ProgramBinary(GLuint program, GLenum binaryFormat, const void *
 	return error(GL_INVALID_ENUM);
 }
 
-void GL_APIENTRY ProgramParameteri(GLuint program, GLenum pname, GLint value)
+void ProgramParameteri(GLuint program, GLenum pname, GLint value)
 {
 	TRACE("(GLuint program = %d, GLenum pname = 0x%X, GLint value = %d)",
 	      program, pname, value);
@@ -3540,7 +3538,7 @@ void GL_APIENTRY ProgramParameteri(GLuint program, GLenum pname, GLint value)
 	}
 }
 
-void GL_APIENTRY InvalidateSubFramebuffer(GLenum target, GLsizei numAttachments, const GLenum *attachments, GLint x, GLint y, GLsizei width, GLsizei height)
+void InvalidateSubFramebuffer(GLenum target, GLsizei numAttachments, const GLenum *attachments, GLint x, GLint y, GLsizei width, GLsizei height)
 {
 	TRACE("(GLenum target = 0x%X, GLsizei numAttachments = %d, const GLenum *attachments = %p, GLint x = %d, GLint y = %d, GLsizei width = %d, GLsizei height = %d)",
 	      target, numAttachments, attachments, x, y, width, height);
@@ -3608,7 +3606,7 @@ void GL_APIENTRY InvalidateSubFramebuffer(GLenum target, GLsizei numAttachments,
 	}
 }
 
-void GL_APIENTRY InvalidateFramebuffer(GLenum target, GLsizei numAttachments, const GLenum *attachments)
+void InvalidateFramebuffer(GLenum target, GLsizei numAttachments, const GLenum *attachments)
 {
 	TRACE("(GLenum target = 0x%X, GLsizei numAttachments = %d, const GLenum *attachments = %p)",
 	      target, numAttachments, attachments);
@@ -3616,7 +3614,7 @@ void GL_APIENTRY InvalidateFramebuffer(GLenum target, GLsizei numAttachments, co
 	InvalidateSubFramebuffer(target, numAttachments, attachments, 0, 0, std::numeric_limits<GLsizei>::max(), std::numeric_limits<GLsizei>::max());
 }
 
-void GL_APIENTRY TexStorage2D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height)
+void TexStorage2D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height)
 {
 	TRACE("(GLenum target = 0x%X, GLsizei levels = %d, GLenum internalformat = 0x%X, GLsizei width = %d, GLsizei height = %d)",
 	      target, levels, internalformat, width, height);
@@ -3704,7 +3702,7 @@ void GL_APIENTRY TexStorage2D(GLenum target, GLsizei levels, GLenum internalform
 	}
 }
 
-void GL_APIENTRY TexStorage3D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth)
+void TexStorage3D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth)
 {
 	TRACE("(GLenum target = 0x%X, GLsizei levels = %d, GLenum internalformat = 0x%X, GLsizei width = %d, GLsizei height = %d, GLsizei depth = %d)",
 	      target, levels, internalformat, width, height, depth);
@@ -3777,7 +3775,7 @@ void GL_APIENTRY TexStorage3D(GLenum target, GLsizei levels, GLenum internalform
 	}
 }
 
-void GL_APIENTRY GetInternalformativ(GLenum target, GLenum internalformat, GLenum pname, GLsizei bufSize, GLint *params)
+void GetInternalformativ(GLenum target, GLenum internalformat, GLenum pname, GLsizei bufSize, GLint *params)
 {
 	TRACE("(GLenum target = 0x%X, GLenum internalformat = 0x%X, GLenum pname = 0x%X, GLsizei bufSize = %d, GLint *params = %p)",
 	      target, internalformat, pname, bufSize, params);

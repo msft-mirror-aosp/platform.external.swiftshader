@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <Device/Vertex.hpp>
 #include "SetupRoutine.hpp"
 
 #include "Constants.hpp"
@@ -23,6 +22,10 @@
 
 namespace sw
 {
+	extern bool complementaryDepthBuffer;
+	extern TranscendentalPrecision logPrecision;
+	extern bool leadingVertexFirst;
+
 	SetupRoutine::SetupRoutine(const SetupProcessor::State &state) : state(state)
 	{
 		routine = 0;
@@ -34,7 +37,7 @@ namespace sw
 
 	void SetupRoutine::generate()
 	{
-		Function<Int(Pointer<Byte>, Pointer<Byte>, Pointer<Byte>, Pointer<Byte>)> function;
+		Function<Bool(Pointer<Byte>, Pointer<Byte>, Pointer<Byte>, Pointer<Byte>)> function;
 		{
 			Pointer<Byte> primitive(function.Arg<0>());
 			Pointer<Byte> tri(function.Arg<1>());
@@ -51,6 +54,8 @@ namespace sw
 			const int V1 = (triangle || line) ? OFFSET(Triangle,v1) : OFFSET(Triangle,v0);
 			const int V2 = triangle ? OFFSET(Triangle,v2) : (line ? OFFSET(Triangle,v1) : OFFSET(Triangle,v0));
 
+			int pos = state.positionRegister;
+
 			Pointer<Byte> v0 = tri + V0;
 			Pointer<Byte> v1 = tri + V1;
 			Pointer<Byte> v2 = tri + V2;
@@ -58,13 +63,13 @@ namespace sw
 			Array<Int> X(16);
 			Array<Int> Y(16);
 
-			X[0] = *Pointer<Int>(v0 + OFFSET(Vertex,projected.x));
-			X[1] = *Pointer<Int>(v1 + OFFSET(Vertex,projected.x));
-			X[2] = *Pointer<Int>(v2 + OFFSET(Vertex,projected.x));
+			X[0] = *Pointer<Int>(v0 + OFFSET(Vertex,X));
+			X[1] = *Pointer<Int>(v1 + OFFSET(Vertex,X));
+			X[2] = *Pointer<Int>(v2 + OFFSET(Vertex,X));
 
-			Y[0] = *Pointer<Int>(v0 + OFFSET(Vertex,projected.y));
-			Y[1] = *Pointer<Int>(v1 + OFFSET(Vertex,projected.y));
-			Y[2] = *Pointer<Int>(v2 + OFFSET(Vertex,projected.y));
+			Y[0] = *Pointer<Int>(v0 + OFFSET(Vertex,Y));
+			Y[1] = *Pointer<Int>(v1 + OFFSET(Vertex,Y));
+			Y[2] = *Pointer<Int>(v2 + OFFSET(Vertex,Y));
 
 			Int d = 1;     // Winding direction
 
@@ -79,47 +84,56 @@ namespace sw
 				Float y1 = Float(Y[1]);
 				Float y2 = Float(Y[2]);
 
-				Float A = (y0 - y2) * x1 + (y2 - y1) * x0 + (y1 - y0) * x2;   // Area
+				Float A = (y2 - y0) * x1 + (y1 - y2) * x0 + (y0 - y1) * x2;   // Area
 
 				If(A == 0.0f)
 				{
-					Return(0);
+					Return(false);
 				}
 
-				Int w0w1w2 = *Pointer<Int>(v0 + OFFSET(Vertex, w)) ^
-				             *Pointer<Int>(v1 + OFFSET(Vertex, w)) ^
-				             *Pointer<Int>(v2 + OFFSET(Vertex, w));
+				Int w0w1w2 = *Pointer<Int>(v0 + pos * 16 + 12) ^
+							 *Pointer<Int>(v1 + pos * 16 + 12) ^
+							 *Pointer<Int>(v2 + pos * 16 + 12);
 
 				A = IfThenElse(w0w1w2 < 0, -A, A);
 
-				Bool frontFacing = (state.frontFace == VK_FRONT_FACE_COUNTER_CLOCKWISE) ? A > 0.0f : A < 0.0f;
-
-				if(state.cullMode & VK_CULL_MODE_FRONT_BIT)
+				if(state.cullMode == CULL_CLOCKWISE)
 				{
-					If(frontFacing) Return(0);
+					If(A >= 0.0f) Return(false);
 				}
-				if(state.cullMode & VK_CULL_MODE_BACK_BIT)
+				else if(state.cullMode == CULL_COUNTERCLOCKWISE)
 				{
-					If(!frontFacing) Return(0);
+					If(A <= 0.0f) Return(false);
 				}
 
-				d = IfThenElse(A > 0.0f, d, Int(0));
+				d = IfThenElse(A < 0.0f, d, Int(0));
 
-				If(frontFacing)
+				if(state.twoSidedStencil)
 				{
-					*Pointer<Byte8>(primitive + OFFSET(Primitive,clockwiseMask)) = Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
-					*Pointer<Byte8>(primitive + OFFSET(Primitive,invClockwiseMask)) = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+					If(A > 0.0f)
+					{
+						*Pointer<Byte8>(primitive + OFFSET(Primitive,clockwiseMask)) = Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
+						*Pointer<Byte8>(primitive + OFFSET(Primitive,invClockwiseMask)) = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+					}
+					Else
+					{
+						*Pointer<Byte8>(primitive + OFFSET(Primitive,clockwiseMask)) = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+						*Pointer<Byte8>(primitive + OFFSET(Primitive,invClockwiseMask)) = Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
+					}
 				}
-				Else
+
+				if(state.vFace)
 				{
-					*Pointer<Byte8>(primitive + OFFSET(Primitive,clockwiseMask)) = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-					*Pointer<Byte8>(primitive + OFFSET(Primitive,invClockwiseMask)) = Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
+					*Pointer<Float>(primitive + OFFSET(Primitive,area)) = 0.5f * A;
 				}
 			}
 			else
 			{
-				*Pointer<Byte8>(primitive + OFFSET(Primitive,clockwiseMask)) = Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
-				*Pointer<Byte8>(primitive + OFFSET(Primitive,invClockwiseMask)) = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+				if(state.twoSidedStencil)
+				{
+					*Pointer<Byte8>(primitive + OFFSET(Primitive,clockwiseMask)) = Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
+					*Pointer<Byte8>(primitive + OFFSET(Primitive,invClockwiseMask)) = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+				}
 			}
 
 			Int n = *Pointer<Int>(polygon + OFFSET(Polygon,n));
@@ -173,16 +187,13 @@ namespace sw
 				yMax = (yMax + 0x0F) >> 4;
 			}
 
+			If(yMin == yMax)
+			{
+				Return(false);
+			}
+
 			yMin = Max(yMin, *Pointer<Int>(data + OFFSET(DrawData,scissorY0)));
 			yMax = Min(yMax, *Pointer<Int>(data + OFFSET(DrawData,scissorY1)));
-
-			// If yMin and yMax are initially negative, the scissor clamping above will typically result
-			// in yMin == 0 and yMax unchanged. We bail as we don't need to rasterize this primitive, and
-			// code below assumes yMin < yMax.
-			If(yMin >= yMax)
-			{
-				Return(0);
-			}
 
 			For(Int q = 0, q < state.multiSample, q++)
 			{
@@ -252,7 +263,7 @@ namespace sw
 
 					If(yMin == yMax)
 					{
-						Return(0);
+						Return(false);
 					}
 
 					*Pointer<Short>(leftEdge + (yMin - 1) * sizeof(Primitive::Span)) = *Pointer<Short>(leftEdge + yMin * sizeof(Primitive::Span));
@@ -268,9 +279,9 @@ namespace sw
 			// Sort by minimum y
 			if(triangle)
 			{
-				Float y0 = *Pointer<Float>(v0 + OFFSET(Vertex, y));
-				Float y1 = *Pointer<Float>(v1 + OFFSET(Vertex, y));
-				Float y2 = *Pointer<Float>(v2 + OFFSET(Vertex, y));
+				Float y0 = *Pointer<Float>(v0 + pos * 16 + 4);
+				Float y1 = *Pointer<Float>(v1 + pos * 16 + 4);
+				Float y2 = *Pointer<Float>(v2 + pos * 16 + 4);
 
 				Float yMin = Min(Min(y0, y1), y2);
 
@@ -281,9 +292,9 @@ namespace sw
 			// Sort by maximum w
 			if(triangle)
 			{
-				Float w0 = *Pointer<Float>(v0 + OFFSET(Vertex, w));
-				Float w1 = *Pointer<Float>(v1 + OFFSET(Vertex, w));
-				Float w2 = *Pointer<Float>(v2 + OFFSET(Vertex, w));
+				Float w0 = *Pointer<Float>(v0 + pos * 16 + 12);
+				Float w1 = *Pointer<Float>(v1 + pos * 16 + 12);
+				Float w2 = *Pointer<Float>(v2 + pos * 16 + 12);
 
 				Float wMax = Max(Max(w0, w1), w2);
 
@@ -291,14 +302,9 @@ namespace sw
 				conditionalRotate2(wMax == w2, v0, v1, v2);
 			}
 
-			*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordX)) =
-				*Pointer<Float>(v0 + OFFSET(Vertex, x));
-			*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordY)) =
-				*Pointer<Float>(v0 + OFFSET(Vertex, y));
-
-			Float w0 = *Pointer<Float>(v0 + OFFSET(Vertex, w));
-			Float w1 = *Pointer<Float>(v1 + OFFSET(Vertex, w));
-			Float w2 = *Pointer<Float>(v2 + OFFSET(Vertex, w));
+			Float w0 = *Pointer<Float>(v0 + pos * 16 + 12);
+			Float w1 = *Pointer<Float>(v1 + pos * 16 + 12);
+			Float w2 = *Pointer<Float>(v2 + pos * 16 + 12);
 
 			Float4 w012;
 
@@ -307,15 +313,15 @@ namespace sw
 			w012.z = w2;
 			w012.w = 1;
 
-			Float rhw0 = *Pointer<Float>(v0 + OFFSET(Vertex,projected.w));
+			Float rhw0 = *Pointer<Float>(v0 + OFFSET(Vertex,W));
 
-			Int X0 = *Pointer<Int>(v0 + OFFSET(Vertex,projected.x));
-			Int X1 = *Pointer<Int>(v1 + OFFSET(Vertex,projected.x));
-			Int X2 = *Pointer<Int>(v2 + OFFSET(Vertex,projected.x));
+			Int X0 = *Pointer<Int>(v0 + OFFSET(Vertex,X));
+			Int X1 = *Pointer<Int>(v1 + OFFSET(Vertex,X));
+			Int X2 = *Pointer<Int>(v2 + OFFSET(Vertex,X));
 
-			Int Y0 = *Pointer<Int>(v0 + OFFSET(Vertex,projected.y));
-			Int Y1 = *Pointer<Int>(v1 + OFFSET(Vertex,projected.y));
-			Int Y2 = *Pointer<Int>(v2 + OFFSET(Vertex,projected.y));
+			Int Y0 = *Pointer<Int>(v0 + OFFSET(Vertex,Y));
+			Int Y1 = *Pointer<Int>(v1 + OFFSET(Vertex,Y));
+			Int Y2 = *Pointer<Int>(v2 + OFFSET(Vertex,Y));
 
 			if(line)
 			{
@@ -390,9 +396,9 @@ namespace sw
 
 			if(state.interpolateZ)
 			{
-				Float z0 = *Pointer<Float>(v0 + OFFSET(Vertex,projected.z));
-				Float z1 = *Pointer<Float>(v1 + OFFSET(Vertex,projected.z));
-				Float z2 = *Pointer<Float>(v2 + OFFSET(Vertex,projected.z));
+				Float z0 = *Pointer<Float>(v0 + OFFSET(Vertex,Z));
+				Float z1 = *Pointer<Float>(v1 + OFFSET(Vertex,Z));
+				Float z2 = *Pointer<Float>(v2 + OFFSET(Vertex,Z));
 
 				z1 -= z0;
 				z2 -= z0;
@@ -427,10 +433,15 @@ namespace sw
 
 				Float c = z0;
 
-				if(state.applySlopeDepthBias)
+				if(state.isDrawTriangle && state.slopeDepthBias)
 				{
 					Float bias = Max(Abs(Float(A.x)), Abs(Float(B.x)));
 					bias *= *Pointer<Float>(data + OFFSET(DrawData,slopeDepthBias));
+
+					if(complementaryDepthBuffer)
+					{
+						bias = -bias;
+					}
 
 					c += bias;
 				}
@@ -440,33 +451,74 @@ namespace sw
 				*Pointer<Float4>(primitive + OFFSET(Primitive,z.C), 16) = C;
 			}
 
-			for (int interpolant = 0; interpolant < MAX_INTERFACE_COMPONENTS; interpolant++)
+			for(int interpolant = 0; interpolant < MAX_FRAGMENT_INPUTS; interpolant++)
 			{
-				if (state.gradient[interpolant].Type != SpirvShader::ATTRIBTYPE_UNUSED)
+				for(int component = 0; component < 4; component++)
 				{
-					setupGradient(primitive, tri, w012, M, v0, v1, v2,
-							OFFSET(Vertex, v[interpolant]),
-							OFFSET(Primitive, V[interpolant]),
-							state.gradient[interpolant].Flat,
-							!state.gradient[interpolant].NoPerspective, 0);
+					int attribute = state.gradient[interpolant][component].attribute;
+					bool flat = state.gradient[interpolant][component].flat;
+					bool wrap = state.gradient[interpolant][component].wrap;
+
+					if(attribute != Unused)
+					{
+						setupGradient(primitive, tri, w012, M, v0, v1, v2, OFFSET(Vertex,v[attribute][component]), OFFSET(Primitive,V[interpolant][component]), flat, point, state.perspective, wrap, component);
+					}
 				}
 			}
 
-			Return(1);
+			Return(true);
 		}
 
 		routine = function("SetupRoutine");
 	}
 
-	void SetupRoutine::setupGradient(Pointer<Byte> &primitive, Pointer<Byte> &triangle, Float4 &w012, Float4 (&m)[3], Pointer<Byte> &v0, Pointer<Byte> &v1, Pointer<Byte> &v2, int attribute, int planeEquation, bool flat, bool perspective, int component)
+	void SetupRoutine::setupGradient(Pointer<Byte> &primitive, Pointer<Byte> &triangle, Float4 &w012, Float4 (&m)[3], Pointer<Byte> &v0, Pointer<Byte> &v1, Pointer<Byte> &v2, int attribute, int planeEquation, bool flat, bool sprite, bool perspective, bool wrap, int component)
 	{
+		Float4 i;
+
 		if(!flat)
 		{
-			Float4 i;
-			i.x = *Pointer<Float>(v0 + attribute);
-			i.y = *Pointer<Float>(v1 + attribute);
-			i.z = *Pointer<Float>(v2 + attribute);
-			i.w = 0;
+			if(!sprite)
+			{
+				i.x = *Pointer<Float>(v0 + attribute);
+				i.y = *Pointer<Float>(v1 + attribute);
+				i.z = *Pointer<Float>(v2 + attribute);
+				i.w = 0;
+			}
+			else
+			{
+				if(component == 0) i.x = 0.5f;
+				if(component == 1) i.x = 0.5f;
+				if(component == 2) i.x = 0.0f;
+				if(component == 3) i.x = 1.0f;
+
+				if(component == 0) i.y = 1.0f;
+				if(component == 1) i.y = 0.5f;
+				if(component == 2) i.y = 0.0f;
+				if(component == 3) i.y = 1.0f;
+
+				if(component == 0) i.z = 0.5f;
+				if(component == 1) i.z = 1.0f;
+				if(component == 2) i.z = 0.0f;
+				if(component == 3) i.z = 1.0f;
+
+				i.w = 0;
+			}
+
+			if(wrap)
+			{
+				Float m;
+
+				m = *Pointer<Float>(v0 + attribute);
+				m = Max(m, *Pointer<Float>(v1 + attribute));
+				m = Max(m, *Pointer<Float>(v2 + attribute));
+				m -= 0.5f;
+
+				// TODO: Vectorize
+				If(Float(i.x) < m) i.x = i.x + 1.0f;
+				If(Float(i.y) < m) i.y = i.y + 1.0f;
+				If(Float(i.z) < m) i.z = i.z + 1.0f;
+			}
 
 			if(!perspective)
 			{
@@ -489,7 +541,7 @@ namespace sw
 		}
 		else
 		{
-			int leadingVertex = OFFSET(Triangle,v0);
+			int leadingVertex = leadingVertexFirst ? OFFSET(Triangle,v0) : OFFSET(Triangle,v2);
 			Float C = *Pointer<Float>(triangle + leadingVertex + attribute);
 
 			*Pointer<Float4>(primitive + planeEquation + 0, 16) = Float4(0, 0, 0, 0);
@@ -603,7 +655,7 @@ namespace sw
 		#endif
 	}
 
-	std::shared_ptr<Routine> SetupRoutine::getRoutine()
+	Routine *SetupRoutine::getRoutine()
 	{
 		return routine;
 	}

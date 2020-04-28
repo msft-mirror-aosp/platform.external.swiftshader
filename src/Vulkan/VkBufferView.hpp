@@ -16,32 +16,27 @@
 #define VK_BUFFER_VIEW_HPP_
 
 #include "VkObject.hpp"
-#include "VkFormat.h"
-#include "VkImageView.hpp"
 
 namespace vk
 {
 
-class Buffer;
-
 class BufferView : public Object<BufferView, VkBufferView>
 {
 public:
-	BufferView(const VkBufferViewCreateInfo* pCreateInfo, void* mem);
+	BufferView(const VkBufferViewCreateInfo* pCreateInfo, void* mem) :
+		buffer(pCreateInfo->buffer), format(pCreateInfo->format), offset(pCreateInfo->offset), range(pCreateInfo->range)
+	{
+	}
+
+	~BufferView() = delete;
 
 	static size_t ComputeRequiredAllocationSize(const VkBufferViewCreateInfo* pCreateInfo)
 	{
 		return 0;
 	}
 
-	void *getPointer() const;
-	uint32_t getElementCount() const { return static_cast<uint32_t>(range / Format(format).bytes()); }
-	uint32_t getRangeInBytes() const { return static_cast<uint32_t>(range); }
-	VkFormat getFormat() const { return format; }
-
-	const uint32_t id = ImageView::nextID++;	// ID space for sampling function cache, shared with imageviews
 private:
-	Buffer      *buffer;
+	VkBuffer     buffer;
 	VkFormat     format;
 	VkDeviceSize offset;
 	VkDeviceSize range;
@@ -49,7 +44,7 @@ private:
 
 static inline BufferView* Cast(VkBufferView object)
 {
-	return BufferView::Cast(object);
+	return reinterpret_cast<BufferView*>(object);
 }
 
 } // namespace vk

@@ -57,21 +57,14 @@ void *allocateRaw(size_t bytes, size_t alignment)
 	ASSERT((alignment & (alignment - 1)) == 0);   // Power of 2 alignment.
 
 	#if defined(LINUX_ENABLE_NAMED_MMAP)
-		if(alignment < sizeof(void*))
+		void *allocation;
+		int result = posix_memalign(&allocation, alignment, bytes);
+		if(result != 0)
 		{
-			return malloc(bytes);
+			errno = result;
+			allocation = nullptr;
 		}
-		else
-		{
-			void *allocation;
-			int result = posix_memalign(&allocation, alignment, bytes);
-			if(result != 0)
-			{
-				errno = result;
-				allocation = nullptr;
-			}
-			return allocation;
-		}
+		return allocation;
 	#else
 		unsigned char *block = new unsigned char[bytes + sizeof(Allocation) + alignment];
 		unsigned char *aligned = nullptr;
@@ -194,7 +187,7 @@ void *allocateExecutable(size_t bytes)
 {
 	size_t pageSize = memoryPageSize();
 	size_t length = roundUp(bytes, pageSize);
-	void *mapping = nullptr;
+	void *mapping;
 
 	#if defined(LINUX_ENABLE_NAMED_MMAP)
 		// Try to name the memory region for the executable code,
@@ -218,7 +211,7 @@ void *allocateExecutable(size_t bytes)
 		}
 	#elif defined(__Fuchsia__)
 		zx_handle_t vmo;
-		if (zx_vmo_create(length, 0, &vmo) != ZX_OK) {
+		if (zx_vmo_create(length, ZX_VMO_NON_RESIZABLE, &vmo) != ZX_OK) {
 			return nullptr;
 		}
 		if (zx_vmo_replace_as_executable(vmo, ZX_HANDLE_INVALID, &vmo) != ZX_OK) {
@@ -233,28 +226,24 @@ void *allocateExecutable(size_t bytes)
 			return nullptr;
 		}
 
-		// zx_vmar_map() returns page-aligned address.
-		ASSERT(roundUp(reservation, pageSize) == reservation);
+		zx_vaddr_t alignedReservation = roundUp(reservation, pageSize);
+		mapping = reinterpret_cast<void*>(alignedReservation);
 
-		mapping = reinterpret_cast<void*>(reservation);
-	#elif defined(__APPLE__)
-		// On macOS 10.14 and higher, executables that are code signed with the
-		// "runtime" option cannot execute writable memory by default. They can opt
-		// into this capability by specifying the "com.apple.security.cs.allow-jit"
-		// code signing entitlement and allocating the region with the MAP_JIT flag.
-		mapping = mmap(nullptr, length, PROT_READ | PROT_WRITE,
-		               MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT, -1, 0);
-
-		if(mapping == MAP_FAILED)
-		{
-			// Retry without MAP_JIT (for older macOS versions).
-			mapping = mmap(nullptr, length, PROT_READ | PROT_WRITE,
-			               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		// Unmap extra memory reserved before the block.
+		if (alignedReservation != reservation) {
+			size_t prefix_size = alignedReservation - reservation;
+			status =
+				zx_vmar_unmap(zx_vmar_root_self(), reservation, prefix_size);
+			ASSERT(status == ZX_OK);
+			length -= prefix_size;
 		}
 
-		if(mapping == MAP_FAILED)
-		{
-			mapping = nullptr;
+		// Unmap extra memory at the end.
+		if (length > bytes) {
+			status = zx_vmar_unmap(
+				zx_vmar_root_self(), alignedReservation + bytes,
+				length - bytes);
+			ASSERT(status == ZX_OK);
 		}
 	#else
 		mapping = allocate(length, pageSize);
@@ -269,12 +258,10 @@ void markExecutable(void *memory, size_t bytes)
 		unsigned long oldProtection;
 		VirtualProtect(memory, bytes, PAGE_EXECUTE_READ, &oldProtection);
 	#elif defined(__Fuchsia__)
-		size_t pageSize = memoryPageSize();
-		size_t length = roundUp(bytes, pageSize);
 		zx_status_t status = zx_vmar_protect(
 			zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_EXECUTE,
-			reinterpret_cast<zx_vaddr_t>(memory), length);
-		ASSERT(status == ZX_OK);
+			reinterpret_cast<zx_vaddr_t>(memory), bytes);
+	    ASSERT(status != ZX_OK);
 	#else
 		mprotect(memory, bytes, PROT_READ | PROT_EXEC);
 	#endif
@@ -286,16 +273,13 @@ void deallocateExecutable(void *memory, size_t bytes)
 		unsigned long oldProtection;
 		VirtualProtect(memory, bytes, PAGE_READWRITE, &oldProtection);
 		deallocate(memory);
-	#elif defined(LINUX_ENABLE_NAMED_MMAP) || defined(__APPLE__)
+	#elif defined(LINUX_ENABLE_NAMED_MMAP)
 		size_t pageSize = memoryPageSize();
 		size_t length = (bytes + pageSize - 1) & ~(pageSize - 1);
 		munmap(memory, length);
 	#elif defined(__Fuchsia__)
-		size_t pageSize = memoryPageSize();
-		size_t length = roundUp(bytes, pageSize);
-		zx_status_t status =  zx_vmar_unmap(
-		    zx_vmar_root_self(), reinterpret_cast<zx_vaddr_t>(memory), length);
-		ASSERT(status == ZX_OK);
+	    zx_vmar_unmap(zx_vmar_root_self(), reinterpret_cast<zx_vaddr_t>(memory),
+			          bytes);
 	#else
 		mprotect(memory, bytes, PROT_READ | PROT_WRITE);
 		deallocate(memory);

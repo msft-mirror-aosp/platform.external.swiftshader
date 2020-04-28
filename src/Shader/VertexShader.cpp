@@ -208,7 +208,6 @@ namespace sw
 		analyzeSamplers();
 		analyzeCallSites();
 		analyzeIndirectAddressing();
-		analyzeLimits();
 	}
 
 	void VertexShader::analyzeInput()

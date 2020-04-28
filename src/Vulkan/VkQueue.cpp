@@ -16,115 +16,28 @@
 #include "VkFence.hpp"
 #include "VkQueue.hpp"
 #include "VkSemaphore.hpp"
-#include "WSI/VkSwapchainKHR.hpp"
 #include "Device/Renderer.hpp"
-
-#include "marl/defer.h"
-#include "marl/scheduler.h"
-#include "marl/thread.h"
-#include "marl/trace.h"
-
-#include <cstring>
-
-namespace
-{
-
-VkSubmitInfo* DeepCopySubmitInfo(uint32_t submitCount, const VkSubmitInfo* pSubmits)
-{
-	size_t submitSize = sizeof(VkSubmitInfo) * submitCount;
-	size_t totalSize = submitSize;
-	for(uint32_t i = 0; i < submitCount; i++)
-	{
-		totalSize += pSubmits[i].waitSemaphoreCount * sizeof(VkSemaphore);
-		totalSize += pSubmits[i].waitSemaphoreCount * sizeof(VkPipelineStageFlags);
-		totalSize += pSubmits[i].signalSemaphoreCount * sizeof(VkSemaphore);
-		totalSize += pSubmits[i].commandBufferCount * sizeof(VkCommandBuffer);
-	}
-
-	uint8_t* mem = static_cast<uint8_t*>(
-		vk::allocate(totalSize, vk::REQUIRED_MEMORY_ALIGNMENT, vk::DEVICE_MEMORY, vk::Fence::GetAllocationScope()));
-
-	auto submits = new (mem) VkSubmitInfo[submitCount];
-	memcpy(mem, pSubmits, submitSize);
-	mem += submitSize;
-
-	for(uint32_t i = 0; i < submitCount; i++)
-	{
-		size_t size = pSubmits[i].waitSemaphoreCount * sizeof(VkSemaphore);
-		submits[i].pWaitSemaphores = reinterpret_cast<const VkSemaphore*>(mem);
-		memcpy(mem, pSubmits[i].pWaitSemaphores, size);
-		mem += size;
-
-		size = pSubmits[i].waitSemaphoreCount * sizeof(VkPipelineStageFlags);
-		submits[i].pWaitDstStageMask = reinterpret_cast<const VkPipelineStageFlags*>(mem);
-		memcpy(mem, pSubmits[i].pWaitDstStageMask, size);
-		mem += size;
-
-		size = pSubmits[i].signalSemaphoreCount * sizeof(VkSemaphore);
-		submits[i].pSignalSemaphores = reinterpret_cast<const VkSemaphore*>(mem);
-		memcpy(mem, pSubmits[i].pSignalSemaphores, size);
-		mem += size;
-
-		size = pSubmits[i].commandBufferCount * sizeof(VkCommandBuffer);
-		submits[i].pCommandBuffers = reinterpret_cast<const VkCommandBuffer*>(mem);
-		memcpy(mem, pSubmits[i].pCommandBuffers, size);
-		mem += size;
-	}
-
-	return submits;
-}
-
-} // anonymous namespace
 
 namespace vk
 {
 
-Queue::Queue(Device* device, marl::Scheduler *scheduler) : device(device)
+Queue::Queue(uint32_t pFamilyIndex, float pPriority) : familyIndex(pFamilyIndex), priority(pPriority)
 {
-	queueThread = std::thread(&Queue::taskLoop, this, scheduler);
+	context = new sw::Context();
+	renderer = new sw::Renderer(context, sw::OpenGL, true);
 }
 
-Queue::~Queue()
+void Queue::destroy()
 {
-	Task task;
-	task.type = Task::KILL_THREAD;
-	pending.put(task);
-
-	queueThread.join();
-	ASSERT_MSG(pending.count() == 0, "queue has work after worker thread shutdown");
-
-	garbageCollect();
+	delete context;
+	delete renderer;
 }
 
-VkResult Queue::submit(uint32_t submitCount, const VkSubmitInfo* pSubmits, Fence* fence)
+void Queue::submit(uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)
 {
-	garbageCollect();
-
-	Task task;
-	task.submitCount = submitCount;
-	task.pSubmits = DeepCopySubmitInfo(submitCount, pSubmits);
-	task.events = fence;
-
-	if(task.events)
+	for(uint32_t i = 0; i < submitCount; i++)
 	{
-		task.events->start();
-	}
-
-	pending.put(task);
-
-	return VK_SUCCESS;
-}
-
-void Queue::submitQueue(const Task& task)
-{
-	if (renderer == nullptr)
-	{
-		renderer.reset(new sw::Renderer(device));
-	}
-
-	for(uint32_t i = 0; i < task.submitCount; i++)
-	{
-		auto& submitInfo = task.pSubmits[i];
+		auto& submitInfo = pSubmits[i];
 		for(uint32_t j = 0; j < submitInfo.waitSemaphoreCount; j++)
 		{
 			vk::Cast(submitInfo.pWaitSemaphores[j])->wait(submitInfo.pWaitDstStageMask[j]);
@@ -132,8 +45,7 @@ void Queue::submitQueue(const Task& task)
 
 		{
 			CommandBuffer::ExecutionState executionState;
-			executionState.renderer = renderer.get();
-			executionState.events = task.events;
+			executionState.renderer = renderer;
 			for(uint32_t j = 0; j < submitInfo.commandBufferCount; j++)
 			{
 				vk::Cast(submitInfo.pCommandBuffers[j])->submit(executionState);
@@ -146,90 +58,19 @@ void Queue::submitQueue(const Task& task)
 		}
 	}
 
-	if (task.pSubmits)
+	// FIXME (b/117835459): signal the fence only once the work is completed
+	if(fence != VK_NULL_HANDLE)
 	{
-		toDelete.put(task.pSubmits);
-	}
-
-	if(task.events)
-	{
-		// TODO: fix renderer signaling so that work submitted separately from (but before) a fence
-		// is guaranteed complete by the time the fence signals.
-		renderer->synchronize();
-		task.events->finish();
+		vk::Cast(fence)->signal();
 	}
 }
 
-void Queue::taskLoop(marl::Scheduler* scheduler)
+void Queue::waitIdle()
 {
-	marl::Thread::setName("Queue<%p>", this);
-	scheduler->bind();
-	defer(scheduler->unbind());
+	// equivalent to submitting a fence to a queue and waiting
+	// with an infinite timeout for that fence to signal
 
-	while(true)
-	{
-		Task task = pending.take();
-
-		switch(task.type)
-		{
-		case Task::KILL_THREAD:
-			ASSERT_MSG(pending.count() == 0, "queue has remaining work!");
-			return;
-		case Task::SUBMIT_QUEUE:
-			submitQueue(task);
-			break;
-		default:
-			UNIMPLEMENTED("task.type %d", static_cast<int>(task.type));
-			break;
-		}
-	}
+	// FIXME (b/117835459): implement once we have working fences
 }
-
-VkResult Queue::waitIdle()
-{
-	// Wait for task queue to flush.
-	sw::WaitGroup wg;
-	wg.add();
-
-	Task task;
-	task.events = &wg;
-	pending.put(task);
-
-	wg.wait();
-
-	garbageCollect();
-
-	return VK_SUCCESS;
-}
-
-void Queue::garbageCollect()
-{
-	while (true)
-	{
-		auto v = toDelete.tryTake();
-		if (!v.second) { break; }
-		vk::deallocate(v.first, DEVICE_MEMORY);
-	}
-}
-
-#ifndef __ANDROID__
-void Queue::present(const VkPresentInfoKHR* presentInfo)
-{
-	// This is a hack to deal with screen tearing for now.
-	// Need to correctly implement threading using VkSemaphore
-	// to get rid of it. b/132458423
-	waitIdle();
-
-	for(uint32_t i = 0; i < presentInfo->waitSemaphoreCount; i++)
-	{
-		vk::Cast(presentInfo->pWaitSemaphores[i])->wait();
-	}
-
-	for(uint32_t i = 0; i < presentInfo->swapchainCount; i++)
-	{
-		vk::Cast(presentInfo->pSwapchains[i])->present(presentInfo->pImageIndices[i]);
-	}
-}
-#endif
 
 } // namespace vk

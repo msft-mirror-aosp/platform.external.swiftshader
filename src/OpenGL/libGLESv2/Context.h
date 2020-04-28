@@ -105,7 +105,6 @@ enum
 	MAX_UNIFORM_BUFFER_BINDINGS = sw::MAX_UNIFORM_BUFFER_BINDINGS,
 	UNIFORM_BUFFER_OFFSET_ALIGNMENT = 4,
 	NUM_PROGRAM_BINARY_FORMATS = 0,
-	MAX_SHADER_CALL_STACK_SIZE = sw::MAX_SHADER_CALL_STACK_SIZE,
 };
 
 const GLenum compressedTextureFormats[] =
@@ -410,7 +409,6 @@ struct State
 	gl::BindingPointer<Buffer> pixelPackBuffer;
 	gl::BindingPointer<Buffer> pixelUnpackBuffer;
 	gl::BindingPointer<Buffer> genericUniformBuffer;
-	gl::BindingPointer<Buffer> genericTransformFeedbackBuffer;
 	BufferBinding uniformBuffers[MAX_UNIFORM_BUFFER_BINDINGS];
 
 	GLuint readFramebuffer;
@@ -641,7 +639,6 @@ public:
 	GLenum getPixels(const GLvoid **data, GLenum type, GLsizei imageSize) const;
 	bool getBuffer(GLenum target, es2::Buffer **buffer) const;
 	Program *getCurrentProgram() const;
-	Texture *getTargetTexture(GLenum target) const;
 	Texture2D *getTexture2D() const;
 	Texture2D *getTexture2D(GLenum target) const;
 	Texture3D *getTexture3D() const;
@@ -779,17 +776,12 @@ class ContextPtr {
 public:
 	explicit ContextPtr(Context *context) : ptr(context)
 	{
-		if (ptr) { ptr->getResourceLock()->lock(); }
-	}
+		if (ptr) ptr->getResourceLock()->lock();
+    }
 
 	~ContextPtr() {
-		if (ptr) { ptr->getResourceLock()->unlock(); }
+		if (ptr) ptr->getResourceLock()->unlock();
 	}
-
-	ContextPtr(ContextPtr const &) = delete;
-	ContextPtr & operator=(ContextPtr const &) = delete;
-	ContextPtr(ContextPtr && other) : ptr(other.ptr) { other.ptr = nullptr; }
-	ContextPtr & operator=(ContextPtr && other) { ptr = other.ptr; other.ptr = nullptr; return *this; }
 
 	Context *operator ->() { return ptr; }
 	operator bool() const { return ptr != nullptr; }

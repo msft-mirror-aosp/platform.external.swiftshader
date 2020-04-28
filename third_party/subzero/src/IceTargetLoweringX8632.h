@@ -52,8 +52,7 @@ protected:
   void _sub_sp(Operand *Adjustment);
   void _link_bp();
   void _unlink_bp();
-  void _push_reg(RegNumT RegNum);
-  void _pop_reg(RegNumT RegNum);
+  void _push_reg(Variable *Reg);
 
   void initRebasePtr();
   void initSandbox();

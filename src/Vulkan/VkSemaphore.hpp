@@ -25,6 +25,8 @@ class Semaphore : public Object<Semaphore, VkSemaphore>
 public:
 	Semaphore(const VkSemaphoreCreateInfo* pCreateInfo, void* mem) {}
 
+	~Semaphore() = delete;
+
 	static size_t ComputeRequiredAllocationSize(const VkSemaphoreCreateInfo* pCreateInfo)
 	{
 		return 0;
@@ -52,7 +54,7 @@ private:
 
 static inline Semaphore* Cast(VkSemaphore object)
 {
-	return Semaphore::Cast(object);
+	return reinterpret_cast<Semaphore*>(object);
 }
 
 } // namespace vk
