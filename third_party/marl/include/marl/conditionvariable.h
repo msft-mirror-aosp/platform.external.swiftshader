@@ -15,13 +15,14 @@
 #ifndef marl_condition_variable_h
 #define marl_condition_variable_h
 
-#include "containers.h"
 #include "debug.h"
+#include "defer.h"
 #include "scheduler.h"
 
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <unordered_set>
 
 namespace marl {
 
@@ -33,6 +34,8 @@ namespace marl {
 // thread will work on other tasks until the ConditionVariable is unblocked.
 class ConditionVariable {
  public:
+  inline ConditionVariable();
+
   // notify_one() notifies and potentially unblocks one waiting fiber or thread.
   inline void notify_one();
 
@@ -43,27 +46,51 @@ class ConditionVariable {
   // wait() blocks the current fiber or thread until the predicate is satisfied
   // and the ConditionVariable is notified.
   template <typename Predicate>
-  inline void wait(std::unique_lock<std::mutex>& lock, Predicate pred);
+  inline void wait(std::unique_lock<std::mutex>& lock, Predicate&& pred);
+
+  // wait_for() blocks the current fiber or thread until the predicate is
+  // satisfied, and the ConditionVariable is notified, or the timeout has been
+  // reached. Returns false if pred still evaluates to false after the timeout
+  // has been reached, otherwise true.
+  template <typename Rep, typename Period, typename Predicate>
+  bool wait_for(std::unique_lock<std::mutex>& lock,
+                const std::chrono::duration<Rep, Period>& duration,
+                Predicate&& pred);
+
+  // wait_until() blocks the current fiber or thread until the predicate is
+  // satisfied, and the ConditionVariable is notified, or the timeout has been
+  // reached. Returns false if pred still evaluates to false after the timeout
+  // has been reached, otherwise true.
+  template <typename Clock, typename Duration, typename Predicate>
+  bool wait_until(std::unique_lock<std::mutex>& lock,
+                  const std::chrono::time_point<Clock, Duration>& timeout,
+                  Predicate&& pred);
 
  private:
+  ConditionVariable(const ConditionVariable&) = delete;
+  ConditionVariable(ConditionVariable&&) = delete;
+  ConditionVariable& operator=(const ConditionVariable&) = delete;
+  ConditionVariable& operator=(ConditionVariable&&) = delete;
+
   std::mutex mutex;
-  containers::vector<Scheduler::Fiber*, 4> waiting;
+  std::unordered_set<Scheduler::Fiber*> waiting;
   std::condition_variable condition;
   std::atomic<int> numWaiting = {0};
   std::atomic<int> numWaitingOnCondition = {0};
 };
 
+ConditionVariable::ConditionVariable() {}
+
 void ConditionVariable::notify_one() {
   if (numWaiting == 0) {
     return;
   }
-  std::unique_lock<std::mutex> lock(mutex);
-  if (waiting.size() > 0) {
-    auto fiber = waiting.back();
-    waiting.pop_back();
-    fiber->schedule();
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    for (auto fiber : waiting) {
+      fiber->notify();
+    }
   }
-  lock.unlock();
   if (numWaitingOnCondition > 0) {
     condition.notify_one();
   }
@@ -73,21 +100,20 @@ void ConditionVariable::notify_all() {
   if (numWaiting == 0) {
     return;
   }
-  std::unique_lock<std::mutex> lock(mutex);
-  while (waiting.size() > 0) {
-    auto fiber = waiting.back();
-    waiting.pop_back();
-    fiber->schedule();
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    for (auto fiber : waiting) {
+      fiber->notify();
+    }
   }
-  lock.unlock();
   if (numWaitingOnCondition > 0) {
     condition.notify_all();
   }
 }
 
 template <typename Predicate>
-void ConditionVariable::wait(std::unique_lock<std::mutex>& dataLock,
-                             Predicate pred) {
+void ConditionVariable::wait(std::unique_lock<std::mutex>& lock,
+                             Predicate&& pred) {
   if (pred()) {
     return;
   }
@@ -95,23 +121,65 @@ void ConditionVariable::wait(std::unique_lock<std::mutex>& dataLock,
   if (auto fiber = Scheduler::Fiber::current()) {
     // Currently executing on a scheduler fiber.
     // Yield to let other tasks run that can unblock this fiber.
-    while (!pred()) {
-      mutex.lock();
-      waiting.push_back(fiber);
-      mutex.unlock();
+    mutex.lock();
+    waiting.emplace(fiber);
+    mutex.unlock();
 
-      dataLock.unlock();
-      fiber->yield();
-      dataLock.lock();
-    }
+    fiber->wait(lock, pred);
+
+    mutex.lock();
+    waiting.erase(fiber);
+    mutex.unlock();
   } else {
     // Currently running outside of the scheduler.
     // Delegate to the std::condition_variable.
     numWaitingOnCondition++;
-    condition.wait(dataLock, pred);
+    condition.wait(lock, pred);
     numWaitingOnCondition--;
   }
   numWaiting--;
+}
+
+template <typename Rep, typename Period, typename Predicate>
+bool ConditionVariable::wait_for(
+    std::unique_lock<std::mutex>& lock,
+    const std::chrono::duration<Rep, Period>& duration,
+    Predicate&& pred) {
+  return wait_until(lock, std::chrono::system_clock::now() + duration, pred);
+}
+
+template <typename Clock, typename Duration, typename Predicate>
+bool ConditionVariable::wait_until(
+    std::unique_lock<std::mutex>& lock,
+    const std::chrono::time_point<Clock, Duration>& timeout,
+    Predicate&& pred) {
+  if (pred()) {
+    return true;
+  }
+  numWaiting++;
+  defer(numWaiting--);
+
+  if (auto fiber = Scheduler::Fiber::current()) {
+    // Currently executing on a scheduler fiber.
+    // Yield to let other tasks run that can unblock this fiber.
+    mutex.lock();
+    waiting.emplace(fiber);
+    mutex.unlock();
+
+    auto res = fiber->wait(lock, timeout, pred);
+
+    mutex.lock();
+    waiting.erase(fiber);
+    mutex.unlock();
+
+    return res;
+  } else {
+    // Currently running outside of the scheduler.
+    // Delegate to the std::condition_variable.
+    numWaitingOnCondition++;
+    defer(numWaitingOnCondition--);
+    return condition.wait_until(lock, timeout, pred);
+  }
 }
 
 }  // namespace marl
