@@ -187,8 +187,13 @@ class IRContext {
   inline IteratorRange<Module::inst_iterator> debugs3();
   inline IteratorRange<Module::const_inst_iterator> debugs3() const;
 
-  // Clears all debug instructions (excluding OpLine & OpNoLine).
-  inline void debug_clear();
+  // Iterators for debug info instructions (excluding OpLine & OpNoLine)
+  // contained in this module.  These are OpExtInst for OpenCL.DebugInfo.100
+  // or DebugInfo extension placed between section 9 and 10.
+  inline Module::inst_iterator ext_inst_debuginfo_begin();
+  inline Module::inst_iterator ext_inst_debuginfo_end();
+  inline IteratorRange<Module::inst_iterator> ext_inst_debuginfo();
+  inline IteratorRange<Module::const_inst_iterator> ext_inst_debuginfo() const;
 
   // Add |capability| to the module, if it is not already enabled.
   inline void AddCapability(SpvCapability capability);
@@ -199,6 +204,7 @@ class IRContext {
   inline void AddExtension(const std::string& ext_name);
   inline void AddExtension(std::unique_ptr<Instruction>&& e);
   // Appends an extended instruction set instruction to this module.
+  inline void AddExtInstImport(const std::string& name);
   inline void AddExtInstImport(std::unique_ptr<Instruction>&& e);
   // Set the memory model for this module.
   inline void SetMemoryModel(std::unique_ptr<Instruction>&& m);
@@ -217,6 +223,8 @@ class IRContext {
   // Appends a debug 3 instruction (OpModuleProcessed) to this module.
   // This is due to decision by the SPIR Working Group, pending publication.
   inline void AddDebug3Inst(std::unique_ptr<Instruction>&& d);
+  // Appends a OpExtInst for DebugInfo to this module.
+  inline void AddExtInstDebugInfo(std::unique_ptr<Instruction>&& d);
   // Appends an annotation instruction to this module.
   inline void AddAnnotationInst(std::unique_ptr<Instruction>&& a);
   // Appends a type-declaration instruction to this module.
@@ -542,7 +550,7 @@ class IRContext {
     return GetFunction(inst->result_id());
   }
 
-  // Add to |todo| all ids of functions called in |func|.
+  // Add to |todo| all ids of functions called directly from |func|.
   void AddCalls(const Function* func, std::queue<uint32_t>* todo);
 
   // Applies |pfn| to every function in the call trees that are rooted at the
@@ -927,7 +935,22 @@ IteratorRange<Module::const_inst_iterator> IRContext::debugs3() const {
   return ((const Module*)module_.get())->debugs3();
 }
 
-void IRContext::debug_clear() { module_->debug_clear(); }
+Module::inst_iterator IRContext::ext_inst_debuginfo_begin() {
+  return module()->ext_inst_debuginfo_begin();
+}
+
+Module::inst_iterator IRContext::ext_inst_debuginfo_end() {
+  return module()->ext_inst_debuginfo_end();
+}
+
+IteratorRange<Module::inst_iterator> IRContext::ext_inst_debuginfo() {
+  return module()->ext_inst_debuginfo();
+}
+
+IteratorRange<Module::const_inst_iterator> IRContext::ext_inst_debuginfo()
+    const {
+  return ((const Module*)module_.get())->ext_inst_debuginfo();
+}
 
 void IRContext::AddCapability(SpvCapability capability) {
   if (!get_feature_mgr()->HasCapability(capability)) {
@@ -971,9 +994,26 @@ void IRContext::AddExtension(std::unique_ptr<Instruction>&& e) {
   module()->AddExtension(std::move(e));
 }
 
+void IRContext::AddExtInstImport(const std::string& name) {
+  const auto num_chars = name.size();
+  // Compute num words, accommodate the terminating null character.
+  const auto num_words = (num_chars + 1 + 3) / 4;
+  std::vector<uint32_t> ext_words(num_words, 0u);
+  std::memcpy(ext_words.data(), name.data(), num_chars);
+  AddExtInstImport(std::unique_ptr<Instruction>(
+      new Instruction(this, SpvOpExtInstImport, 0u, TakeNextId(),
+                      {{SPV_OPERAND_TYPE_LITERAL_STRING, ext_words}})));
+}
+
 void IRContext::AddExtInstImport(std::unique_ptr<Instruction>&& e) {
   AddCombinatorsForExtension(e.get());
+  if (AreAnalysesValid(kAnalysisDefUse)) {
+    get_def_use_mgr()->AnalyzeInstDefUse(e.get());
+  }
   module()->AddExtInstImport(std::move(e));
+  if (feature_mgr_ != nullptr) {
+    feature_mgr_->AddExtInstImportIds(module());
+  }
 }
 
 void IRContext::SetMemoryModel(std::unique_ptr<Instruction>&& m) {
@@ -1003,6 +1043,10 @@ void IRContext::AddDebug2Inst(std::unique_ptr<Instruction>&& d) {
 
 void IRContext::AddDebug3Inst(std::unique_ptr<Instruction>&& d) {
   module()->AddDebug3Inst(std::move(d));
+}
+
+void IRContext::AddExtInstDebugInfo(std::unique_ptr<Instruction>&& d) {
+  module()->AddExtInstDebugInfo(std::move(d));
 }
 
 void IRContext::AddAnnotationInst(std::unique_ptr<Instruction>&& a) {
