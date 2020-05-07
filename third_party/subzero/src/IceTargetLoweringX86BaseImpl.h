@@ -89,6 +89,19 @@ template <> struct PoolTypeConverter<uint8_t> {
 
 namespace X86NAMESPACE {
 
+// The Microsoft x64 ABI requires the caller to allocate a minimum 32 byte
+// "shadow store" (aka "home space") so that the callee may copy the 4
+// register args to it.
+template <typename Traits> SizeT getShadowStoreSize() {
+#if defined(SUBZERO_USE_MICROSOFT_ABI)
+  static const SizeT ShadowStoreSize =
+      Traits::Is64Bit ? 4 * typeWidthInBytes(Traits::WordType) : 0;
+  return ShadowStoreSize;
+#else
+  return 0;
+#endif
+}
+
 using Utils::BoolFlagSaver;
 
 template <typename Traits> class BoolFoldingEntry {
@@ -1051,14 +1064,7 @@ void TargetX86Base<TraitsType>::addProlog(CfgNode *Node) {
   // space on the frame for globals (variables with multi-block lifetime), and
   // one block to share for locals (single-block lifetime).
 
-  // The Microsoft x64 ABI requires the caller to allocate a minimum 32 byte
-  // "shadow store" (aka "home space") so that the callee may copy the 4
-  // register args to it.
-#if defined(SUBZERO_USE_MICROSOFT_ABI)
-	const SizeT ShadowStoreSize = Traits::Is64Bit ? 4 * typeWidthInBytes(Traits::WordType) : 0;
-#else
-	const SizeT ShadowStoreSize = 0;
-#endif
+  const SizeT ShadowStoreSize = getShadowStoreSize<Traits>();
 
   // StackPointer: points just past return address of calling function
 
@@ -1193,6 +1199,8 @@ void TargetX86Base<TraitsType>::addProlog(CfgNode *Node) {
   SpillAreaSizeBytes = StackSize - StackOffset; // Adjust for alignment, if any
 
   if (SpillAreaSizeBytes) {
+    emitStackProbe(SpillAreaSizeBytes);
+
     // Generate "sub stackptr, SpillAreaSizeBytes"
     _sub_sp(Ctx->getConstantInt32(SpillAreaSizeBytes));
   }
@@ -1564,7 +1572,7 @@ void TargetX86Base<TraitsType>::lowerAlloca(const InstAlloca *Instr) {
   // Add enough to the returned address to account for the out args area.
   uint32_t OutArgsSize = maxOutArgsSizeBytes();
   if (OutArgsSize > 0) {
-    Variable *T = makeReg(IceType_i32);
+    Variable *T = makeReg(Dest->getType());
     auto *CalculateOperand = X86OperandMem::create(
         Func, IceType_void, esp, Ctx->getConstantInt(IceType_i32, OutArgsSize));
     _lea(T, CalculateOperand);
@@ -2673,6 +2681,8 @@ void TargetX86Base<TraitsType>::lowerCall(const InstCall *Instr) {
   OperandList StackArgs, StackArgLocations;
   uint32_t ParameterAreaSizeBytes = 0;
 
+  ParameterAreaSizeBytes += getShadowStoreSize<Traits>();
+
   // Classify each argument operand according to the location where the argument
   // is passed.
   for (SizeT i = 0, NumArgs = Instr->getNumArgs(); i < NumArgs; ++i) {
@@ -2806,7 +2816,8 @@ void TargetX86Base<TraitsType>::lowerCall(const InstCall *Instr) {
   // Emit the call to the function.
   Operand *CallTarget =
       legalize(Instr->getCallTarget(), Legal_Reg | Legal_Imm | Legal_AddrAbs);
-  Inst *NewCall = emitCallToTarget(CallTarget, ReturnReg);
+  size_t NumVariadicFpArgs = Instr->isVariadic() ? XmmArgs.size() : 0;
+  Inst *NewCall = emitCallToTarget(CallTarget, ReturnReg, NumVariadicFpArgs);
   // Keep the upper return register live on 32-bit platform.
   if (ReturnRegHi)
     Context.insert<InstFakeDef>(ReturnRegHi);
@@ -3284,7 +3295,10 @@ void TargetX86Base<TraitsType>::lowerCast(const InstCast *Instr) {
         // use v16i8 vectors.
         assert(getFlags().getApplicationBinaryInterface() != ABI_PNaCl &&
                "PNaCl only supports real 128-bit vectors");
-        _movd(Dest, legalize(Src0, Legal_Reg | Legal_Mem));
+        Operand *Src0RM = legalize(Src0, Legal_Reg | Legal_Mem);
+        Variable *T = makeReg(DestTy);
+        _movd(T, Src0RM);
+        _mov(Dest, T);
       } else {
         _movp(Dest, legalizeToReg(Src0));
       }
@@ -4431,7 +4445,11 @@ void TargetX86Base<TraitsType>::lowerIntrinsicCall(
     Variable *Dest = Instr->getDest();
     Variable *T = makeReg(Dest->getType());
     _sqrt(T, Src);
-    _mov(Dest, T);
+    if (isVectorType(Dest->getType())) {
+      _movp(Dest, T);
+    } else {
+      _mov(Dest, T);
+    }
     return;
   }
   case Intrinsics::Stacksave: {
@@ -6475,8 +6493,6 @@ void TargetX86Base<TraitsType>::lowerShuffleVector(
       }
       break;
       CASE_SRCS_IN(0, 0, 0, 1) : {
-        assert(false && "Following code is untested but likely correct; test "
-                        "and remove assert.");
         auto *Unified = lowerShuffleVector_UnifyFromDifferentSrcs(Src0, Index2,
                                                                   Src1, Index3);
         T = lowerShuffleVector_TwoFromSameSrc(Src0, Index0, Index1, Unified,
@@ -6511,8 +6527,6 @@ void TargetX86Base<TraitsType>::lowerShuffleVector(
           _movp(T, Src0R);
           _punpckl(T, Src1RM);
         } else if (Index0 == Index2 && Index1 == Index3) {
-          assert(false && "Following code is untested but likely correct; test "
-                          "and remove assert.");
           auto *Unified = lowerShuffleVector_UnifyFromDifferentSrcs(
               Src0, Index0, Src1, Index1);
           T = lowerShuffleVector_AllFromSameSrc(
@@ -6548,8 +6562,6 @@ void TargetX86Base<TraitsType>::lowerShuffleVector(
       }
       break;
       CASE_SRCS_IN(0, 1, 1, 1) : {
-        assert(false && "Following code is untested but likely correct; test "
-                        "and remove assert.");
         auto *Unified = lowerShuffleVector_UnifyFromDifferentSrcs(Src0, Index0,
                                                                   Src1, Index1);
         T = lowerShuffleVector_TwoFromSameSrc(
@@ -6565,16 +6577,12 @@ void TargetX86Base<TraitsType>::lowerShuffleVector(
       break;
       CASE_SRCS_IN(1, 0, 0, 1) : {
         if (Index0 == Index3 && Index1 == Index2) {
-          assert(false && "Following code is untested but likely correct; test "
-                          "and remove assert.");
           auto *Unified = lowerShuffleVector_UnifyFromDifferentSrcs(
               Src1, Index0, Src0, Index1);
           T = lowerShuffleVector_AllFromSameSrc(
               Unified, UNIFIED_INDEX_0, UNIFIED_INDEX_1, UNIFIED_INDEX_1,
               UNIFIED_INDEX_0);
         } else {
-          assert(false && "Following code is untested but likely correct; test "
-                          "and remove assert.");
           auto *Unified0 = lowerShuffleVector_UnifyFromDifferentSrcs(
               Src1, Index0, Src0, Index1);
           auto *Unified1 = lowerShuffleVector_UnifyFromDifferentSrcs(
@@ -6611,8 +6619,6 @@ void TargetX86Base<TraitsType>::lowerShuffleVector(
       }
       break;
       CASE_SRCS_IN(1, 0, 1, 1) : {
-        assert(false && "Following code is untested but likely correct; test "
-                        "and remove assert.");
         auto *Unified = lowerShuffleVector_UnifyFromDifferentSrcs(Src1, Index0,
                                                                   Src0, Index1);
         T = lowerShuffleVector_TwoFromSameSrc(
@@ -6625,8 +6631,6 @@ void TargetX86Base<TraitsType>::lowerShuffleVector(
       }
       break;
       CASE_SRCS_IN(1, 1, 0, 1) : {
-        assert(false && "Following code is untested but likely correct; test "
-                        "and remove assert.");
         auto *Unified = lowerShuffleVector_UnifyFromDifferentSrcs(Src0, Index2,
                                                                   Src1, Index3);
         T = lowerShuffleVector_TwoFromSameSrc(Src1, Index0, Index1, Unified,
@@ -6641,8 +6645,6 @@ void TargetX86Base<TraitsType>::lowerShuffleVector(
       }
       break;
       CASE_SRCS_IN(1, 1, 1, 1) : {
-        assert(false && "Following code is untested but likely correct; test "
-                        "and remove assert.");
         T = lowerShuffleVector_AllFromSameSrc(Src1, Index0, Index1, Index2,
                                               Index3);
       }
@@ -7656,16 +7658,23 @@ uint32_t TargetX86Base<TraitsType>::getCallStackArgumentsSizeBytes(
   uint32_t OutArgumentsSizeBytes = 0;
   uint32_t XmmArgCount = 0;
   uint32_t GprArgCount = 0;
-  for (Type Ty : ArgTypes) {
+  for (SizeT i = 0, NumArgTypes = ArgTypes.size(); i < NumArgTypes; ++i) {
+    Type Ty = ArgTypes[i];
     // The PNaCl ABI requires the width of arguments to be at least 32 bits.
     assert(typeWidthInBytes(Ty) >= 4);
-    if (isVectorType(Ty) && XmmArgCount < Traits::X86_MAX_XMM_ARGS) {
+    if (isVectorType(Ty) &&
+        Traits::getRegisterForXmmArgNum(Traits::getArgIndex(i, XmmArgCount))
+            .hasValue()) {
       ++XmmArgCount;
     } else if (isScalarFloatingType(Ty) && Traits::X86_PASS_SCALAR_FP_IN_XMM &&
-               XmmArgCount < Traits::X86_MAX_XMM_ARGS) {
+               Traits::getRegisterForXmmArgNum(
+                   Traits::getArgIndex(i, XmmArgCount))
+                   .hasValue()) {
       ++XmmArgCount;
     } else if (isScalarIntegerType(Ty) &&
-               GprArgCount < Traits::X86_MAX_GPR_ARGS) {
+               Traits::getRegisterForGprArgNum(
+                   Ty, Traits::getArgIndex(i, GprArgCount))
+                   .hasValue()) {
       // The 64 bit ABI allows some integers to be passed in GPRs.
       ++GprArgCount;
     } else {
@@ -7704,7 +7713,7 @@ uint32_t TargetX86Base<TraitsType>::getCallStackArgumentsSizeBytes(
   Variable *Dest = Instr->getDest();
   if (Dest != nullptr)
     ReturnType = Dest->getType();
-  return getCallStackArgumentsSizeBytes(ArgTypes, ReturnType);
+  return getShadowStoreSize<Traits>() + getCallStackArgumentsSizeBytes(ArgTypes, ReturnType);
 }
 
 template <typename TraitsType>
