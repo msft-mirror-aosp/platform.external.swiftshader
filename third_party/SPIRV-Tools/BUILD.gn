@@ -32,10 +32,13 @@ template("spvtools_core_tables") {
         "${spirv_headers}/include/spirv/$version/spirv.core.grammar.json"
     core_insts_file = "${target_gen_dir}/core.insts-$version.inc"
     operand_kinds_file = "${target_gen_dir}/operand.kinds-$version.inc"
-    extinst_file = "source/extinst.debuginfo.grammar.json"
+    debuginfo_insts_file = "source/extinst.debuginfo.grammar.json"
+    cldebuginfo100_insts_file = "source/extinst.opencl.debuginfo.100.grammar.json"
 
     sources = [
       core_json_file,
+      debuginfo_insts_file,
+      cldebuginfo100_insts_file,
     ]
     outputs = [
       core_insts_file,
@@ -47,7 +50,9 @@ template("spvtools_core_tables") {
       "--core-insts-output",
       rebase_path(core_insts_file, root_build_dir),
       "--extinst-debuginfo-grammar",
-      rebase_path(extinst_file, root_build_dir),
+      rebase_path(debuginfo_insts_file, root_build_dir),
+      "--extinst-cldebuginfo100-grammar",
+      rebase_path(cldebuginfo100_insts_file, root_build_dir),
       "--operand-kinds-output",
       rebase_path(operand_kinds_file, root_build_dir),
     ]
@@ -64,7 +69,9 @@ template("spvtools_core_enums") {
 
     core_json_file =
         "${spirv_headers}/include/spirv/$version/spirv.core.grammar.json"
-    debug_insts_file = "source/extinst.debuginfo.grammar.json"
+    debuginfo_insts_file = "source/extinst.debuginfo.grammar.json"
+    cldebuginfo100_insts_file = "source/extinst.opencl.debuginfo.100.grammar.json"
+
     extension_enum_file = "${target_gen_dir}/extension_enum.inc"
     extension_map_file = "${target_gen_dir}/enum_string_mapping.inc"
 
@@ -72,7 +79,9 @@ template("spvtools_core_enums") {
       "--spirv-core-grammar",
       rebase_path(core_json_file, root_build_dir),
       "--extinst-debuginfo-grammar",
-      rebase_path(debug_insts_file, root_build_dir),
+      rebase_path(debuginfo_insts_file, root_build_dir),
+      "--extinst-cldebuginfo100-grammar",
+      rebase_path(cldebuginfo100_insts_file, root_build_dir),
       "--extension-enum-output",
       rebase_path(extension_enum_file, root_build_dir),
       "--enum-string-mapping-output",
@@ -80,6 +89,8 @@ template("spvtools_core_enums") {
     ]
     inputs = [
       core_json_file,
+      debuginfo_insts_file,
+      cldebuginfo100_insts_file,
     ]
     outputs = [
       extension_enum_file,
@@ -99,22 +110,28 @@ template("spvtools_glsl_tables") {
     core_json_file =
         "${spirv_headers}/include/spirv/$version/spirv.core.grammar.json"
     glsl_json_file = "${spirv_headers}/include/spirv/${version}/extinst.glsl.std.450.grammar.json"
+    debuginfo_insts_file = "source/extinst.debuginfo.grammar.json"
+    cldebuginfo100_insts_file = "source/extinst.opencl.debuginfo.100.grammar.json"
+
     glsl_insts_file = "${target_gen_dir}/glsl.std.450.insts.inc"
-    debug_insts_file = "source/extinst.debuginfo.grammar.json"
 
     args = [
       "--spirv-core-grammar",
       rebase_path(core_json_file, root_build_dir),
+      "--extinst-debuginfo-grammar",
+      rebase_path(debuginfo_insts_file, root_build_dir),
+      "--extinst-cldebuginfo100-grammar",
+      rebase_path(cldebuginfo100_insts_file, root_build_dir),
       "--extinst-glsl-grammar",
       rebase_path(glsl_json_file, root_build_dir),
       "--glsl-insts-output",
       rebase_path(glsl_insts_file, root_build_dir),
-      "--extinst-debuginfo-grammar",
-      rebase_path(debug_insts_file, root_build_dir),
     ]
     inputs = [
       core_json_file,
       glsl_json_file,
+      debuginfo_insts_file,
+      cldebuginfo100_insts_file,
     ]
     outputs = [
       glsl_insts_file,
@@ -132,23 +149,29 @@ template("spvtools_opencl_tables") {
 
     core_json_file =
         "${spirv_headers}/include/spirv/$version/spirv.core.grammar.json"
-    opengl_json_file = "${spirv_headers}/include/spirv/${version}/extinst.opencl.std.100.grammar.json"
+    opencl_json_file = "${spirv_headers}/include/spirv/${version}/extinst.opencl.std.100.grammar.json"
+    debuginfo_insts_file = "source/extinst.debuginfo.grammar.json"
+    cldebuginfo100_insts_file = "source/extinst.opencl.debuginfo.100.grammar.json"
+
     opencl_insts_file = "${target_gen_dir}/opencl.std.insts.inc"
-    debug_insts_file = "source/extinst.debuginfo.grammar.json"
 
     args = [
       "--spirv-core-grammar",
       rebase_path(core_json_file, root_build_dir),
+      "--extinst-debuginfo-grammar",
+      rebase_path(debuginfo_insts_file, root_build_dir),
+      "--extinst-cldebuginfo100-grammar",
+      rebase_path(cldebuginfo100_insts_file, root_build_dir),
       "--extinst-opencl-grammar",
-      rebase_path(opengl_json_file, root_build_dir),
+      rebase_path(opencl_json_file, root_build_dir),
       "--opencl-insts-output",
       rebase_path(opencl_insts_file, root_build_dir),
-      "--extinst-debuginfo-grammar",
-      rebase_path(debug_insts_file, root_build_dir),
     ]
     inputs = [
       core_json_file,
-      opengl_json_file,
+      opencl_json_file,
+      debuginfo_insts_file,
+      cldebuginfo100_insts_file,
     ]
     outputs = [
       opencl_insts_file,
@@ -164,18 +187,17 @@ template("spvtools_language_header") {
 
     name = invoker.name
     extinst_output_base = "${target_gen_dir}/${name}"
-    debug_insts_file = "source/extinst.debuginfo.grammar.json"
 
     args = [
       "--extinst-name",
       "${name}",
       "--extinst-grammar",
-      rebase_path(debug_insts_file, root_build_dir),
+      rebase_path(invoker.grammar_file, root_build_dir),
       "--extinst-output-base",
       rebase_path(extinst_output_base, root_build_dir),
     ]
     inputs = [
-      debug_insts_file,
+      invoker.grammar_file,
     ]
     outputs = [
       "${extinst_output_base}.h",
@@ -198,6 +220,8 @@ template("spvtools_vendor_table") {
       rebase_path(extinst_vendor_grammar, root_build_dir),
       "--vendor-insts-output",
       rebase_path(extinst_file, root_build_dir),
+      "--vendor-operand-kind-prefix",
+      invoker.operand_kind_prefix
     ]
     inputs = [
       extinst_vendor_grammar,
@@ -256,21 +280,28 @@ spvtools_glsl_tables("glsl1-0") {
 spvtools_opencl_tables("opencl1-0") {
   version = "1.0"
 }
-spvtools_language_header("unified1") {
+spvtools_language_header("debuginfo") {
   name = "DebugInfo"
+  grammar_file = "source/extinst.debuginfo.grammar.json"
+}
+spvtools_language_header("cldebuginfo100") {
+  name = "OpenCLDebugInfo100"
+  grammar_file = "source/extinst.opencl.debuginfo.100.grammar.json"
 }
 
 spvtools_vendor_tables = [
-  "spv-amd-shader-explicit-vertex-parameter",
-  "spv-amd-shader-trinary-minmax",
-  "spv-amd-gcn-shader",
-  "spv-amd-shader-ballot",
-  "debuginfo",
+  ["spv-amd-shader-explicit-vertex-parameter", "...nil..."],
+  ["spv-amd-shader-trinary-minmax", "...nil..."],
+  ["spv-amd-gcn-shader", "...nil..."],
+  ["spv-amd-shader-ballot", "...nil..."],
+  ["debuginfo", "...nil..."],
+  ["opencl.debuginfo.100", "CLDEBUG100_"],
 ]
 
-foreach(table, spvtools_vendor_tables) {
-  spvtools_vendor_table(table) {
-    name = table
+foreach(table_def, spvtools_vendor_tables) {
+  spvtools_vendor_table(table_def[0]) {
+    name = table_def[0]
+    operand_kind_prefix = table_def[1]
   }
 }
 
@@ -288,7 +319,10 @@ config("spvtools_internal_config") {
   configs = [ ":spvtools_public_config" ]
 
   if (is_clang) {
-    cflags = [ "-Wno-implicit-fallthrough" ]
+    cflags = [
+      "-Wno-implicit-fallthrough",
+      "-Wno-newline-eof",
+    ]
   }
 }
 
@@ -309,10 +343,12 @@ static_library("spvtools") {
     ":spvtools_core_tables_unified1",
     ":spvtools_generators_inc",
     ":spvtools_glsl_tables_glsl1-0",
-    ":spvtools_language_header_unified1",
+    ":spvtools_language_header_debuginfo",
+    ":spvtools_language_header_cldebuginfo100",
     ":spvtools_opencl_tables_opencl1-0",
   ]
-  foreach(target_name, spvtools_vendor_tables) {
+  foreach(table_def, spvtools_vendor_tables) {
+    target_name = table_def[0]
     deps += [ ":spvtools_vendor_tables_$target_name" ]
   }
 
@@ -321,16 +357,22 @@ static_library("spvtools") {
     "source/assembly_grammar.h",
     "source/binary.cpp",
     "source/binary.h",
+    "source/cfa.h",
     "source/diagnostic.cpp",
     "source/diagnostic.h",
     "source/disassemble.cpp",
+    "source/disassemble.h",
     "source/enum_set.h",
     "source/enum_string_mapping.cpp",
+    "source/enum_string_mapping.h",
     "source/ext_inst.cpp",
     "source/ext_inst.h",
     "source/extensions.cpp",
     "source/extensions.h",
     "source/instruction.h",
+    "source/latest_version_glsl_std_450_header.h",
+    "source/latest_version_opencl_std_header.h",
+    "source/latest_version_spirv_header.h",
     "source/libspirv.cpp",
     "source/macro.h",
     "source/name_mapper.cpp",
@@ -378,6 +420,7 @@ static_library("spvtools") {
   public_deps = [
     ":spvtools_core_enums_unified1",
     ":spvtools_headers",
+    "${spirv_headers}:spv_headers",
   ]
 
   if (build_with_chromium) {
@@ -390,8 +433,12 @@ static_library("spvtools") {
 static_library("spvtools_val") {
   sources = [
     "source/val/basic_block.cpp",
+    "source/val/basic_block.h",
     "source/val/construct.cpp",
+    "source/val/construct.h",
+    "source/val/decoration.h",
     "source/val/function.cpp",
+    "source/val/function.h",
     "source/val/instruction.cpp",
     "source/val/validate.cpp",
     "source/val/validate.h",
@@ -407,7 +454,6 @@ static_library("spvtools_val") {
     "source/val/validate_composites.cpp",
     "source/val/validate_constants.cpp",
     "source/val/validate_conversion.cpp",
-    "source/val/validate_datarules.cpp",
     "source/val/validate_debug.cpp",
     "source/val/validate_decorations.cpp",
     "source/val/validate_derivatives.cpp",
@@ -423,18 +469,23 @@ static_library("spvtools_val") {
     "source/val/validate_logicals.cpp",
     "source/val/validate_memory.cpp",
     "source/val/validate_memory_semantics.cpp",
+    "source/val/validate_memory_semantics.h",
     "source/val/validate_misc.cpp",
     "source/val/validate_mode_setting.cpp",
     "source/val/validate_non_uniform.cpp",
     "source/val/validate_primitives.cpp",
     "source/val/validate_scopes.cpp",
+    "source/val/validate_scopes.h",
     "source/val/validate_small_type_uses.cpp",
     "source/val/validate_type.cpp",
     "source/val/validation_state.cpp",
+    "source/val/validation_state.h",
   ]
 
   deps = [
     ":spvtools",
+    ":spvtools_language_header_cldebuginfo100",
+    ":spvtools_language_header_debuginfo",
   ]
   public_deps = [
     ":spvtools_headers",
@@ -479,6 +530,8 @@ static_library("spvtools_opt") {
     "source/opt/const_folding_rules.h",
     "source/opt/constants.cpp",
     "source/opt/constants.h",
+    "source/opt/convert_to_half_pass.cpp",
+    "source/opt/convert_to_half_pass.h",
     "source/opt/copy_prop_arrays.cpp",
     "source/opt/copy_prop_arrays.h",
     "source/opt/dead_branch_elim_pass.cpp",
@@ -563,8 +616,6 @@ static_library("spvtools_opt") {
     "source/opt/local_single_block_elim_pass.h",
     "source/opt/local_single_store_elim_pass.cpp",
     "source/opt/local_single_store_elim_pass.h",
-    "source/opt/local_ssa_elim_pass.cpp",
-    "source/opt/local_ssa_elim_pass.h",
     "source/opt/log.h",
     "source/opt/loop_dependence.cpp",
     "source/opt/loop_dependence.h",
@@ -611,6 +662,8 @@ static_library("spvtools_opt") {
     "source/opt/reflect.h",
     "source/opt/register_pressure.cpp",
     "source/opt/register_pressure.h",
+    "source/opt/relax_float_ops_pass.cpp",
+    "source/opt/relax_float_ops_pass.h",
     "source/opt/remove_duplicates_pass.cpp",
     "source/opt/remove_duplicates_pass.h",
     "source/opt/replace_invalid_opc.cpp",
@@ -660,6 +713,8 @@ static_library("spvtools_opt") {
 
   deps = [
     ":spvtools",
+    ":spvtools_language_header_cldebuginfo100",
+    ":spvtools_language_header_debuginfo",
     ":spvtools_vendor_tables_spv-amd-shader-ballot",
   ]
   public_deps = [
@@ -716,6 +771,7 @@ static_library("spvtools_reduce") {
     "source/reduce/reducer.h",
     "source/reduce/reduction_opportunity.cpp",
     "source/reduce/reduction_opportunity.h",
+    "source/reduce/reduction_opportunity_finder.h",
     "source/reduce/reduction_pass.cpp",
     "source/reduce/reduction_pass.h",
     "source/reduce/reduction_util.cpp",
@@ -730,10 +786,6 @@ static_library("spvtools_reduce") {
     "source/reduce/remove_function_reduction_opportunity_finder.h",
     "source/reduce/remove_instruction_reduction_opportunity.cpp",
     "source/reduce/remove_instruction_reduction_opportunity.h",
-    "source/reduce/remove_opname_instruction_reduction_opportunity_finder.cpp",
-    "source/reduce/remove_opname_instruction_reduction_opportunity_finder.h",
-    "source/reduce/remove_relaxed_precision_decoration_opportunity_finder.cpp",
-    "source/reduce/remove_relaxed_precision_decoration_opportunity_finder.h",
     "source/reduce/remove_selection_reduction_opportunity.cpp",
     "source/reduce/remove_selection_reduction_opportunity.h",
     "source/reduce/remove_selection_reduction_opportunity_finder.cpp",
@@ -766,7 +818,7 @@ static_library("spvtools_reduce") {
 }
 
 group("SPIRV-Tools") {
-  deps = [
+  public_deps = [
     ":spvtools",
     ":spvtools_link",
     ":spvtools_opt",
@@ -795,6 +847,7 @@ if (build_with_chromium) {
       "test/ext_inst.debuginfo_test.cpp",
       "test/ext_inst.glsl_test.cpp",
       "test/ext_inst.opencl_test.cpp",
+      "test/ext_inst.cldebug100_test.cpp",
       "test/fix_word_test.cpp",
       "test/generator_magic_number_test.cpp",
       "test/hex_float_test.cpp",
@@ -841,11 +894,14 @@ if (build_with_chromium) {
 
     deps = [
       ":spvtools",
-      ":spvtools_language_header_unified1",
+      ":spvtools_language_header_debuginfo",
+      ":spvtools_language_header_cldebuginfo100",
       ":spvtools_val",
       "//testing/gmock",
       "//testing/gtest",
       "//testing/gtest:gtest_main",
+      "//third_party/googletest:gmock",
+      "//third_party/googletest:gtest",
     ]
 
     if (is_clang) {
@@ -869,6 +925,9 @@ source_set("spvtools_util_cli_consumer") {
   sources = [
     "tools/util/cli_consumer.cpp",
     "tools/util/cli_consumer.h",
+  ]
+  deps = [
+    ":spvtools_headers",
   ]
   configs += [ ":spvtools_internal_config" ]
 }

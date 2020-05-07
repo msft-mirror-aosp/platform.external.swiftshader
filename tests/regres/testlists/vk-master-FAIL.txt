@@ -1,2 +1,1 @@
-dEQP-VK.api.info.android.no_layers
-dEQP-VK.glsl.builtin_var.simple.pointcoord_uniform_frag
+dEQP-VK.api.version_check.version

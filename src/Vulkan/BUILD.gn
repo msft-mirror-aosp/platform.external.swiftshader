@@ -14,6 +14,7 @@
 
 import("//build_overrides/build.gni")
 import("../swiftshader.gni")
+import("vulkan.gni")
 
 # Need a separate config to ensure the warnings are added to the end.
 config("swiftshader_libvulkan_private_config") {
@@ -36,6 +37,7 @@ config("swiftshader_libvulkan_private_config") {
   } else if (is_mac) {
     defines = [
       "VK_USE_PLATFORM_MACOS_MVK=1",
+      "VK_USE_PLATFORM_METAL_EXT=1",
       "VK_EXPORT=__attribute__((visibility(\"default\")))",
     ]
   } else {
@@ -48,6 +50,10 @@ config("swiftshader_libvulkan_private_config") {
       "-Wno-switch",
     ]
   }
+
+  defines += [
+     "SWIFTSHADER_ENABLE_ASTC",  # TODO(b/150130101)
+  ]
 }
 
 swiftshader_source_set("swiftshader_libvulkan_headers") {
@@ -58,7 +64,6 @@ swiftshader_source_set("swiftshader_libvulkan_headers") {
     "VkCommandBuffer.hpp",
     "VkCommandPool.hpp",
     "VkConfig.h",
-    "VkDebug.hpp",
     "VkDescriptorPool.hpp",
     "VkDescriptorSet.hpp",
     "VkDescriptorSetLayout.hpp",
@@ -86,20 +91,18 @@ swiftshader_source_set("swiftshader_libvulkan_headers") {
     "VkSampler.hpp",
     "VkSemaphore.hpp",
     "VkShaderModule.hpp",
+    "VkStringify.hpp",
     "VulkanPlatform.h",
   ]
   if (is_linux || is_android) {
     sources += [
+      "VkDeviceMemoryExternalLinux.hpp",
       "VkSemaphoreExternalLinux.hpp",
     ]
   } else if (is_fuchsia) {
-    sources += [
-      "VkSemaphoreExternalFuchsia.hpp",
-    ]
+    sources += [ "VkSemaphoreExternalFuchsia.hpp" ]
   } else {
-    sources += [
-      "VkSemaphoreExternalNone.hpp",
-    ]
+    sources += [ "VkSemaphoreExternalNone.hpp" ]
   }
 }
 
@@ -109,7 +112,6 @@ swiftshader_shared_library("swiftshader_libvulkan") {
     "VkBufferView.cpp",
     "VkCommandBuffer.cpp",
     "VkCommandPool.cpp",
-    "VkDebug.cpp",
     "VkDescriptorPool.cpp",
     "VkDescriptorSetLayout.cpp",
     "VkDescriptorUpdateTemplate.cpp",
@@ -133,6 +135,7 @@ swiftshader_shared_library("swiftshader_libvulkan") {
     "VkSampler.cpp",
     "VkSemaphore.cpp",
     "VkShaderModule.cpp",
+    "VkStringify.cpp",
     "Vulkan.rc",
     "libVulkan.cpp",
     "main.cpp",
@@ -159,13 +162,17 @@ swiftshader_shared_library("swiftshader_libvulkan") {
     inputs = [
       "vk_swiftshader.lds",
     ]
-    ldflags = [ "-Wl,--version-script=" +
-                rebase_path("vk_swiftshader.lds", root_build_dir) ]
+    ldflags = [
+      # -Bsymbolic binds symbol references to their global definitions within
+      # a shared object, thereby preventing symbol preemption.
+      "-Wl,-Bsymbolic",
+      "-Wl,--version-script=" +
+          rebase_path("vk_swiftshader.lds", root_build_dir) ]
   }
 
   deps = [
-    "../../third_party/marl:Marl",
     "${swiftshader_spirv_tools_dir}:SPIRV-Tools",
+    "../../third_party/marl:Marl",
     "../Device",
     "../Pipeline",
     "../Reactor:swiftshader_llvm_reactor",
@@ -182,5 +189,41 @@ swiftshader_shared_library("swiftshader_libvulkan") {
 
   public_deps = [
     ":swiftshader_libvulkan_headers",
+  ]
+}
+
+# Generates an ICD JSON file that can be used by all targets in this GN build
+# (ANGLE, Dawn, Chromium).
+action("icd_file") {
+  output_icd_file = "${root_out_dir}/${swiftshader_icd_file_name}"
+  input_file = swiftshader_icd_file_name
+
+  if (is_win) {
+    library_path = ".\\vk_swiftshader.dll"
+  } else if (is_mac) {
+    library_path = "./libvk_swiftshader.dylib"
+  } else {
+    library_path = "./libvk_swiftshader.so"
+  }
+
+  script = "write_icd_json.py"
+  args = [
+    "--input",
+    rebase_path(input_file, root_build_dir),
+    "--output",
+    rebase_path(output_icd_file, root_build_dir),
+    "--library_path",
+    library_path,
+  ]
+
+  inputs = [
+    input_file,
+  ]
+  outputs = [
+    output_icd_file,
+  ]
+
+  deps = [
+    ":swiftshader_libvulkan",
   ]
 }
