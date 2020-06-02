@@ -90,7 +90,7 @@ int GrallocModule::release(buffer_handle_t handle)
 	if (m_gralloc4_mapper != nullptr)
 	{
 		native_handle_t* native_handle = const_cast<native_handle_t*>(handle);
-		return m_gralloc4_mapper->freeBuffer(native_handle).isOk();
+		return m_gralloc4_mapper->freeBuffer(native_handle).isOk() ? 0 : 1;
 	}
 #endif
 
