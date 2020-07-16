@@ -15,10 +15,12 @@
 #ifndef sw_PixelProcessor_hpp
 #define sw_PixelProcessor_hpp
 
-#include "Color.hpp"
 #include "Context.hpp"
 #include "Memset.hpp"
 #include "RoutineCache.hpp"
+#include "Vulkan/VkFormat.hpp"
+
+#include <memory>
 
 namespace sw {
 
@@ -64,6 +66,7 @@ public:
 		uint32_t computeHash();
 
 		uint64_t shaderID;
+		uint32_t pipelineLayoutIdentifier;
 
 		unsigned int numClipDistances;
 		unsigned int numCullDistances;
@@ -78,12 +81,11 @@ public:
 		bool depthTestActive;
 		bool occlusionEnabled;
 		bool perspective;
-		bool depthClamp;
 
 		BlendState blendState[RENDERTARGETS];
 
 		unsigned int colorWriteMask;
-		VkFormat targetFormat[RENDERTARGETS];
+		vk::Format targetFormat[RENDERTARGETS];
 		unsigned int multiSampleCount;
 		unsigned int multiSampleMask;
 		bool enableMultiSampling;
@@ -147,11 +149,8 @@ public:
 
 	PixelProcessor();
 
-	virtual ~PixelProcessor();
+	void setBlendConstant(const float4 &blendConstant);
 
-	void setBlendConstant(const Color<float> &blendConstant);
-
-protected:
 	const State update(const Context *context) const;
 	RoutineType routine(const State &state, vk::PipelineLayout const *pipelineLayout,
 	                    SpirvShader const *pixelShader, const vk::DescriptorSet::Bindings &descriptorSets);
@@ -161,10 +160,23 @@ protected:
 	Factor factor;
 
 private:
-	using RoutineCacheType = RoutineCacheT<State, RasterizerFunction::CFunctionType>;
-	RoutineCacheType *routineCache;
+	using RoutineCacheType = RoutineCache<State, RasterizerFunction::CFunctionType>;
+	std::unique_ptr<RoutineCacheType> routineCache;
 };
 
 }  // namespace sw
+
+namespace std {
+
+template<>
+struct hash<sw::PixelProcessor::State>
+{
+	uint64_t operator()(const sw::PixelProcessor::State &state) const
+	{
+		return state.hash;
+	}
+};
+
+}  // namespace std
 
 #endif  // sw_PixelProcessor_hpp

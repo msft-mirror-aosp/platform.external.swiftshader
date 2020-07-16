@@ -19,6 +19,7 @@
 #include "Pipeline/PixelProgram.hpp"
 #include "System/Debug.hpp"
 #include "Vulkan/VkImageView.hpp"
+#include "Vulkan/VkPipelineLayout.hpp"
 
 #include <cstring>
 
@@ -44,50 +45,41 @@ bool PixelProcessor::State::operator==(const State &state) const
 		return false;
 	}
 
-	static_assert(is_memcmparable<State>::value, "Cannot memcmp State");
-	return memcmp(static_cast<const States *>(this), static_cast<const States *>(&state), sizeof(States)) == 0;
+	return *static_cast<const States *>(this) == static_cast<const States &>(state);
 }
 
 PixelProcessor::PixelProcessor()
 {
-	routineCache = nullptr;
 	setRoutineCacheSize(1024);
 }
 
-PixelProcessor::~PixelProcessor()
-{
-	delete routineCache;
-	routineCache = nullptr;
-}
-
-void PixelProcessor::setBlendConstant(const Color<float> &blendConstant)
+void PixelProcessor::setBlendConstant(const float4 &blendConstant)
 {
 	// TODO(b/140935644): Check if clamp is required
-	factor.blendConstant4W[0] = word4(static_cast<uint16_t>(iround(0xFFFFu * blendConstant.r)));
-	factor.blendConstant4W[1] = word4(static_cast<uint16_t>(iround(0xFFFFu * blendConstant.g)));
-	factor.blendConstant4W[2] = word4(static_cast<uint16_t>(iround(0xFFFFu * blendConstant.b)));
-	factor.blendConstant4W[3] = word4(static_cast<uint16_t>(iround(0xFFFFu * blendConstant.a)));
+	factor.blendConstant4W[0] = word4(static_cast<uint16_t>(iround(0xFFFFu * blendConstant.x)));
+	factor.blendConstant4W[1] = word4(static_cast<uint16_t>(iround(0xFFFFu * blendConstant.y)));
+	factor.blendConstant4W[2] = word4(static_cast<uint16_t>(iround(0xFFFFu * blendConstant.z)));
+	factor.blendConstant4W[3] = word4(static_cast<uint16_t>(iround(0xFFFFu * blendConstant.w)));
 
 	factor.invBlendConstant4W[0] = word4(0xFFFFu - factor.blendConstant4W[0][0]);
 	factor.invBlendConstant4W[1] = word4(0xFFFFu - factor.blendConstant4W[1][0]);
 	factor.invBlendConstant4W[2] = word4(0xFFFFu - factor.blendConstant4W[2][0]);
 	factor.invBlendConstant4W[3] = word4(0xFFFFu - factor.blendConstant4W[3][0]);
 
-	factor.blendConstant4F[0] = float4(blendConstant.r);
-	factor.blendConstant4F[1] = float4(blendConstant.g);
-	factor.blendConstant4F[2] = float4(blendConstant.b);
-	factor.blendConstant4F[3] = float4(blendConstant.a);
+	factor.blendConstant4F[0] = float4(blendConstant.x);
+	factor.blendConstant4F[1] = float4(blendConstant.y);
+	factor.blendConstant4F[2] = float4(blendConstant.z);
+	factor.blendConstant4F[3] = float4(blendConstant.w);
 
-	factor.invBlendConstant4F[0] = float4(1 - blendConstant.r);
-	factor.invBlendConstant4F[1] = float4(1 - blendConstant.g);
-	factor.invBlendConstant4F[2] = float4(1 - blendConstant.b);
-	factor.invBlendConstant4F[3] = float4(1 - blendConstant.a);
+	factor.invBlendConstant4F[0] = float4(1 - blendConstant.x);
+	factor.invBlendConstant4F[1] = float4(1 - blendConstant.y);
+	factor.invBlendConstant4F[2] = float4(1 - blendConstant.z);
+	factor.invBlendConstant4F[3] = float4(1 - blendConstant.w);
 }
 
 void PixelProcessor::setRoutineCacheSize(int cacheSize)
 {
-	delete routineCache;
-	routineCache = new RoutineCacheType(clamp(cacheSize, 1, 65536));
+	routineCache = std::make_unique<RoutineCacheType>(clamp(cacheSize, 1, 65536));
 }
 
 const PixelProcessor::State PixelProcessor::update(const Context *context) const
@@ -100,10 +92,12 @@ const PixelProcessor::State PixelProcessor::update(const Context *context) const
 	if(context->pixelShader)
 	{
 		state.shaderID = context->pixelShader->getSerialID();
+		state.pipelineLayoutIdentifier = context->pipelineLayout->identifier;
 	}
 	else
 	{
 		state.shaderID = 0;
+		state.pipelineLayoutIdentifier = 0;
 	}
 
 	state.alphaToCoverage = context->alphaToCoverage;
@@ -124,7 +118,6 @@ const PixelProcessor::State PixelProcessor::update(const Context *context) const
 	}
 
 	state.occlusionEnabled = context->occlusionEnabled;
-	state.depthClamp = (context->depthBias != 0.0f) || (context->slopeDepthBias != 0.0f);
 
 	for(int i = 0; i < RENDERTARGETS; i++)
 	{
@@ -155,7 +148,7 @@ PixelProcessor::RoutineType PixelProcessor::routine(const State &state,
                                                     SpirvShader const *pixelShader,
                                                     const vk::DescriptorSet::Bindings &descriptorSets)
 {
-	auto routine = routineCache->query(state);
+	auto routine = routineCache->lookup(state);
 
 	if(!routine)
 	{

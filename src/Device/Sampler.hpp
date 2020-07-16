@@ -15,10 +15,9 @@
 #ifndef sw_Sampler_hpp
 #define sw_Sampler_hpp
 
-#include "Device/Color.hpp"
 #include "Device/Config.hpp"
 #include "System/Types.hpp"
-#include "Vulkan/VkFormat.h"
+#include "Vulkan/VkFormat.hpp"
 
 namespace vk {
 class Image;
@@ -107,11 +106,15 @@ struct Sampler
 	VkCompareOp compareOp;
 	VkBorderColor border;
 	bool unnormalizedCoordinates;
-	bool largeTexture;
 
 	VkSamplerYcbcrModelConversion ycbcrModel;
 	bool studioSwing;    // Narrow range
 	bool swappedChroma;  // Cb/Cr components in reverse order
+
+	float mipLodBias = 0.0f;
+	float maxAnisotropy = 0.0f;
+	float minLod = 0.0f;
+	float maxLod = 0.0f;
 };
 
 }  // namespace sw

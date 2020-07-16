@@ -62,6 +62,40 @@ class FuzzerContext {
     return result;
   }
 
+  // Randomly shuffles a |sequence| between |lo| and |hi| indices inclusively.
+  // |lo| and |hi| must be valid indices to the |sequence|
+  template <typename T>
+  void Shuffle(std::vector<T>* sequence, size_t lo, size_t hi) const {
+    auto& array = *sequence;
+
+    if (array.empty()) {
+      return;
+    }
+
+    assert(lo <= hi && hi < array.size() && "lo and/or hi indices are invalid");
+
+    // i > lo to account for potential infinite loop when lo == 0
+    for (size_t i = hi; i > lo; --i) {
+      auto index =
+          random_generator_->RandomUint32(static_cast<uint32_t>(i - lo + 1));
+
+      if (lo + index != i) {
+        // Introduce std::swap to the scope but don't use it
+        // directly since there might be a better overload
+        using std::swap;
+        swap(array[lo + index], array[i]);
+      }
+    }
+  }
+
+  // Ramdomly shuffles a |sequence|
+  template <typename T>
+  void Shuffle(std::vector<T>* sequence) const {
+    if (!sequence->empty()) {
+      Shuffle(sequence, 0, sequence->size() - 1);
+    }
+  }
+
   // Yields an id that is guaranteed not to be used in the module being fuzzed,
   // or to have been issued before.
   uint32_t GetFreshId();
@@ -82,6 +116,9 @@ class FuzzerContext {
   uint32_t GetChanceOfAddingDeadContinue() {
     return chance_of_adding_dead_continue_;
   }
+  uint32_t GetChanceOfAddingEquationInstruction() {
+    return chance_of_adding_equation_instruction_;
+  }
   uint32_t GetChanceOfAddingGlobalVariable() {
     return chance_of_adding_global_variable_;
   }
@@ -98,6 +135,9 @@ class FuzzerContext {
   uint32_t GetChanceOfAddingStore() { return chance_of_adding_store_; }
   uint32_t GetChanceOfAddingVectorType() {
     return chance_of_adding_vector_type_;
+  }
+  uint32_t GetChanceOfAdjustingBranchWeights() {
+    return chance_of_adjusting_branch_weights_;
   }
   uint32_t GetChanceOfAdjustingFunctionControl() {
     return chance_of_adjusting_function_control_;
@@ -136,28 +176,49 @@ class FuzzerContext {
   uint32_t GetChanceOfOutliningFunction() {
     return chance_of_outlining_function_;
   }
+  uint32_t GetChanceOfPermutingParameters() {
+    return chance_of_permuting_parameters_;
+  }
   uint32_t GetChanceOfReplacingIdWithSynonym() {
     return chance_of_replacing_id_with_synonym_;
   }
   uint32_t GetChanceOfSplittingBlock() { return chance_of_splitting_block_; }
-  uint32_t GetRandomLoopControlPeelCount() {
-    return random_generator_->RandomUint32(max_loop_control_peel_count_);
-  }
-  uint32_t GetRandomLoopControlPartialCount() {
-    return random_generator_->RandomUint32(max_loop_control_partial_count_);
-  }
-  uint32_t GetRandomLoopLimit() {
-    return random_generator_->RandomUint32(max_loop_limit_);
-  }
-  uint32_t GetRandomSizeForNewArray() {
-    // Ensure that the array size is non-zero.
-    return random_generator_->RandomUint32(max_new_array_size_limit_ - 1) + 1;
+  uint32_t GetChanceOfTogglingAccessChainInstruction() {
+    return chance_of_toggling_access_chain_instruction_;
   }
 
   // Other functions to control transformations. Keep them in alphabetical
   // order.
+  uint32_t GetMaximumEquivalenceClassSizeForDataSynonymFactClosure() {
+    return max_equivalence_class_size_for_data_synonym_fact_closure_;
+  }
   uint32_t GetRandomIndexForAccessChain(uint32_t composite_size_bound) {
     return random_generator_->RandomUint32(composite_size_bound);
+  }
+  uint32_t GetRandomLoopControlPartialCount() {
+    return random_generator_->RandomUint32(max_loop_control_partial_count_);
+  }
+  uint32_t GetRandomLoopControlPeelCount() {
+    return random_generator_->RandomUint32(max_loop_control_peel_count_);
+  }
+  uint32_t GetRandomLoopLimit() {
+    return random_generator_->RandomUint32(max_loop_limit_);
+  }
+  std::pair<uint32_t, uint32_t> GetRandomBranchWeights() {
+    std::pair<uint32_t, uint32_t> branch_weights = {0, 0};
+
+    while (branch_weights.first == 0 && branch_weights.second == 0) {
+      // Using INT32_MAX to do not overflow UINT32_MAX when the branch weights
+      // are added together.
+      branch_weights.first = random_generator_->RandomUint32(INT32_MAX);
+      branch_weights.second = random_generator_->RandomUint32(INT32_MAX);
+    }
+
+    return branch_weights;
+  }
+  uint32_t GetRandomSizeForNewArray() {
+    // Ensure that the array size is non-zero.
+    return random_generator_->RandomUint32(max_new_array_size_limit_ - 1) + 1;
   }
   bool GoDeeperInConstantObfuscation(uint32_t depth) {
     return go_deeper_in_constant_obfuscation_(depth, random_generator_);
@@ -177,6 +238,7 @@ class FuzzerContext {
   uint32_t chance_of_adding_dead_block_;
   uint32_t chance_of_adding_dead_break_;
   uint32_t chance_of_adding_dead_continue_;
+  uint32_t chance_of_adding_equation_instruction_;
   uint32_t chance_of_adding_global_variable_;
   uint32_t chance_of_adding_load_;
   uint32_t chance_of_adding_local_variable_;
@@ -184,6 +246,7 @@ class FuzzerContext {
   uint32_t chance_of_adding_no_contraction_decoration_;
   uint32_t chance_of_adding_store_;
   uint32_t chance_of_adding_vector_type_;
+  uint32_t chance_of_adjusting_branch_weights_;
   uint32_t chance_of_adjusting_function_control_;
   uint32_t chance_of_adjusting_loop_control_;
   uint32_t chance_of_adjusting_memory_operands_mask_;
@@ -199,12 +262,15 @@ class FuzzerContext {
   uint32_t chance_of_moving_block_down_;
   uint32_t chance_of_obfuscating_constant_;
   uint32_t chance_of_outlining_function_;
+  uint32_t chance_of_permuting_parameters_;
   uint32_t chance_of_replacing_id_with_synonym_;
   uint32_t chance_of_splitting_block_;
+  uint32_t chance_of_toggling_access_chain_instruction_;
 
   // Limits associated with various quantities for which random values are
   // chosen during fuzzing.
   // Keep them in alphabetical order.
+  uint32_t max_equivalence_class_size_for_data_synonym_fact_closure_;
   uint32_t max_loop_control_partial_count_;
   uint32_t max_loop_control_peel_count_;
   uint32_t max_loop_limit_;

@@ -18,9 +18,10 @@
 #include <functional>
 #include <vector>
 
-#include "source/fuzz/fact_manager.h"
 #include "source/fuzz/fuzzer_context.h"
 #include "source/fuzz/protobufs/spirvfuzz_protobufs.h"
+#include "source/fuzz/transformation.h"
+#include "source/fuzz/transformation_context.h"
 #include "source/opt/ir_context.h"
 
 namespace spvtools {
@@ -29,22 +30,25 @@ namespace fuzz {
 // Interface for applying a pass of transformations to a module.
 class FuzzerPass {
  public:
-  FuzzerPass(opt::IRContext* ir_context, FactManager* fact_manager,
+  FuzzerPass(opt::IRContext* ir_context,
+             TransformationContext* transformation_context,
              FuzzerContext* fuzzer_context,
              protobufs::TransformationSequence* transformations);
 
   virtual ~FuzzerPass();
 
   // Applies the pass to the module |ir_context_|, assuming and updating
-  // facts from |fact_manager_|, and using |fuzzer_context_| to guide the
-  // process.  Appends to |transformations_| all transformations that were
-  // applied during the pass.
+  // information from |transformation_context_|, and using |fuzzer_context_| to
+  // guide the process.  Appends to |transformations_| all transformations that
+  // were applied during the pass.
   virtual void Apply() = 0;
 
  protected:
   opt::IRContext* GetIRContext() const { return ir_context_; }
 
-  FactManager* GetFactManager() const { return fact_manager_; }
+  TransformationContext* GetTransformationContext() const {
+    return transformation_context_;
+  }
 
   FuzzerContext* GetFuzzerContext() const { return fuzzer_context_; }
 
@@ -70,32 +74,32 @@ class FuzzerPass {
   // all times tracking an instruction descriptor that allows the latest
   // instruction to be located even if it has no result id.
   //
-  // The code to manipulate the instruction descriptor is a bit fiddly, and the
+  // The code to manipulate the instruction descriptor is a bit fiddly.  The
   // point of this method is to avoiding having to duplicate it in multiple
   // transformation passes.
   //
-  // The function |maybe_apply_transformation| is invoked for each instruction
-  // |inst_it| in block |block| of function |function| that is encountered.  The
+  // The function |action| is invoked for each instruction |inst_it| in block
+  // |block| of function |function| that is encountered.  The
   // |instruction_descriptor| parameter to the function object allows |inst_it|
   // to be identified.
   //
-  // The job of |maybe_apply_transformation| is to randomly decide whether to
-  // try to apply some transformation, and then - if selected - to attempt to
-  // apply it.
-  void MaybeAddTransformationBeforeEachInstruction(
+  // In most intended use cases, the job of |action| is to randomly decide
+  // whether to try to apply some transformation, and then - if selected - to
+  // attempt to apply it.
+  void ForEachInstructionWithInstructionDescriptor(
       std::function<
           void(opt::Function* function, opt::BasicBlock* block,
                opt::BasicBlock::iterator inst_it,
                const protobufs::InstructionDescriptor& instruction_descriptor)>
-          maybe_apply_transformation);
+          action);
 
   // A generic helper for applying a transformation that should be applicable
   // by construction, and adding it to the sequence of applied transformations.
-  template <typename TransformationType>
-  void ApplyTransformation(const TransformationType& transformation) {
-    assert(transformation.IsApplicable(GetIRContext(), *GetFactManager()) &&
+  void ApplyTransformation(const Transformation& transformation) {
+    assert(transformation.IsApplicable(GetIRContext(),
+                                       *GetTransformationContext()) &&
            "Transformation should be applicable by construction.");
-    transformation.Apply(GetIRContext(), GetFactManager());
+    transformation.Apply(GetIRContext(), GetTransformationContext());
     *GetTransformations()->add_transformation() = transformation.ToMessage();
   }
 
@@ -111,6 +115,12 @@ class FuzzerPass {
   // Returns the id of an OpTypeFloat instruction, with width 32.  If such an
   // instruction does not exist, a transformation is applied to add it.
   uint32_t FindOrCreate32BitFloatType();
+
+  // Returns the id of an OpTypeFunction %<return_type_id> %<...argument_id>
+  // instruction. If such an instruction doesn't exist, a transformation
+  // is applied to create a new one.
+  uint32_t FindOrCreateFunctionType(uint32_t return_type_id,
+                                    const std::vector<uint32_t>& argument_id);
 
   // Returns the id of an OpTypeVector instruction, with |component_type_id|
   // (which must already exist) as its base type, and |component_count|
@@ -154,23 +164,34 @@ class FuzzerPass {
   // type do not exist, transformations are applied to add them.
   uint32_t FindOrCreateBoolConstant(bool value);
 
+  // Returns the id of an OpConstant instruction of type with |type_id|
+  // that consists of |words|. If that instruction doesn't exist,
+  // transformations are applied to add it. |type_id| must be a valid
+  // result id of either scalar or boolean OpType* instruction that exists
+  // in the module.
+  uint32_t FindOrCreateConstant(const std::vector<uint32_t>& words,
+                                uint32_t type_id);
+
   // Returns the result id of an instruction of the form:
   //   %id = OpUndef %|type_id|
   // If no such instruction exists, a transformation is applied to add it.
   uint32_t FindOrCreateGlobalUndef(uint32_t type_id);
 
-  // Yields a pair, (base_type_ids, base_type_ids_to_pointers), such that:
-  // - base_type_ids captures every scalar or composite type declared in the
-  //   module (i.e., all int, bool, float, vector, matrix, struct and array
-  //   types
-  // - base_type_ids_to_pointers maps every such base type to the sequence
+  // Define a *basic type* to be an integer, boolean or floating-point type,
+  // or a matrix, vector, struct or fixed-size array built from basic types.  In
+  // particular, a basic type cannot contain an opaque type (such as an image),
+  // or a runtime-sized array.
+  //
+  // Yields a pair, (basic_type_ids, basic_type_ids_to_pointers), such that:
+  // - basic_type_ids captures every basic type declared in the module.
+  // - basic_type_ids_to_pointers maps every such basic type to the sequence
   //   of all pointer types that have storage class |storage_class| and the
-  //   given base type as their pointee type.  The sequence may be empty for
-  //   some base types if no pointers to those types are defined for the given
+  //   given basic type as their pointee type.  The sequence may be empty for
+  //   some basic types if no pointers to those types are defined for the given
   //   storage class, and the sequence will have multiple elements if there are
-  //   repeated pointer declarations for the same base type and storage class.
+  //   repeated pointer declarations for the same basic type and storage class.
   std::pair<std::vector<uint32_t>, std::map<uint32_t, std::vector<uint32_t>>>
-  GetAvailableBaseTypesAndPointers(SpvStorageClass storage_class) const;
+  GetAvailableBasicTypesAndPointers(SpvStorageClass storage_class) const;
 
   // Given a type id, |scalar_or_composite_type_id|, which must correspond to
   // some scalar or composite type, returns the result id of an instruction
@@ -224,7 +245,7 @@ class FuzzerPass {
       const std::vector<uint32_t>& constant_ids);
 
   opt::IRContext* ir_context_;
-  FactManager* fact_manager_;
+  TransformationContext* transformation_context_;
   FuzzerContext* fuzzer_context_;
   protobufs::TransformationSequence* transformations_;
 };

@@ -19,7 +19,7 @@
 #include "Memset.hpp"
 #include "Stream.hpp"
 #include "System/Types.hpp"
-#include "Vulkan/VkConfig.h"
+#include "Vulkan/VkConfig.hpp"
 #include "Vulkan/VkDescriptorSet.hpp"
 
 namespace vk {
@@ -73,9 +73,7 @@ struct BlendState : Memset<BlendState>
 class Context
 {
 public:
-	Context();
-
-	void init();
+	Context() = default;
 
 	bool isDrawPoint(bool polygonModeAware) const;
 	bool isDrawLine(bool polygonModeAware) const;
@@ -109,6 +107,7 @@ public:
 	VkFormat renderTargetInternalFormat(int index) const;
 	int colorWriteActive(int index) const;
 
+	vk::DescriptorSet::Array descriptorSetObjects = {};
 	vk::DescriptorSet::Bindings descriptorSets = {};
 	vk::DescriptorSet::DynamicOffsets descriptorDynamicOffsets = {};
 	Stream input[MAX_INTERFACE_COMPONENTS / 4];

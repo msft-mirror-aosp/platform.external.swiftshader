@@ -56,7 +56,7 @@ SamplerCore::SamplerCore(Pointer<Byte> &constants, const Sampler &state)
 {
 }
 
-Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Pointer<Byte> &sampler, Float4 uvw[4], Float4 &q, Float &&lodOrBias, Float4 &dsx, Float4 &dsy, Vector4f &offset, Int4 &sampleId, SamplerFunction function)
+Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Float4 uvw[4], Float4 &q, Float &&lodOrBias, Float4 &dsx, Float4 &dsy, Vector4f &offset, Int4 &sampleId, SamplerFunction function)
 {
 	Vector4f c;
 
@@ -84,19 +84,19 @@ Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Pointer<Byte> &sampl
 		{
 			if(!isCube())
 			{
-				computeLod(texture, sampler, lod, anisotropy, uDelta, vDelta, uuuu, vvvv, dsx, dsy, function);
+				computeLod(texture, lod, anisotropy, uDelta, vDelta, uuuu, vvvv, dsx, dsy, function);
 			}
 			else
 			{
-				computeLodCube(texture, sampler, lod, uvw[0], uvw[1], uvw[2], dsx, dsy, M, function);
+				computeLodCube(texture, lod, uvw[0], uvw[1], uvw[2], dsx, dsy, M, function);
 			}
 		}
 		else
 		{
-			computeLod3D(texture, sampler, lod, uuuu, vvvv, wwww, dsx, dsy, function);
+			computeLod3D(texture, lod, uuuu, vvvv, wwww, dsx, dsy, function);
 		}
 
-		Float bias = *Pointer<Float>(sampler + OFFSET(vk::Sampler, mipLodBias));
+		Float bias = state.mipLodBias;
 
 		if(function == Bias)
 		{
@@ -110,7 +110,7 @@ Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Pointer<Byte> &sampl
 	{
 		// Vulkan 1.1: "The absolute value of mipLodBias must be less than or equal to VkPhysicalDeviceLimits::maxSamplerLodBias"
 		// Hence no explicit clamping to maxSamplerLodBias is required in this case.
-		lod = lodOrBias + *Pointer<Float>(sampler + OFFSET(vk::Sampler, mipLodBias));
+		lod = lodOrBias + state.mipLodBias;
 	}
 	else if(function == Fetch)
 	{
@@ -131,8 +131,8 @@ Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Pointer<Byte> &sampl
 			c.y = Float4(lod);  // Unclamped LOD.
 		}
 
-		lod = Max(lod, *Pointer<Float>(sampler + OFFSET(vk::Sampler, minLod)));
-		lod = Min(lod, *Pointer<Float>(sampler + OFFSET(vk::Sampler, maxLod)));
+		lod = Max(lod, state.minLod);
+		lod = Min(lod, state.maxLod);
 
 		if(function == Query)
 		{
@@ -151,8 +151,8 @@ Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Pointer<Byte> &sampl
 	bool force32BitFiltering = state.highPrecisionFiltering && !isYcbcrFormat() && (state.textureFilter != FILTER_POINT);
 	bool seamlessCube = (state.addressingModeU == ADDRESSING_SEAMLESS);
 	bool use32BitFiltering = hasFloatTexture() || hasUnnormalizedIntegerTexture() || force32BitFiltering ||
-	                         seamlessCube || state.unnormalizedCoordinates || state.compareEnable || state.largeTexture ||
-	                         borderModeActive() || (function == Gather);
+	                         seamlessCube || state.unnormalizedCoordinates || state.compareEnable ||
+	                         borderModeActive() || (function == Gather) || (function == Fetch);
 
 	if(use32BitFiltering)
 	{
@@ -183,10 +183,10 @@ Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Pointer<Byte> &sampl
 				case VK_FORMAT_R8G8_SNORM:
 				case VK_FORMAT_R8G8B8A8_SNORM:
 				case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
-					c.x *= Float4(1.0f / 0x7F00);
-					c.y *= Float4(1.0f / 0x7F00);
-					c.z *= Float4(1.0f / 0x7F00);
-					c.w *= Float4(1.0f / 0x7F00);
+					c.x = Max(c.x * Float4(1.0f / 0x7F00), Float4(-1.0f));
+					c.y = Max(c.y * Float4(1.0f / 0x7F00), Float4(-1.0f));
+					c.z = Max(c.z * Float4(1.0f / 0x7F00), Float4(-1.0f));
+					c.w = Max(c.w * Float4(1.0f / 0x7F00), Float4(-1.0f));
 					break;
 				case VK_FORMAT_R8_UNORM:
 				case VK_FORMAT_R8G8_UNORM:
@@ -237,10 +237,10 @@ Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Pointer<Byte> &sampl
 			case VK_FORMAT_R8G8_SNORM:
 			case VK_FORMAT_R8G8B8A8_SNORM:
 			case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
-				c.x = Float4(cs.x) * Float4(1.0f / 0x7F00);
-				c.y = Float4(cs.y) * Float4(1.0f / 0x7F00);
-				c.z = Float4(cs.z) * Float4(1.0f / 0x7F00);
-				c.w = Float4(cs.w) * Float4(1.0f / 0x7F00);
+				c.x = Max(Float4(cs.x) * Float4(1.0f / 0x7F00), Float4(-1.0f));
+				c.y = Max(Float4(cs.y) * Float4(1.0f / 0x7F00), Float4(-1.0f));
+				c.z = Max(Float4(cs.z) * Float4(1.0f / 0x7F00), Float4(-1.0f));
+				c.w = Max(Float4(cs.w) * Float4(1.0f / 0x7F00), Float4(-1.0f));
 				break;
 			case VK_FORMAT_R8_UNORM:
 			case VK_FORMAT_R8G8_UNORM:
@@ -520,11 +520,9 @@ Vector4s SamplerCore::sampleQuad2D(Pointer<Byte> &texture, Float4 &u, Float4 &v,
 	Pointer<Byte> buffer;
 	selectMipmap(texture, mipmap, buffer, lod, secondLOD);
 
-	bool texelFetch = (function == Fetch);
-
-	Short4 uuuu = texelFetch ? Short4(As<Int4>(u)) : address(u, state.addressingModeU, mipmap);
-	Short4 vvvv = texelFetch ? Short4(As<Int4>(v)) : address(v, state.addressingModeV, mipmap);
-	Short4 wwww = texelFetch ? Short4(As<Int4>(w)) : address(w, state.addressingModeW, mipmap);
+	Short4 uuuu = address(u, state.addressingModeU, mipmap);
+	Short4 vvvv = address(v, state.addressingModeV, mipmap);
+	Short4 wwww = address(w, state.addressingModeW, mipmap);
 
 	Short4 cubeArrayId(0);
 	if(state.textureType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY)
@@ -532,7 +530,7 @@ Vector4s SamplerCore::sampleQuad2D(Pointer<Byte> &texture, Float4 &u, Float4 &v,
 		cubeArrayId = address(cubeArrayCoord, state.addressingModeY, mipmap);
 	}
 
-	if(state.textureFilter == FILTER_POINT || texelFetch)
+	if(state.textureFilter == FILTER_POINT)
 	{
 		c = sampleTexel(uuuu, vvvv, wwww, offset, mipmap, cubeArrayId, sampleId, buffer, function);
 	}
@@ -729,11 +727,9 @@ Vector4s SamplerCore::sample3D(Pointer<Byte> &texture, Float4 &u_, Float4 &v_, F
 	Pointer<Byte> buffer;
 	selectMipmap(texture, mipmap, buffer, lod, secondLOD);
 
-	bool texelFetch = (function == Fetch);
-
-	Short4 uuuu = texelFetch ? Short4(As<Int4>(u_)) : address(u_, state.addressingModeU, mipmap);
-	Short4 vvvv = texelFetch ? Short4(As<Int4>(v_)) : address(v_, state.addressingModeV, mipmap);
-	Short4 wwww = texelFetch ? Short4(As<Int4>(w_)) : address(w_, state.addressingModeW, mipmap);
+	Short4 uuuu = address(u_, state.addressingModeU, mipmap);
+	Short4 vvvv = address(v_, state.addressingModeV, mipmap);
+	Short4 wwww = address(w_, state.addressingModeW, mipmap);
 
 	Short4 cubeArrayId(0);
 	if(state.textureType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY)
@@ -741,7 +737,7 @@ Vector4s SamplerCore::sample3D(Pointer<Byte> &texture, Float4 &u_, Float4 &v_, F
 		cubeArrayId = address(cubeArrayCoord, state.addressingModeY, mipmap);
 	}
 
-	if(state.textureFilter == FILTER_POINT || texelFetch)
+	if(state.textureFilter == FILTER_POINT)
 	{
 		c_ = sampleTexel(uuuu, vvvv, wwww, offset, mipmap, cubeArrayId, sampleId, buffer, function);
 	}
@@ -1160,7 +1156,7 @@ Float SamplerCore::log2(Float lod)
 	return lod;
 }
 
-void SamplerCore::computeLod(Pointer<Byte> &texture, Pointer<Byte> &sampler, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta, Float4 &uuuu, Float4 &vvvv, Float4 &dsx, Float4 &dsy, SamplerFunction function)
+void SamplerCore::computeLod(Pointer<Byte> &texture, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta, Float4 &uuuu, Float4 &vvvv, Float4 &dsx, Float4 &dsy, SamplerFunction function)
 {
 	Float4 duvdxy;
 
@@ -1198,7 +1194,7 @@ void SamplerCore::computeLod(Pointer<Byte> &texture, Pointer<Byte> &sampler, Flo
 		vDelta = As<Float4>((As<Int4>(dvdx) & mask) | ((As<Int4>(dvdy) & ~mask)));
 
 		anisotropy = lod * Rcp_pp(det);
-		anisotropy = Min(anisotropy, *Pointer<Float>(sampler + OFFSET(vk::Sampler, maxAnisotropy)));
+		anisotropy = Min(anisotropy, state.maxAnisotropy);
 
 		lod *= Rcp_pp(anisotropy * anisotropy);
 	}
@@ -1206,7 +1202,7 @@ void SamplerCore::computeLod(Pointer<Byte> &texture, Pointer<Byte> &sampler, Flo
 	lod = log2sqrt(lod);  // log2(sqrt(lod))
 }
 
-void SamplerCore::computeLodCube(Pointer<Byte> &texture, Pointer<Byte> &sampler, Float &lod, Float4 &u, Float4 &v, Float4 &w, Float4 &dsx, Float4 &dsy, Float4 &M, SamplerFunction function)
+void SamplerCore::computeLodCube(Pointer<Byte> &texture, Float &lod, Float4 &u, Float4 &v, Float4 &w, Float4 &dsx, Float4 &dsy, Float4 &M, SamplerFunction function)
 {
 	Float4 dudxy, dvdxy, dsdxy;
 
@@ -1247,7 +1243,7 @@ void SamplerCore::computeLodCube(Pointer<Byte> &texture, Pointer<Byte> &sampler,
 	lod = log2(lod);
 }
 
-void SamplerCore::computeLod3D(Pointer<Byte> &texture, Pointer<Byte> &sampler, Float &lod, Float4 &uuuu, Float4 &vvvv, Float4 &wwww, Float4 &dsx, Float4 &dsy, SamplerFunction function)
+void SamplerCore::computeLod3D(Pointer<Byte> &texture, Float &lod, Float4 &uuuu, Float4 &vvvv, Float4 &wwww, Float4 &dsx, Float4 &dsy, SamplerFunction function)
 {
 	Float4 dudxy, dvdxy, dsdxy;
 
@@ -1355,8 +1351,6 @@ Short4 SamplerCore::applyOffset(Short4 &uvw, Float4 &offset, const Int4 &whd, Ad
 		case AddressingMode::ADDRESSING_BORDER:  // FIXME: Implement and test ADDRESSING_MIRROR, ADDRESSING_MIRRORONCE, ADDRESSING_BORDER
 			tmp = Min(Max(tmp, Int4(0)), whd - Int4(1));
 			break;
-		case ADDRESSING_TEXELFETCH:
-			break;
 		case AddressingMode::ADDRESSING_SEAMLESS:
 			ASSERT(false);  // Cube sampling doesn't support offset.
 		default:
@@ -1368,21 +1362,15 @@ Short4 SamplerCore::applyOffset(Short4 &uvw, Float4 &offset, const Int4 &whd, Ad
 
 void SamplerCore::computeIndices(UInt index[4], Short4 uuuu, Short4 vvvv, Short4 wwww, Vector4f &offset, const Pointer<Byte> &mipmap, const Short4 &cubeArrayId, const Int4 &sampleId, SamplerFunction function)
 {
-	bool texelFetch = (function == Fetch);
 	bool hasOffset = (function.offset != 0);
 
-	if(!texelFetch)
-	{
-		uuuu = MulHigh(As<UShort4>(uuuu), UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, width))));
-		vvvv = MulHigh(As<UShort4>(vvvv), UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, height))));
-	}
+	uuuu = MulHigh(As<UShort4>(uuuu), UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, width))));
+	vvvv = MulHigh(As<UShort4>(vvvv), UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, height))));
 
 	if(hasOffset)
 	{
-		uuuu = applyOffset(uuuu, offset.x, *Pointer<Int4>(mipmap + OFFSET(Mipmap, width)),
-		                   texelFetch ? ADDRESSING_TEXELFETCH : state.addressingModeU);
-		vvvv = applyOffset(vvvv, offset.y, *Pointer<Int4>(mipmap + OFFSET(Mipmap, height)),
-		                   texelFetch ? ADDRESSING_TEXELFETCH : state.addressingModeV);
+		uuuu = applyOffset(uuuu, offset.x, *Pointer<Int4>(mipmap + OFFSET(Mipmap, width)), state.addressingModeU);
+		vvvv = applyOffset(vvvv, offset.y, *Pointer<Int4>(mipmap + OFFSET(Mipmap, height)), state.addressingModeV);
 	}
 
 	Short4 uuu2 = uuuu;
@@ -1395,15 +1383,11 @@ void SamplerCore::computeIndices(UInt index[4], Short4 uuuu, Short4 vvvv, Short4
 	{
 		if(state.textureType == VK_IMAGE_VIEW_TYPE_3D)
 		{
-			if(!texelFetch)
-			{
-				wwww = MulHigh(As<UShort4>(wwww), UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, depth))));
-			}
+			wwww = MulHigh(As<UShort4>(wwww), UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, depth))));
 
 			if(hasOffset)
 			{
-				wwww = applyOffset(wwww, offset.z, *Pointer<Int4>(mipmap + OFFSET(Mipmap, depth)),
-				                   texelFetch ? ADDRESSING_TEXELFETCH : state.addressingModeW);
+				wwww = applyOffset(wwww, offset.z, *Pointer<Int4>(mipmap + OFFSET(Mipmap, depth)), state.addressingModeW);
 			}
 		}
 
@@ -1421,22 +1405,6 @@ void SamplerCore::computeIndices(UInt index[4], Short4 uuuu, Short4 vvvv, Short4
 		index[1] = Extract(As<Int2>(uuuu), 1);
 		index[2] = Extract(As<Int2>(uuu2), 0);
 		index[3] = Extract(As<Int2>(uuu2), 1);
-	}
-
-	if(texelFetch)
-	{
-		Int size = *Pointer<Int>(mipmap + OFFSET(Mipmap, sliceP));
-		if(hasThirdCoordinate())
-		{
-			size *= *Pointer<Int>(mipmap + OFFSET(Mipmap, depth));
-		}
-		UInt min = 0;
-		UInt max = size - 1;
-
-		for(int i = 0; i < 4; i++)
-		{
-			index[i] = Min(Max(index[i], min), max);
-		}
 	}
 
 	if(function.sample)
@@ -1496,7 +1464,7 @@ Vector4s SamplerCore::sampleTexel(UInt index[4], Pointer<Byte> buffer)
 {
 	Vector4s c;
 
-	if(has16bitTextureFormat())
+	if(has16bitPackedTextureFormat())
 	{
 		c.x = Insert(c.x, Pointer<Short>(buffer)[index[0]], 0);
 		c.x = Insert(c.x, Pointer<Short>(buffer)[index[1]], 1);
@@ -2534,9 +2502,9 @@ bool SamplerCore::hasThirdCoordinate() const
 	       (state.textureType == VK_IMAGE_VIEW_TYPE_1D_ARRAY);  // Treated as 2D texture with second coordinate 0. TODO(b/134669567)
 }
 
-bool SamplerCore::has16bitTextureFormat() const
+bool SamplerCore::has16bitPackedTextureFormat() const
 {
-	return state.textureFormat.has16bitTextureFormat();
+	return state.textureFormat.has16bitPackedTextureFormat();
 }
 
 bool SamplerCore::has8bitTextureComponents() const
