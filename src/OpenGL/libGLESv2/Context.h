@@ -105,6 +105,7 @@ enum
 	MAX_UNIFORM_BUFFER_BINDINGS = sw::MAX_UNIFORM_BUFFER_BINDINGS,
 	UNIFORM_BUFFER_OFFSET_ALIGNMENT = 4,
 	NUM_PROGRAM_BINARY_FORMATS = 0,
+	MAX_SHADER_CALL_STACK_SIZE = sw::MAX_SHADER_CALL_STACK_SIZE,
 };
 
 const GLenum compressedTextureFormats[] =
@@ -125,36 +126,6 @@ const GLenum compressedTextureFormats[] =
 	GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2,
 	GL_COMPRESSED_RGBA8_ETC2_EAC,
 	GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC,
-#if (ASTC_SUPPORT)
-	GL_COMPRESSED_RGBA_ASTC_4x4_KHR,
-	GL_COMPRESSED_RGBA_ASTC_5x4_KHR,
-	GL_COMPRESSED_RGBA_ASTC_5x5_KHR,
-	GL_COMPRESSED_RGBA_ASTC_6x5_KHR,
-	GL_COMPRESSED_RGBA_ASTC_6x6_KHR,
-	GL_COMPRESSED_RGBA_ASTC_8x5_KHR,
-	GL_COMPRESSED_RGBA_ASTC_8x6_KHR,
-	GL_COMPRESSED_RGBA_ASTC_8x8_KHR,
-	GL_COMPRESSED_RGBA_ASTC_10x5_KHR,
-	GL_COMPRESSED_RGBA_ASTC_10x6_KHR,
-	GL_COMPRESSED_RGBA_ASTC_10x8_KHR,
-	GL_COMPRESSED_RGBA_ASTC_10x10_KHR,
-	GL_COMPRESSED_RGBA_ASTC_12x10_KHR,
-	GL_COMPRESSED_RGBA_ASTC_12x12_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR,
-	GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR,
-#endif // ASTC_SUPPORT
 #endif // GL_ES_VERSION_3_0
 };
 
@@ -409,6 +380,7 @@ struct State
 	gl::BindingPointer<Buffer> pixelPackBuffer;
 	gl::BindingPointer<Buffer> pixelUnpackBuffer;
 	gl::BindingPointer<Buffer> genericUniformBuffer;
+	gl::BindingPointer<Buffer> genericTransformFeedbackBuffer;
 	BufferBinding uniformBuffers[MAX_UNIFORM_BUFFER_BINDINGS];
 
 	GLuint readFramebuffer;
@@ -635,10 +607,11 @@ public:
 	Buffer *getPixelPackBuffer() const;
 	Buffer *getPixelUnpackBuffer() const;
 	Buffer *getGenericUniformBuffer() const;
-	GLsizei getRequiredBufferSize(GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type) const;
-	GLenum getPixels(const GLvoid **data, GLenum type, GLsizei imageSize) const;
+	size_t getRequiredBufferSize(GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type) const;
+	GLenum getPixels(const GLvoid **data, GLenum type, size_t imageSize) const;
 	bool getBuffer(GLenum target, es2::Buffer **buffer) const;
 	Program *getCurrentProgram() const;
+	Texture *getTargetTexture(GLenum target) const;
 	Texture2D *getTexture2D() const;
 	Texture2D *getTexture2D(GLenum target) const;
 	Texture3D *getTexture3D() const;
@@ -776,12 +749,17 @@ class ContextPtr {
 public:
 	explicit ContextPtr(Context *context) : ptr(context)
 	{
-		if (ptr) ptr->getResourceLock()->lock();
-    }
+		if (ptr) { ptr->getResourceLock()->lock(); }
+	}
 
 	~ContextPtr() {
-		if (ptr) ptr->getResourceLock()->unlock();
+		if (ptr) { ptr->getResourceLock()->unlock(); }
 	}
+
+	ContextPtr(ContextPtr const &) = delete;
+	ContextPtr & operator=(ContextPtr const &) = delete;
+	ContextPtr(ContextPtr && other) : ptr(other.ptr) { other.ptr = nullptr; }
+	ContextPtr & operator=(ContextPtr && other) { ptr = other.ptr; other.ptr = nullptr; return *this; }
 
 	Context *operator ->() { return ptr; }
 	operator bool() const { return ptr != nullptr; }

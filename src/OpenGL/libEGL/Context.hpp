@@ -19,6 +19,8 @@
 #include "Renderer/Surface.hpp"
 
 #include <EGL/egl.h>
+#undef Bool
+
 #include <GLES/gl.h>
 
 namespace gl { class Surface; }
@@ -44,7 +46,7 @@ public:
 
 protected:
 	Context(egl::Display *display) : display(display) {}
-	virtual ~Context() {};
+	virtual ~Context() {}
 
 	egl::Display *const display;
 };

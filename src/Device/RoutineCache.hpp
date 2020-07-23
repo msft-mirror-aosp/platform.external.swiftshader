@@ -15,37 +15,17 @@
 #ifndef sw_RoutineCache_hpp
 #define sw_RoutineCache_hpp
 
-#include "LRUCache.hpp"
+#include "System/LRUCache.hpp"
 
 #include "Reactor/Reactor.hpp"
 
-namespace sw
-{
-	using namespace rr;
+namespace sw {
 
-	template<class State>
-	class RoutineCache : public LRUCache<State, Routine>
-	{
-	public:
-		RoutineCache(int n, const char *precache = 0);
-		~RoutineCache();
+using namespace rr;
 
-	private:
-		const char *precache;
-		#if defined(_WIN32)
-		HMODULE precacheDLL;
-		#endif
-	};
+template<class State, class FunctionType>
+using RoutineCache = LRUCache<State, RoutineT<FunctionType>>;
 
-	template<class State>
-	RoutineCache<State>::RoutineCache(int n, const char *precache) : LRUCache<State, Routine>(n), precache(precache)
-	{
-	}
+}  // namespace sw
 
-	template<class State>
-	RoutineCache<State>::~RoutineCache()
-	{
-	}
-}
-
-#endif   // sw_RoutineCache_hpp
+#endif  // sw_RoutineCache_hpp

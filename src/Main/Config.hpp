@@ -20,8 +20,6 @@
 #define PERF_HUD 0       // Display time spent on vertex, setup and pixel processing for each thread
 #define PERF_PROFILE 0   // Profile various pipeline stages and display the timing in SwiftConfig
 
-#define ASTC_SUPPORT 0
-
 // Worker thread count when not set by SwiftConfig
 // 0 = process affinity count (recommended)
 // 1 = rendering on main thread (no worker threads), useful for debugging
@@ -97,10 +95,7 @@ namespace sw
 		MAX_TEXTURE_LOD = MIPMAP_LEVELS - 2,   // Trilinear accesses lod+1
 		RENDERTARGETS = 8,
 		NUM_TEMPORARY_REGISTERS = 4096,
-		MAX_SHADER_CALL_SITES = 2048,
-		MAX_SHADER_NESTED_LOOPS = 4,
-		MAX_SHADER_NESTED_IFS = 24 + 24,
-		MAX_SHADER_CALL_STACK_SIZE = 16,
+		MAX_SHADER_CALL_STACK_SIZE = 64,
 		MAX_SHADER_ENABLE_STACK_SIZE = 1 + 24,
 	};
 }

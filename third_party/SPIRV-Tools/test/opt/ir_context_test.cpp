@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "source/opt/ir_context.h"
+
 #include <algorithm>
 #include <memory>
 #include <string>
 #include <utility>
 
+#include "OpenCLDebugInfo100.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "source/opt/ir_context.h"
 #include "source/opt/pass.h"
 #include "test/opt/pass_fixture.h"
 #include "test/opt/pass_utils.h"
@@ -371,6 +373,123 @@ TEST_F(IRContextTest, KillDecorationGroup) {
   EXPECT_TRUE(context->annotations().empty());
 }
 
+TEST_F(IRContextTest, KillFunctionFromDebugFunction) {
+  const std::string text = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "OpenCL.DebugInfo.100"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %2 "main"
+               OpExecutionMode %2 OriginUpperLeft
+          %3 = OpString "ps.hlsl"
+          %4 = OpString "foo"
+               OpSource HLSL 600
+       %void = OpTypeVoid
+          %6 = OpTypeFunction %void
+          %7 = OpExtInst %void %1 DebugSource %3
+          %8 = OpExtInst %void %1 DebugCompilationUnit 1 4 %7 HLSL
+          %9 = OpExtInst %void %1 DebugTypeFunction FlagIsProtected|FlagIsPrivate %void
+         %10 = OpExtInst %void %1 DebugFunction %4 %9 %7 1 1 %8 %4 FlagIsProtected|FlagIsPrivate 1 %11
+          %2 = OpFunction %void None %6
+         %12 = OpLabel
+               OpReturn
+               OpFunctionEnd
+         %11 = OpFunction %void None %6
+         %13 = OpLabel
+               OpReturn
+               OpFunctionEnd
+)";
+
+  std::unique_ptr<IRContext> context =
+      BuildModule(SPV_ENV_UNIVERSAL_1_2, nullptr, text);
+
+  // Delete the second variable.
+  context->KillDef(11);
+
+  // Get DebugInfoNone id.
+  uint32_t debug_info_none_id = 0;
+  for (auto it = context->ext_inst_debuginfo_begin();
+       it != context->ext_inst_debuginfo_end(); ++it) {
+    if (it->GetOpenCL100DebugOpcode() == OpenCLDebugInfo100DebugInfoNone) {
+      debug_info_none_id = it->result_id();
+    }
+  }
+  EXPECT_NE(0, debug_info_none_id);
+
+  // Check the Function operand of DebugFunction is DebugInfoNone.
+  const uint32_t kDebugFunctionOperandFunctionIndex = 13;
+  bool checked = false;
+  for (auto it = context->ext_inst_debuginfo_begin();
+       it != context->ext_inst_debuginfo_end(); ++it) {
+    if (it->GetOpenCL100DebugOpcode() == OpenCLDebugInfo100DebugFunction) {
+      EXPECT_FALSE(checked);
+      EXPECT_EQ(it->GetOperand(kDebugFunctionOperandFunctionIndex).words[0],
+                debug_info_none_id);
+      checked = true;
+    }
+  }
+  EXPECT_TRUE(checked);
+}
+
+TEST_F(IRContextTest, KillVariableFromDebugGlobalVariable) {
+  const std::string text = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "OpenCL.DebugInfo.100"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %2 "main"
+               OpExecutionMode %2 OriginUpperLeft
+          %3 = OpString "ps.hlsl"
+          %4 = OpString "foo"
+          %5 = OpString "int"
+               OpSource HLSL 600
+       %uint = OpTypeInt 32 0
+    %uint_32 = OpConstant %uint 32
+%_ptr_Private_uint = OpTypePointer Private %uint
+       %void = OpTypeVoid
+         %10 = OpTypeFunction %void
+         %11 = OpVariable %_ptr_Private_uint Private
+         %12 = OpExtInst %void %1 DebugSource %3
+         %13 = OpExtInst %void %1 DebugCompilationUnit 1 4 %12 HLSL
+         %14 = OpExtInst %void %1 DebugTypeBasic %5 %uint_32 Signed
+         %15 = OpExtInst %void %1 DebugGlobalVariable %4 %14 %12 1 12 %13 %4 %11 FlagIsDefinition
+          %2 = OpFunction %void None %10
+         %16 = OpLabel
+               OpReturn
+               OpFunctionEnd
+)";
+
+  std::unique_ptr<IRContext> context =
+      BuildModule(SPV_ENV_UNIVERSAL_1_2, nullptr, text);
+
+  // Delete the second variable.
+  context->KillDef(11);
+
+  // Get DebugInfoNone id.
+  uint32_t debug_info_none_id = 0;
+  for (auto it = context->ext_inst_debuginfo_begin();
+       it != context->ext_inst_debuginfo_end(); ++it) {
+    if (it->GetOpenCL100DebugOpcode() == OpenCLDebugInfo100DebugInfoNone) {
+      debug_info_none_id = it->result_id();
+    }
+  }
+  EXPECT_NE(0, debug_info_none_id);
+
+  // Check the Function operand of DebugFunction is DebugInfoNone.
+  const uint32_t kDebugGlobalVariableOperandVariableIndex = 11;
+  bool checked = false;
+  for (auto it = context->ext_inst_debuginfo_begin();
+       it != context->ext_inst_debuginfo_end(); ++it) {
+    if (it->GetOpenCL100DebugOpcode() ==
+        OpenCLDebugInfo100DebugGlobalVariable) {
+      EXPECT_FALSE(checked);
+      EXPECT_EQ(
+          it->GetOperand(kDebugGlobalVariableOperandVariableIndex).words[0],
+          debug_info_none_id);
+      checked = true;
+    }
+  }
+  EXPECT_TRUE(checked);
+}
+
 TEST_F(IRContextTest, BasicVisitFromEntryPoint) {
   // Make sure we visit the entry point, and the function it calls.
   // Do not visit Dead or Exported.
@@ -664,6 +783,90 @@ OpFunctionEnd)";
   EXPECT_EQ(next_id_bound, 0);
   EXPECT_EQ(current_bound, context->module()->id_bound());
 }
+
+TEST_F(IRContextTest, CfgAndDomAnalysis) {
+  const std::string text = R"(
+OpCapability Shader
+OpCapability Linkage
+OpMemoryModel Logical GLSL450
+%1 = OpTypeVoid
+%2 = OpTypeFunction %1
+%3 = OpFunction %1 None %2
+%4 = OpLabel
+OpReturn
+OpFunctionEnd)";
+
+  std::unique_ptr<IRContext> ctx =
+      BuildModule(SPV_ENV_UNIVERSAL_1_1, nullptr, text,
+                  SPV_TEXT_TO_BINARY_OPTION_PRESERVE_NUMERIC_IDS);
+
+  // Building the dominator analysis should build the CFG.
+  ASSERT_TRUE(ctx->module()->begin() != ctx->module()->end());
+  ctx->GetDominatorAnalysis(&*ctx->module()->begin());
+
+  EXPECT_TRUE(ctx->AreAnalysesValid(IRContext::kAnalysisCFG));
+  EXPECT_TRUE(ctx->AreAnalysesValid(IRContext::kAnalysisDominatorAnalysis));
+
+  // Invalidating the CFG analysis should invalidate the dominator analysis.
+  ctx->InvalidateAnalyses(IRContext::kAnalysisCFG);
+  EXPECT_FALSE(ctx->AreAnalysesValid(IRContext::kAnalysisCFG));
+  EXPECT_FALSE(ctx->AreAnalysesValid(IRContext::kAnalysisDominatorAnalysis));
+}
+
+TEST_F(IRContextTest, AsanErrorTest) {
+  std::string shader = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %4 "main"
+               OpExecutionMode %4 OriginUpperLeft
+               OpSource ESSL 310
+               OpName %4 "main"
+               OpName %8 "x"
+               OpName %10 "y"
+               OpDecorate %8 RelaxedPrecision
+               OpDecorate %10 RelaxedPrecision
+               OpDecorate %11 RelaxedPrecision
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %6 = OpTypeInt 32 1
+          %7 = OpTypePointer Function %6
+          %9 = OpConstant %6 1
+          %4 = OpFunction %2 None %3
+          %5 = OpLabel
+          %8 = OpVariable %7 Function
+         %10 = OpVariable %7 Function
+               OpStore %8 %9
+         %11 = OpLoad %6 %8
+	       OpBranch %20
+	 %20 = OpLabel
+	 %21 = OpPhi %6 %11 %5
+         OpStore %10 %21
+         OpReturn
+         OpFunctionEnd
+  )";
+
+  const auto env = SPV_ENV_UNIVERSAL_1_3;
+  const auto consumer = nullptr;
+  const auto context = BuildModule(
+      env, consumer, shader, SPV_TEXT_TO_BINARY_OPTION_PRESERVE_NUMERIC_IDS);
+
+  opt::Function* fun =
+      context->cfg()->block(5)->GetParent();  // Computes the CFG analysis
+  opt::DominatorAnalysis* dom = nullptr;
+  dom = context->GetDominatorAnalysis(fun);  // Computes the dominator analysis,
+                                             // which depends on the CFG
+                                             // analysis
+  context->InvalidateAnalysesExceptFor(
+      opt::IRContext::Analysis::kAnalysisDominatorAnalysis);  // Invalidates the
+                                                              // CFG analysis
+  dom = context->GetDominatorAnalysis(
+      fun);  // Recompute the CFG analysis because the Dominator tree uses it.
+  auto bb = dom->ImmediateDominator(5);
+  std::cout
+      << bb->id();  // Make sure asan does not complain about use after free.
+}
+
 }  // namespace
 }  // namespace opt
 }  // namespace spvtools

@@ -455,6 +455,34 @@ TEST_F(ValueTableTest, CopyObject) {
   EXPECT_EQ(vtable.GetValueNumber(inst1), vtable.GetValueNumber(inst2));
 }
 
+TEST_F(ValueTableTest, CopyObjectWitDecoration) {
+  const std::string text = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %2 "main"
+               OpExecutionMode %2 OriginUpperLeft
+               OpSource GLSL 430
+               OpDecorate %3 NonUniformEXT
+          %4 = OpTypeVoid
+          %5 = OpTypeFunction %4
+          %6 = OpTypeFloat 32
+          %7 = OpTypePointer Function %6
+          %2 = OpFunction %4 None %5
+          %8 = OpLabel
+          %9 = OpVariable %7 Function
+         %10 = OpLoad %6 %9
+          %3 = OpCopyObject %6 %10
+               OpReturn
+               OpFunctionEnd
+  )";
+  auto context = BuildModule(SPV_ENV_UNIVERSAL_1_2, nullptr, text);
+  ValueNumberTable vtable(context.get());
+  Instruction* inst1 = context->get_def_use_mgr()->GetDef(10);
+  Instruction* inst2 = context->get_def_use_mgr()->GetDef(3);
+  EXPECT_NE(vtable.GetValueNumber(inst1), vtable.GetValueNumber(inst2));
+}
+
 // Test that a phi where the operands have the same value assigned that value
 // to the result of the phi.
 TEST_F(ValueTableTest, PhiTest1) {
@@ -493,6 +521,45 @@ TEST_F(ValueTableTest, PhiTest1) {
   Instruction* phi = context->get_def_use_mgr()->GetDef(16);
   EXPECT_EQ(vtable.GetValueNumber(inst1), vtable.GetValueNumber(inst2));
   EXPECT_EQ(vtable.GetValueNumber(inst1), vtable.GetValueNumber(phi));
+}
+
+TEST_F(ValueTableTest, PhiTest1WithDecoration) {
+  const std::string text = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %2 "main"
+               OpExecutionMode %2 OriginUpperLeft
+               OpSource GLSL 430
+               OpDecorate %3 NonUniformEXT
+          %4 = OpTypeVoid
+          %5 = OpTypeFunction %5
+          %6 = OpTypeFloat 32
+          %7 = OpTypePointer Uniform %6
+          %8 = OpTypeBool
+          %9 = OpConstantTrue %8
+          %10 = OpVariable %7 Uniform
+          %2 = OpFunction %4 None %5
+         %11 = OpLabel
+               OpBranchConditional %9 %12 %13
+         %12 = OpLabel
+         %14 = OpLoad %6 %10
+               OpBranch %15
+         %13 = OpLabel
+         %16 = OpLoad %6 %10
+               OpBranch %15
+         %15 = OpLabel
+         %3 = OpPhi %6 %14 %12 %16 %13
+               OpReturn
+               OpFunctionEnd
+  )";
+  auto context = BuildModule(SPV_ENV_UNIVERSAL_1_2, nullptr, text);
+  ValueNumberTable vtable(context.get());
+  Instruction* inst1 = context->get_def_use_mgr()->GetDef(14);
+  Instruction* inst2 = context->get_def_use_mgr()->GetDef(16);
+  Instruction* phi = context->get_def_use_mgr()->GetDef(3);
+  EXPECT_EQ(vtable.GetValueNumber(inst1), vtable.GetValueNumber(inst2));
+  EXPECT_NE(vtable.GetValueNumber(inst1), vtable.GetValueNumber(phi));
 }
 
 // When the values for the inputs to a phi do not match, then the phi should
@@ -584,6 +651,81 @@ TEST_F(ValueTableTest, PhiLoopTest) {
   Instruction* phi2 = context->get_def_use_mgr()->GetDef(18);
   EXPECT_EQ(vtable.GetValueNumber(inst1), vtable.GetValueNumber(phi2));
   EXPECT_NE(vtable.GetValueNumber(phi1), vtable.GetValueNumber(phi2));
+}
+
+// Test to make sure that OpPhi instructions with no in operands are handled
+// correctly.
+TEST_F(ValueTableTest, EmptyPhiTest) {
+  const std::string text = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %2 "main"
+               OpExecutionMode %2 OriginUpperLeft
+               OpSource GLSL 430
+       %void = OpTypeVoid
+          %4 = OpTypeFunction %void
+       %bool = OpTypeBool
+       %true = OpConstantTrue %bool
+          %2 = OpFunction %void None %4
+          %7 = OpLabel
+               OpSelectionMerge %8 None
+               OpBranchConditional %true %9 %8
+          %9 = OpLabel
+               OpKill
+          %8 = OpLabel
+         %10 = OpPhi %bool
+               OpReturn
+               OpFunctionEnd
+  )";
+  auto context = BuildModule(SPV_ENV_UNIVERSAL_1_2, nullptr, text);
+  ValueNumberTable vtable(context.get());
+  Instruction* inst = context->get_def_use_mgr()->GetDef(10);
+  vtable.GetValueNumber(inst);
+}
+
+TEST_F(ValueTableTest, RedundantSampledImageLoad) {
+  const std::string text = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %main "main" %gl_FragColor
+               OpExecutionMode %main OriginLowerLeft
+               OpSource GLSL 330
+               OpName %main "main"
+               OpName %tex0 "tex0"
+               OpName %gl_FragColor "gl_FragColor"
+               OpDecorate %tex0 Location 0
+               OpDecorate %tex0 DescriptorSet 0
+               OpDecorate %tex0 Binding 0
+               OpDecorate %gl_FragColor Location 0
+       %void = OpTypeVoid
+          %6 = OpTypeFunction %void
+      %float = OpTypeFloat 32
+    %v4float = OpTypeVector %float 4
+          %9 = OpTypeImage %float 2D 0 0 0 1 Unknown
+         %10 = OpTypeSampledImage %9
+%_ptr_UniformConstant_10 = OpTypePointer UniformConstant %10
+       %tex0 = OpVariable %_ptr_UniformConstant_10 UniformConstant
+%_ptr_Output_v4float = OpTypePointer Output %v4float
+         %13 = OpConstantNull %v4float
+%gl_FragColor = OpVariable %_ptr_Output_v4float Output
+         %14 = OpUndef %v4float
+       %main = OpFunction %void None %6
+         %15 = OpLabel
+         %16 = OpLoad %10 %tex0
+         %17 = OpImageSampleProjImplicitLod %v4float %16 %13
+         %18 = OpImageSampleProjImplicitLod %v4float %16 %13
+         %19 = OpFAdd %v4float %18 %17
+               OpStore %gl_FragColor %19
+               OpReturn
+               OpFunctionEnd
+  )";
+  auto context = BuildModule(SPV_ENV_UNIVERSAL_1_2, nullptr, text);
+  ValueNumberTable vtable(context.get());
+  Instruction* load1 = context->get_def_use_mgr()->GetDef(17);
+  Instruction* load2 = context->get_def_use_mgr()->GetDef(18);
+  EXPECT_EQ(vtable.GetValueNumber(load1), vtable.GetValueNumber(load2));
 }
 
 }  // namespace

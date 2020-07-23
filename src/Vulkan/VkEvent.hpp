@@ -17,47 +17,64 @@
 
 #include "VkObject.hpp"
 
-namespace vk
-{
+#include "marl/mutex.h"
+#include "marl/tsa.h"
+
+#include <condition_variable>
+
+namespace vk {
 
 class Event : public Object<Event, VkEvent>
 {
 public:
-	Event(const VkEventCreateInfo* pCreateInfo, void* mem)
+	Event(const VkEventCreateInfo *pCreateInfo, void *mem)
 	{
 	}
 
-	~Event() = delete;
-
-	static size_t ComputeRequiredAllocationSize(const VkEventCreateInfo* pCreateInfo)
+	static size_t ComputeRequiredAllocationSize(const VkEventCreateInfo *pCreateInfo)
 	{
 		return 0;
 	}
 
 	void signal()
 	{
-		status = VK_EVENT_SET;
+		{
+			marl::lock lock(mutex);
+			status = VK_EVENT_SET;
+		}
+		condition.notify_all();
 	}
 
 	void reset()
 	{
+		marl::lock lock(mutex);
 		status = VK_EVENT_RESET;
 	}
 
-	VkResult getStatus() const
+	VkResult getStatus()
 	{
-		return status;
+		marl::lock lock(mutex);
+		auto result = status;
+		return result;
+	}
+
+	void wait()
+	{
+		marl::lock lock(mutex);
+		lock.wait(condition, [this]() REQUIRES(mutex) { return status == VK_EVENT_SET; });
 	}
 
 private:
-	VkResult status = VK_EVENT_RESET;
+	marl::mutex mutex;
+	VkResult status GUARDED_BY(mutex) = VK_EVENT_RESET;
+	std::condition_variable condition;
 };
 
-static inline Event* Cast(VkEvent object)
+static inline Event *Cast(VkEvent object)
 {
-	return reinterpret_cast<Event*>(object);
+	return Event::Cast(object);
 }
 
-} // namespace vk
+}  // namespace vk
 
-#endif // VK_EVENT_HPP_
+#endif  // VK_EVENT_HPP_

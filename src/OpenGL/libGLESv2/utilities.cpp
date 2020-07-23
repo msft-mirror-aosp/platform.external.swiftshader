@@ -343,35 +343,6 @@ namespace es2
 		case GL_COMPRESSED_RGBA8_ETC2_EAC:
 		case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:
 			return true;
-		case GL_COMPRESSED_RGBA_ASTC_4x4_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_5x4_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_5x5_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_6x5_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_6x6_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_8x5_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_8x6_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_8x8_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_10x5_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_10x6_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_10x8_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_10x10_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_12x10_KHR:
-		case GL_COMPRESSED_RGBA_ASTC_12x12_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR:
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR:
-			return ASTC_SUPPORT;
 		default:
 			return false;
 		}
@@ -679,51 +650,6 @@ namespace es2
 			return true;
 		}
 
-		// GL_NV_read_depth_stencil
-		if(format == GL_DEPTH_STENCIL_OES)
-		{
-			Renderbuffer *depthbuffer = framebuffer->getDepthbuffer();
-
-			if(!depthbuffer)
-			{
-				return error(GL_INVALID_OPERATION, false);
-			}
-
-			GLint internalformat = depthbuffer->getFormat();
-
-			switch(type)
-			{
-			case GL_UNSIGNED_INT_24_8_OES:
-				switch(internalformat)
-				{
-				case GL_DEPTH24_STENCIL8:
-					break;
-				case GL_DEPTH32F_STENCIL8:
-					return error(GL_INVALID_OPERATION, false);
-				default:
-					UNREACHABLE(internalformat);
-					return error(GL_INVALID_OPERATION, false);
-				}
-				break;
-			case GL_FLOAT_32_UNSIGNED_INT_24_8_REV:
-				switch(internalformat)
-				{
-				case GL_DEPTH32F_STENCIL8:
-					break;
-				case GL_DEPTH24_STENCIL8:
-					return error(GL_INVALID_OPERATION, false);
-				default:
-					UNREACHABLE(internalformat);
-					return error(GL_INVALID_OPERATION, false);
-				}
-				break;
-			default:
-				return error(GL_INVALID_ENUM, false);
-			}
-
-			return true;
-		}
-
 		// GL_NV_read_stencil
 		if(format == GL_STENCIL_INDEX_OES)
 		{
@@ -869,9 +795,14 @@ namespace es2
 		}
 	}
 
+	bool IsTexImageTarget(GLenum target)
+	{
+		return target == GL_TEXTURE_2D || IsCubemapTextureTarget(target) || target == GL_TEXTURE_2D_ARRAY || target == GL_TEXTURE_RECTANGLE_ARB;
+	}
+
 	bool IsTextureTarget(GLenum target)
 	{
-		return target == GL_TEXTURE_2D || IsCubemapTextureTarget(target) || target == GL_TEXTURE_3D || target == GL_TEXTURE_2D_ARRAY || target == GL_TEXTURE_RECTANGLE_ARB;
+		return IsTexImageTarget(target) || target == GL_TEXTURE_3D;
 	}
 
 	GLenum ValidateTextureFormatType(GLenum format, GLenum type, GLint internalformat, GLenum target)
@@ -2065,6 +1996,22 @@ namespace es2
 
 		return name.substr(0, open);
 	}
+
+	bool FloatFitsInInt(float f)
+	{
+		// We can't just do a raw comparison of "f > (float) INT32_MAX",
+		// because "(float) INT32_MAX" is unrepresentable as an integer.
+		//
+		// So instead I subtracted an ULP from "(float) INT32_MAX", cast that
+		// to an int, and do the comparison with that value. That value is
+		// 2147483520, and can be found with the following code:
+		//    float f_max = static_cast<float>(INT32_MAX);
+		//    int32_t f_bits = *static_cast<int32_t *>((void *)&f_max);
+		//    f_bits -= 1;
+		//    float f_next = *static_cast<float *>((void *)&f_bits);
+		//    int32_t out = static_cast<int32_t>(f_next);
+		return std::isfinite(f) && (-2147483520.f < f) && (f < 2147483520.f);
+	}
 }
 
 namespace es2sw
@@ -2205,7 +2152,7 @@ namespace es2sw
 		else UNREACHABLE(compareMode);
 
 		return sw::COMPARE_BYPASS;
-	};
+	}
 
 	sw::SwizzleType ConvertSwizzleType(GLenum swizzleType)
 	{
@@ -2221,7 +2168,7 @@ namespace es2sw
 		}
 
 		return sw::SWIZZLE_RED;
-	};
+	}
 
 	sw::CullMode ConvertCullMode(GLenum cullFace, GLenum frontFace)
 	{
