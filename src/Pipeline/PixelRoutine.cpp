@@ -85,7 +85,7 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 				x -= *Pointer<Float4>(constants + OFFSET(Constants, X) + q * sizeof(float4));
 			}
 
-			z[q] = interpolate(x, Dz[q], z[q], primitive + OFFSET(Primitive, z), false, false, state.depthClamp);
+			z[q] = interpolate(x, Dz[q], z[q], primitive + OFFSET(Primitive, z), false, false, true);
 		}
 	}
 
@@ -1098,7 +1098,7 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 		}
 		break;
 		default:
-			UNSUPPORTED("VkFormat %d", state.targetFormat[index]);
+			UNSUPPORTED("VkFormat %d", int(state.targetFormat[index]));
 	}
 
 	if(isSRGB(index))
@@ -1113,6 +1113,8 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4s 
 	{
 		return;
 	}
+
+	ASSERT(state.targetFormat[index].supportsColorAttachmentBlend());
 
 	Vector4s pixel;
 	readPixel(index, cBuffer, x, pixel);
@@ -1874,6 +1876,9 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4f 
 		return;
 	}
 
+	vk::Format format = state.targetFormat[index];
+	ASSERT(format.supportsColorAttachmentBlend());
+
 	Pointer<Byte> buffer = cBuffer;
 	Int pitchB = *Pointer<Int>(data + OFFSET(DrawData, colorPitchB[index]));
 
@@ -1888,7 +1893,6 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4f 
 	Short4 c23;
 
 	Float4 one;
-	vk::Format format(state.targetFormat[index]);
 	if(format.isFloatFormat())
 	{
 		one = Float4(1.0f);

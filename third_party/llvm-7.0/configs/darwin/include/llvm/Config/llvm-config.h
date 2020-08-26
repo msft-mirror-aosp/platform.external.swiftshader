@@ -23,12 +23,14 @@
 /* Target triple LLVM will generate code for by default */
 #if defined(__x86_64__)
 #define LLVM_DEFAULT_TARGET_TRIPLE "x86_64-apple-darwin"
+#elif defined(__aarch64__)
+#define LLVM_DEFAULT_TARGET_TRIPLE "arm64-apple-darwin"
 #else
 #error "unknown architecture"
 #endif
 
 /* Define if threads enabled */
-#define LLVM_ENABLE_THREADS 0
+#define LLVM_ENABLE_THREADS 1
 
 /* Has gcc/MSVC atomic intrinsics */
 #define LLVM_HAS_ATOMICS 1
@@ -36,6 +38,8 @@
 /* Host triple LLVM will be executed on */
 #if defined(__x86_64__)
 #define LLVM_HOST_TRIPLE "x86_64-apple-darwin"
+#elif defined(__aarch64__)
+#define LLVM_HOST_TRIPLE "arm64-apple-darwin"
 #else
 #error "unknown architecture"
 #endif

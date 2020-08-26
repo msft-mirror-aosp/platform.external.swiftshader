@@ -14,7 +14,7 @@
 
 #include "VkDevice.hpp"
 
-#include "VkConfig.h"
+#include "VkConfig.hpp"
 #include "VkDescriptorSetLayout.hpp"
 #include "VkFence.hpp"
 #include "VkQueue.hpp"
@@ -38,25 +38,59 @@ std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds> now
 
 namespace vk {
 
-std::shared_ptr<rr::Routine> Device::SamplingRoutineCache::query(const vk::Device::SamplingRoutineCache::Key &key) const
+void Device::SamplingRoutineCache::updateSnapshot()
 {
-	return cache.query(key);
+	marl::lock lock(mutex);
+
+	if(snapshotNeedsUpdate)
+	{
+		snapshot.clear();
+
+		for(auto it : cache)
+		{
+			snapshot[it.key()] = it.data();
+		}
+
+		snapshotNeedsUpdate = false;
+	}
 }
 
-void Device::SamplingRoutineCache::add(const vk::Device::SamplingRoutineCache::Key &key, const std::shared_ptr<rr::Routine> &routine)
+Device::SamplerIndexer::~SamplerIndexer()
 {
-	ASSERT(routine);
-	cache.add(key, routine);
+	ASSERT(map.empty());
 }
 
-rr::Routine *Device::SamplingRoutineCache::queryConst(const vk::Device::SamplingRoutineCache::Key &key) const
+uint32_t Device::SamplerIndexer::index(const SamplerState &samplerState)
 {
-	return cache.queryConstCache(key).get();
+	marl::lock lock(mutex);
+
+	auto it = map.find(samplerState);
+
+	if(it != map.end())
+	{
+		it->second.count++;
+		return it->second.id;
+	}
+
+	nextID++;
+
+	map.emplace(samplerState, Identifier{ nextID, 1 });
+
+	return nextID;
 }
 
-void Device::SamplingRoutineCache::updateConstCache()
+void Device::SamplerIndexer::remove(const SamplerState &samplerState)
 {
-	cache.updateConstCache();
+	marl::lock lock(mutex);
+
+	auto it = map.find(samplerState);
+	ASSERT(it != map.end());
+
+	auto count = --it->second.count;
+	if(count == 0)
+	{
+		map.erase(it);
+	}
 }
 
 Device::Device(const VkDeviceCreateInfo *pCreateInfo, void *mem, PhysicalDevice *physicalDevice, const VkPhysicalDeviceFeatures *enabledFeatures, const std::shared_ptr<marl::Scheduler> &scheduler)
@@ -99,6 +133,7 @@ Device::Device(const VkDeviceCreateInfo *pCreateInfo, void *mem, PhysicalDevice 
 	// FIXME (b/119409619): use an allocator here so we can control all memory allocations
 	blitter.reset(new sw::Blitter());
 	samplingRoutineCache.reset(new SamplingRoutineCache());
+	samplerIndexer.reset(new SamplerIndexer());
 
 #ifdef ENABLE_VK_DEBUGGER
 	static auto port = getenv("VK_DEBUGGER_PORT");
@@ -263,20 +298,19 @@ Device::SamplingRoutineCache *Device::getSamplingRoutineCache() const
 	return samplingRoutineCache.get();
 }
 
-rr::Routine *Device::findInConstCache(const SamplingRoutineCache::Key &key) const
+void Device::updateSamplingRoutineSnapshotCache()
 {
-	return samplingRoutineCache->queryConst(key);
+	samplingRoutineCache->updateSnapshot();
 }
 
-void Device::updateSamplingRoutineConstCache()
+uint32_t Device::indexSampler(const SamplerState &samplerState)
 {
-	std::unique_lock<std::mutex> lock(samplingRoutineCacheMutex);
-	samplingRoutineCache->updateConstCache();
+	return samplerIndexer->index(samplerState);
 }
 
-std::mutex &Device::getSamplingRoutineCacheMutex()
+void Device::removeSampler(const SamplerState &samplerState)
 {
-	return samplingRoutineCacheMutex;
+	samplerIndexer->remove(samplerState);
 }
 
 }  // namespace vk

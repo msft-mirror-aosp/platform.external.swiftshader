@@ -21,15 +21,16 @@ namespace spvtools {
 namespace fuzz {
 
 FuzzerPassAddAccessChains::FuzzerPassAddAccessChains(
-    opt::IRContext* ir_context, FactManager* fact_manager,
+    opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
     protobufs::TransformationSequence* transformations)
-    : FuzzerPass(ir_context, fact_manager, fuzzer_context, transformations) {}
+    : FuzzerPass(ir_context, transformation_context, fuzzer_context,
+                 transformations) {}
 
 FuzzerPassAddAccessChains::~FuzzerPassAddAccessChains() = default;
 
 void FuzzerPassAddAccessChains::Apply() {
-  MaybeAddTransformationBeforeEachInstruction(
+  ForEachInstructionWithInstructionDescriptor(
       [this](opt::Function* function, opt::BasicBlock* block,
              opt::BasicBlock::iterator inst_it,
              const protobufs::InstructionDescriptor& instruction_descriptor)

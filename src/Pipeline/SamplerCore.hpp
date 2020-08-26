@@ -20,10 +20,6 @@
 #include "Reactor/Print.hpp"
 #include "Reactor/Reactor.hpp"
 
-#ifdef None
-#	undef None  // b/127920555
-#endif
-
 namespace sw {
 
 using namespace rr;
@@ -62,7 +58,7 @@ class SamplerCore
 public:
 	SamplerCore(Pointer<Byte> &constants, const Sampler &state);
 
-	Vector4f sampleTexture(Pointer<Byte> &texture, Pointer<Byte> &sampler, Float4 uvw[4], Float4 &q, Float &&lodOrBias, Float4 &dsx, Float4 &dsy, Vector4f &offset, Int4 &sampleId, SamplerFunction function);
+	Vector4f sampleTexture(Pointer<Byte> &texture, Float4 uvw[4], Float4 &q, Float &&lodOrBias, Float4 &dsx, Float4 &dsy, Vector4f &offset, Int4 &sampleId, SamplerFunction function);
 
 private:
 	Short4 offsetSample(Short4 &uvw, Pointer<Byte> &mipmap, int halfOffset, bool wrap, int count, Float &lod);
@@ -78,9 +74,9 @@ private:
 	Vector4f sampleFloat3D(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, Vector4f &offset, const Float4 &cubeArrayCoord, const Int4 &sampleId, Float &lod, bool secondLOD, SamplerFunction function);
 	Float log2sqrt(Float lod);
 	Float log2(Float lod);
-	void computeLod(Pointer<Byte> &texture, Pointer<Byte> &sampler, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta, Float4 &u, Float4 &v, Float4 &dsx, Float4 &dsy, SamplerFunction function);
-	void computeLodCube(Pointer<Byte> &texture, Pointer<Byte> &sampler, Float &lod, Float4 &u, Float4 &v, Float4 &w, Float4 &dsx, Float4 &dsy, Float4 &M, SamplerFunction function);
-	void computeLod3D(Pointer<Byte> &texture, Pointer<Byte> &sampler, Float &lod, Float4 &u, Float4 &v, Float4 &w, Float4 &dsx, Float4 &dsy, SamplerFunction function);
+	void computeLod(Pointer<Byte> &texture, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta, Float4 &u, Float4 &v, Float4 &dsx, Float4 &dsy, SamplerFunction function);
+	void computeLodCube(Pointer<Byte> &texture, Float &lod, Float4 &u, Float4 &v, Float4 &w, Float4 &dsx, Float4 &dsy, Float4 &M, SamplerFunction function);
+	void computeLod3D(Pointer<Byte> &texture, Float &lod, Float4 &u, Float4 &v, Float4 &w, Float4 &dsx, Float4 &dsy, SamplerFunction function);
 	Int4 cubeFace(Float4 &U, Float4 &V, Float4 &x, Float4 &y, Float4 &z, Float4 &M);
 	Short4 applyOffset(Short4 &uvw, Float4 &offset, const Int4 &whd, AddressingMode mode);
 	void computeIndices(UInt index[4], Short4 uuuu, Short4 vvvv, Short4 wwww, Vector4f &offset, const Pointer<Byte> &mipmap, const Short4 &cubeArrayId, const Int4 &sampleId, SamplerFunction function);
@@ -103,7 +99,7 @@ private:
 	bool hasUnsignedTextureComponent(int component) const;
 	int textureComponentCount() const;
 	bool hasThirdCoordinate() const;
-	bool has16bitTextureFormat() const;
+	bool has16bitPackedTextureFormat() const;
 	bool has8bitTextureComponents() const;
 	bool has16bitTextureComponents() const;
 	bool has32bitIntegerTextureComponents() const;

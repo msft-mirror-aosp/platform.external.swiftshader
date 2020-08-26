@@ -14,6 +14,7 @@
 
 #include "VkPipeline.hpp"
 
+#include "VkDestroy.hpp"
 #include "VkDevice.hpp"
 #include "VkPipelineCache.hpp"
 #include "VkPipelineLayout.hpp"
@@ -39,16 +40,16 @@ std::vector<uint32_t> preprocessSpirv(
 {
 	spvtools::Optimizer opt{ SPV_ENV_VULKAN_1_1 };
 
-	opt.SetMessageConsumer([](spv_message_level_t level, const char *, const spv_position_t &p, const char *m) {
+	opt.SetMessageConsumer([](spv_message_level_t level, const char *source, const spv_position_t &position, const char *message) {
 		switch(level)
 		{
-			case SPV_MSG_FATAL: sw::warn("SPIR-V FATAL: %d:%d %s\n", int(p.line), int(p.column), m);
-			case SPV_MSG_INTERNAL_ERROR: sw::warn("SPIR-V INTERNAL_ERROR: %d:%d %s\n", int(p.line), int(p.column), m);
-			case SPV_MSG_ERROR: sw::warn("SPIR-V ERROR: %d:%d %s\n", int(p.line), int(p.column), m);
-			case SPV_MSG_WARNING: sw::warn("SPIR-V WARNING: %d:%d %s\n", int(p.line), int(p.column), m);
-			case SPV_MSG_INFO: sw::trace("SPIR-V INFO: %d:%d %s\n", int(p.line), int(p.column), m);
-			case SPV_MSG_DEBUG: sw::trace("SPIR-V DEBUG: %d:%d %s\n", int(p.line), int(p.column), m);
-			default: sw::trace("SPIR-V MESSAGE: %d:%d %s\n", int(p.line), int(p.column), m);
+			case SPV_MSG_FATAL: sw::warn("SPIR-V FATAL: %d:%d %s\n", int(position.line), int(position.column), message);
+			case SPV_MSG_INTERNAL_ERROR: sw::warn("SPIR-V INTERNAL_ERROR: %d:%d %s\n", int(position.line), int(position.column), message);
+			case SPV_MSG_ERROR: sw::warn("SPIR-V ERROR: %d:%d %s\n", int(position.line), int(position.column), message);
+			case SPV_MSG_WARNING: sw::warn("SPIR-V WARNING: %d:%d %s\n", int(position.line), int(position.column), message);
+			case SPV_MSG_INFO: sw::trace("SPIR-V INFO: %d:%d %s\n", int(position.line), int(position.column), message);
+			case SPV_MSG_DEBUG: sw::trace("SPIR-V DEBUG: %d:%d %s\n", int(position.line), int(position.column), message);
+			default: sw::trace("SPIR-V MESSAGE: %d:%d %s\n", int(position.line), int(position.column), message);
 		}
 	});
 
@@ -137,11 +138,19 @@ std::shared_ptr<sw::ComputeProgram> createProgram(const vk::PipelineCache::Compu
 
 namespace vk {
 
-Pipeline::Pipeline(PipelineLayout const *layout, const Device *device)
+Pipeline::Pipeline(PipelineLayout *layout, const Device *device)
     : layout(layout)
     , device(device)
     , robustBufferAccess(device->getEnabledFeatures().robustBufferAccess)
 {
+	layout->incRefCount();
+}
+
+void Pipeline::destroy(const VkAllocationCallbacks *pAllocator)
+{
+	destroyPipeline(pAllocator);
+
+	vk::release(static_cast<VkPipelineLayout>(*layout), pAllocator);
 }
 
 GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo *pCreateInfo, void *mem, const Device *device)
@@ -155,11 +164,6 @@ GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo *pCreateIn
 	      VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT)) != 0)
 	{
 		UNSUPPORTED("pCreateInfo->flags %d", int(pCreateInfo->flags));
-	}
-
-	if(pCreateInfo->pTessellationState != nullptr)
-	{
-		UNSUPPORTED("pCreateInfo->pTessellationState");
 	}
 
 	if(pCreateInfo->pDynamicState)
@@ -237,32 +241,6 @@ GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo *pCreateIn
 	primitiveRestartEnable = (inputAssemblyState->primitiveRestartEnable != VK_FALSE);
 	context.topology = inputAssemblyState->topology;
 
-	const VkPipelineViewportStateCreateInfo *viewportState = pCreateInfo->pViewportState;
-	if(viewportState)
-	{
-		if(viewportState->flags != 0)
-		{
-			// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
-			UNSUPPORTED("pCreateInfo->pViewportState->flags %d", int(pCreateInfo->pViewportState->flags));
-		}
-
-		if((viewportState->viewportCount != 1) ||
-		   (viewportState->scissorCount != 1))
-		{
-			UNSUPPORTED("VkPhysicalDeviceFeatures::multiViewport");
-		}
-
-		if(!hasDynamicState(VK_DYNAMIC_STATE_SCISSOR))
-		{
-			scissor = viewportState->pScissors[0];
-		}
-
-		if(!hasDynamicState(VK_DYNAMIC_STATE_VIEWPORT))
-		{
-			viewport = viewportState->pViewports[0];
-		}
-	}
-
 	const VkPipelineRasterizationStateCreateInfo *rasterizationState = pCreateInfo->pRasterizationState;
 
 	if(rasterizationState->flags != 0)
@@ -282,6 +260,7 @@ GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo *pCreateIn
 	context.polygonMode = rasterizationState->polygonMode;
 	context.depthBias = (rasterizationState->depthBiasEnable != VK_FALSE) ? rasterizationState->depthBiasConstantFactor : 0.0f;
 	context.slopeDepthBias = (rasterizationState->depthBiasEnable != VK_FALSE) ? rasterizationState->depthBiasSlopeFactor : 0.0f;
+	context.lineWidth = rasterizationState->lineWidth;
 
 	const VkBaseInStructure *extensionCreateInfo = reinterpret_cast<const VkBaseInStructure *>(rasterizationState->pNext);
 	while(extensionCreateInfo)
@@ -312,9 +291,40 @@ GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo *pCreateIn
 		extensionCreateInfo = extensionCreateInfo->pNext;
 	}
 
-	const VkPipelineMultisampleStateCreateInfo *multisampleState = pCreateInfo->pMultisampleState;
-	if(multisampleState)
+	// The sample count affects the batch size, so it needs initialization even if rasterization is disabled.
+	// TODO(b/147812380): Eliminate the dependency between multisampling and batch size.
+	context.sampleCount = 1;
+
+	// Only access rasterization state if rasterization is not disabled.
+	if(rasterizationState->rasterizerDiscardEnable == VK_FALSE)
 	{
+		const VkPipelineViewportStateCreateInfo *viewportState = pCreateInfo->pViewportState;
+		const VkPipelineMultisampleStateCreateInfo *multisampleState = pCreateInfo->pMultisampleState;
+		const VkPipelineDepthStencilStateCreateInfo *depthStencilState = pCreateInfo->pDepthStencilState;
+		const VkPipelineColorBlendStateCreateInfo *colorBlendState = pCreateInfo->pColorBlendState;
+
+		if(viewportState->flags != 0)
+		{
+			// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
+			UNSUPPORTED("pCreateInfo->pViewportState->flags %d", int(pCreateInfo->pViewportState->flags));
+		}
+
+		if((viewportState->viewportCount != 1) ||
+		   (viewportState->scissorCount != 1))
+		{
+			UNSUPPORTED("VkPhysicalDeviceFeatures::multiViewport");
+		}
+
+		if(!hasDynamicState(VK_DYNAMIC_STATE_SCISSOR))
+		{
+			scissor = viewportState->pScissors[0];
+		}
+
+		if(!hasDynamicState(VK_DYNAMIC_STATE_VIEWPORT))
+		{
+			viewport = viewportState->pViewports[0];
+		}
+
 		if(multisampleState->flags != 0)
 		{
 			// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
@@ -347,75 +357,87 @@ GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo *pCreateIn
 		{
 			context.sampleMask = multisampleState->pSampleMask[0];
 		}
+		else  // "If pSampleMask is NULL, it is treated as if the mask has all bits set to 1."
+		{
+			context.sampleMask = ~0;
+		}
 
 		context.alphaToCoverage = (multisampleState->alphaToCoverageEnable != VK_FALSE);
+		context.multiSampleMask = context.sampleMask & ((unsigned)0xFFFFFFFF >> (32 - context.sampleCount));
+
+		const vk::RenderPass *renderPass = vk::Cast(pCreateInfo->renderPass);
+		const VkSubpassDescription &subpass = renderPass->getSubpass(pCreateInfo->subpass);
+
+		//  Ignore pDepthStencilState when "the subpass of the render pass the pipeline is created against does not use a depth/stencil attachment"
+		if(subpass.pDepthStencilAttachment && subpass.pDepthStencilAttachment->attachment != VK_ATTACHMENT_UNUSED)
+		{
+			if(depthStencilState->flags != 0)
+			{
+				// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
+				UNSUPPORTED("pCreateInfo->pDepthStencilState->flags %d", int(pCreateInfo->pDepthStencilState->flags));
+			}
+
+			if(depthStencilState->depthBoundsTestEnable != VK_FALSE)
+			{
+				UNSUPPORTED("VkPhysicalDeviceFeatures::depthBounds");
+			}
+
+			context.depthBoundsTestEnable = (depthStencilState->depthBoundsTestEnable != VK_FALSE);
+			context.depthBufferEnable = (depthStencilState->depthTestEnable != VK_FALSE);
+			context.depthWriteEnable = (depthStencilState->depthWriteEnable != VK_FALSE);
+			context.depthCompareMode = depthStencilState->depthCompareOp;
+
+			context.stencilEnable = (depthStencilState->stencilTestEnable != VK_FALSE);
+			if(context.stencilEnable)
+			{
+				context.frontStencil = depthStencilState->front;
+				context.backStencil = depthStencilState->back;
+			}
+		}
+
+		bool colorAttachmentUsed = false;
+		for(uint32_t i = 0; i < subpass.colorAttachmentCount; i++)
+		{
+			if(subpass.pColorAttachments[i].attachment != VK_ATTACHMENT_UNUSED)
+			{
+				colorAttachmentUsed = true;
+				break;
+			}
+		}
+
+		// Ignore pColorBlendState when "the subpass of the render pass the pipeline is created against does not use any color attachments"
+		if(colorAttachmentUsed)
+		{
+			if(colorBlendState->flags != 0)
+			{
+				// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
+				UNSUPPORTED("pCreateInfo->pColorBlendState->flags %d", int(pCreateInfo->pColorBlendState->flags));
+			}
+
+			if(colorBlendState->logicOpEnable != VK_FALSE)
+			{
+				UNSUPPORTED("VkPhysicalDeviceFeatures::logicOp");
+			}
+
+			if(!hasDynamicState(VK_DYNAMIC_STATE_BLEND_CONSTANTS))
+			{
+				blendConstants.x = colorBlendState->blendConstants[0];
+				blendConstants.y = colorBlendState->blendConstants[1];
+				blendConstants.z = colorBlendState->blendConstants[2];
+				blendConstants.w = colorBlendState->blendConstants[3];
+			}
+
+			for(auto i = 0u; i < colorBlendState->attachmentCount; i++)
+			{
+				const VkPipelineColorBlendAttachmentState &attachment = colorBlendState->pAttachments[i];
+				context.colorWriteMask[i] = attachment.colorWriteMask;
+
+				context.setBlendState(i, { (attachment.blendEnable != VK_FALSE),
+				                           attachment.srcColorBlendFactor, attachment.dstColorBlendFactor, attachment.colorBlendOp,
+				                           attachment.srcAlphaBlendFactor, attachment.dstAlphaBlendFactor, attachment.alphaBlendOp });
+			}
+		}
 	}
-	else
-	{
-		context.sampleCount = 1;
-	}
-
-	const VkPipelineDepthStencilStateCreateInfo *depthStencilState = pCreateInfo->pDepthStencilState;
-	if(depthStencilState)
-	{
-		if(depthStencilState->flags != 0)
-		{
-			// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
-			UNSUPPORTED("pCreateInfo->pDepthStencilState->flags %d", int(pCreateInfo->pDepthStencilState->flags));
-		}
-
-		if(depthStencilState->depthBoundsTestEnable != VK_FALSE)
-		{
-			UNSUPPORTED("VkPhysicalDeviceFeatures::depthBounds");
-		}
-
-		context.depthBoundsTestEnable = (depthStencilState->depthBoundsTestEnable != VK_FALSE);
-		context.depthBufferEnable = (depthStencilState->depthTestEnable != VK_FALSE);
-		context.depthWriteEnable = (depthStencilState->depthWriteEnable != VK_FALSE);
-		context.depthCompareMode = depthStencilState->depthCompareOp;
-
-		context.stencilEnable = (depthStencilState->stencilTestEnable != VK_FALSE);
-		if(context.stencilEnable)
-		{
-			context.frontStencil = depthStencilState->front;
-			context.backStencil = depthStencilState->back;
-		}
-	}
-
-	const VkPipelineColorBlendStateCreateInfo *colorBlendState = pCreateInfo->pColorBlendState;
-	if(colorBlendState)
-	{
-		if(pCreateInfo->pColorBlendState->flags != 0)
-		{
-			// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
-			UNSUPPORTED("pCreateInfo->pColorBlendState->flags %d", int(pCreateInfo->pColorBlendState->flags));
-		}
-
-		if(colorBlendState->logicOpEnable != VK_FALSE)
-		{
-			UNSUPPORTED("VkPhysicalDeviceFeatures::logicOp");
-		}
-
-		if(!hasDynamicState(VK_DYNAMIC_STATE_BLEND_CONSTANTS))
-		{
-			blendConstants.r = colorBlendState->blendConstants[0];
-			blendConstants.g = colorBlendState->blendConstants[1];
-			blendConstants.b = colorBlendState->blendConstants[2];
-			blendConstants.a = colorBlendState->blendConstants[3];
-		}
-
-		for(auto i = 0u; i < colorBlendState->attachmentCount; i++)
-		{
-			const VkPipelineColorBlendAttachmentState &attachment = colorBlendState->pAttachments[i];
-			context.colorWriteMask[i] = attachment.colorWriteMask;
-
-			context.setBlendState(i, { (attachment.blendEnable != VK_FALSE),
-			                           attachment.srcColorBlendFactor, attachment.dstColorBlendFactor, attachment.colorBlendOp,
-			                           attachment.srcAlphaBlendFactor, attachment.dstAlphaBlendFactor, attachment.alphaBlendOp });
-		}
-	}
-
-	context.multiSampleMask = context.sampleMask & ((unsigned)0xFFFFFFFF >> (32 - context.sampleCount));
 }
 
 void GraphicsPipeline::destroyPipeline(const VkAllocationCallbacks *pAllocator)
@@ -483,21 +505,10 @@ void GraphicsPipeline::compileShaders(const VkAllocationCallbacks *pAllocator, c
 
 		if(pPipelineCache)
 		{
-			PipelineCache &pipelineCache = *pPipelineCache;
-			{
-				std::unique_lock<std::mutex> lock(pipelineCache.getShaderMutex());
-				const std::shared_ptr<sw::SpirvShader> *spirvShader = pipelineCache[key];
-				if(!spirvShader)
-				{
-					auto shader = createShader(key, module, robustBufferAccess, device->getDebuggerContext());
-					setShader(pipelineStage, shader);
-					pipelineCache.insert(key, getShader(pipelineStage));
-				}
-				else
-				{
-					setShader(pipelineStage, *spirvShader);
-				}
-			}
+			auto shader = pPipelineCache->getOrCreateShader(key, [&] {
+				return createShader(key, module, robustBufferAccess, device->getDebuggerContext());
+			});
+			setShader(pipelineStage, shader);
 		}
 		else
 		{
@@ -545,7 +556,7 @@ const VkViewport &GraphicsPipeline::getViewport() const
 	return viewport;
 }
 
-const sw::Color<float> &GraphicsPipeline::getBlendConstants() const
+const sw::float4 &GraphicsPipeline::getBlendConstants() const
 {
 	return blendConstants;
 }
@@ -583,35 +594,14 @@ void ComputePipeline::compileShaders(const VkAllocationCallbacks *pAllocator, co
 	    stage.stage, stage.pName, module->getCode(), nullptr, 0, stage.pSpecializationInfo);
 	if(pPipelineCache)
 	{
-		PipelineCache &pipelineCache = *pPipelineCache;
-		{
-			std::unique_lock<std::mutex> lock(pipelineCache.getShaderMutex());
-			const std::shared_ptr<sw::SpirvShader> *spirvShader = pipelineCache[shaderKey];
-			if(!spirvShader)
-			{
-				shader = createShader(shaderKey, module, robustBufferAccess, device->getDebuggerContext());
-				pipelineCache.insert(shaderKey, shader);
-			}
-			else
-			{
-				shader = *spirvShader;
-			}
-		}
+		shader = pPipelineCache->getOrCreateShader(shaderKey, [&] {
+			return createShader(shaderKey, module, robustBufferAccess, device->getDebuggerContext());
+		});
 
-		{
-			const PipelineCache::ComputeProgramKey programKey(shader.get(), layout);
-			std::unique_lock<std::mutex> lock(pipelineCache.getProgramMutex());
-			const std::shared_ptr<sw::ComputeProgram> *computeProgram = pipelineCache[programKey];
-			if(!computeProgram)
-			{
-				program = createProgram(programKey);
-				pipelineCache.insert(programKey, program);
-			}
-			else
-			{
-				program = *computeProgram;
-			}
-		}
+		const PipelineCache::ComputeProgramKey programKey(shader.get(), layout);
+		program = pPipelineCache->getOrCreateComputeProgram(programKey, [&] {
+			return createProgram(programKey);
+		});
 	}
 	else
 	{
@@ -623,13 +613,14 @@ void ComputePipeline::compileShaders(const VkAllocationCallbacks *pAllocator, co
 
 void ComputePipeline::run(uint32_t baseGroupX, uint32_t baseGroupY, uint32_t baseGroupZ,
                           uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ,
+                          vk::DescriptorSet::Array const &descriptorSetObjects,
                           vk::DescriptorSet::Bindings const &descriptorSets,
                           vk::DescriptorSet::DynamicOffsets const &descriptorDynamicOffsets,
                           sw::PushConstantStorage const &pushConstants)
 {
 	ASSERT_OR_RETURN(program != nullptr);
 	program->run(
-	    descriptorSets, descriptorDynamicOffsets, pushConstants,
+	    descriptorSetObjects, descriptorSets, descriptorDynamicOffsets, pushConstants,
 	    baseGroupX, baseGroupY, baseGroupZ,
 	    groupCountX, groupCountY, groupCountZ);
 }
