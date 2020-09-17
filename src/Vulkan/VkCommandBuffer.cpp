@@ -547,11 +547,9 @@ public:
 
 		if(pipeline->hasDynamicState(VK_DYNAMIC_STATE_DEPTH_BIAS))
 		{
-			// If the depth bias clamping feature is not enabled, depthBiasClamp must be 0.0
-			ASSERT(executionState.dynamicState.depthBiasClamp == 0.0f);
-
 			context.depthBias = executionState.dynamicState.depthBiasConstantFactor;
 			context.slopeDepthBias = executionState.dynamicState.depthBiasSlopeFactor;
+			context.depthBiasClamp = executionState.dynamicState.depthBiasClamp;
 		}
 
 		if(pipeline->hasDynamicState(VK_DYNAMIC_STATE_DEPTH_BOUNDS) && context.depthBoundsTestEnable)
@@ -1785,6 +1783,21 @@ void CommandBuffer::drawIndirect(Buffer *buffer, VkDeviceSize offset, uint32_t d
 void CommandBuffer::drawIndexedIndirect(Buffer *buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride)
 {
 	addCommand<::CmdDrawIndexedIndirect>(buffer, offset, drawCount, stride);
+}
+
+void CommandBuffer::beginDebugUtilsLabel(const VkDebugUtilsLabelEXT *pLabelInfo)
+{
+	// Optional debug label region
+}
+
+void CommandBuffer::endDebugUtilsLabel()
+{
+	// Close debug label region opened with beginDebugUtilsLabel()
+}
+
+void CommandBuffer::insertDebugUtilsLabel(const VkDebugUtilsLabelEXT *pLabelInfo)
+{
+	// Optional single debug label
 }
 
 void CommandBuffer::submit(CommandBuffer::ExecutionState &executionState)

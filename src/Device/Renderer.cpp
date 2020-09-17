@@ -245,6 +245,7 @@ void Renderer::draw(const sw::Context *context, VkIndexType indexType, unsigned 
 	}
 
 	DrawData *data = draw->data;
+	draw->device = device;
 	draw->occlusionQuery = occlusionQuery;
 	draw->batchDataPool = &batchDataPool;
 	draw->numPrimitives = count;
@@ -302,6 +303,10 @@ void Renderer::draw(const sw::Context *context, VkIndexType indexType, unsigned 
 			data->a2c0 = float4(0.25f);
 			data->a2c1 = float4(0.75f);
 		}
+		else if(ms == 1)
+		{
+			data->a2c0 = float4(0.5f);
+		}
 		else
 			ASSERT(false);
 	}
@@ -338,6 +343,7 @@ void Renderer::draw(const sw::Context *context, VkIndexType indexType, unsigned 
 		data->halfPixelY = float4(0.5f / H);
 		data->viewportHeight = abs(viewport.height);
 		data->slopeDepthBias = context->slopeDepthBias;
+		data->depthBiasClamp = context->depthBiasClamp;
 		data->depthRange = Z;
 		data->depthNear = N;
 	}
@@ -389,7 +395,7 @@ void Renderer::draw(const sw::Context *context, VkIndexType indexType, unsigned 
 
 	draw->events = events;
 
-	vk::DescriptorSet::PrepareForSampling(draw->descriptorSetObjects, draw->pipelineLayout);
+	vk::DescriptorSet::PrepareForSampling(draw->descriptorSetObjects, draw->pipelineLayout, device);
 
 	DrawCall::run(draw, &drawTickets, clusterQueues);
 }
@@ -438,7 +444,7 @@ void DrawCall::teardown()
 
 	if(containsImageWrite)
 	{
-		vk::DescriptorSet::ContentsChanged(descriptorSetObjects, pipelineLayout);
+		vk::DescriptorSet::ContentsChanged(descriptorSetObjects, pipelineLayout, device);
 	}
 }
 
