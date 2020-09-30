@@ -55,7 +55,7 @@ public:
 	void onLineBreakpointHit(ID<Thread>) override;
 	void onFunctionBreakpointHit(ID<Thread>) override;
 
-	dap::Scope scope(const char *type, Scope *);
+	dap::Scope scope(Context::Lock &lock, const char *type, Scope *);
 	dap::Source source(File *);
 	std::shared_ptr<File> file(const dap::Source &source);
 
@@ -230,9 +230,9 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 
 		dap::ScopesResponse response;
 		response.scopes = {
-			scope("locals", frame->locals.get()),
-			scope("arguments", frame->arguments.get()),
-			scope("registers", frame->registers.get()),
+			scope(lock, "locals", frame->locals.get()),
+			scope(lock, "arguments", frame->arguments.get()),
+			scope(lock, "registers", frame->registers.get()),
 		};
 		return response;
 	});
@@ -258,8 +258,9 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 			out.value = v.value->string();
 			if(v.value->type()->kind == Kind::VariableContainer)
 			{
-				auto const vc = static_cast<const VariableContainer *>(v.value.get());
+				auto const vc = std::dynamic_pointer_cast<VariableContainer>(v.value);
 				out.variablesReference = vc->id.value();
+				lock.track(vc);
 			}
 			response.variables.push_back(out);
 		});
@@ -307,13 +308,9 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 
 			// Workaround for
 			// https://github.com/microsoft/VSDebugAdapterHost/issues/11
-			if(clientIsVisualStudio)
+			if(clientIsVisualStudio && !threads.empty())
 			{
-				for(auto thread : threads)
-				{
-					event.threadId = thread->id.value();
-					break;
-				}
+				event.threadId = threads.front()->id.value();
 			}
 		}
 
@@ -516,7 +513,7 @@ void Server::Impl::onFunctionBreakpointHit(ID<Thread> id)
 	session->send(event);
 }
 
-dap::Scope Server::Impl::scope(const char *type, Scope *s)
+dap::Scope Server::Impl::scope(Context::Lock &lock, const char *type, Scope *s)
 {
 	dap::Scope out;
 	// out.line = s->startLine;
@@ -525,6 +522,7 @@ dap::Scope Server::Impl::scope(const char *type, Scope *s)
 	out.name = type;
 	out.presentationHint = type;
 	out.variablesReference = s->variables->id.value();
+	lock.track(s->variables);
 	return out;
 }
 
@@ -536,10 +534,7 @@ dap::Source Server::Impl::source(File *file)
 	{
 		out.sourceReference = file->id.value();
 	}
-	else
-	{
-		out.path = file->path();
-	}
+	out.path = file->path();
 	return out;
 }
 

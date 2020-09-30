@@ -130,7 +130,6 @@ public:
 	Broadcaster broadcaster;
 
 	std::mutex mutex;
-	std::vector<EventListener *> eventListeners;
 	std::unordered_map<std::thread::id, std::shared_ptr<Thread>> threadsByStdId;
 	std::unordered_set<std::string> functionBreakpoints;
 	std::unordered_map<std::string, std::vector<int>> pendingBreakpoints;
@@ -312,7 +311,7 @@ std::shared_ptr<Frame> Context::Lock::get(Frame::ID id)
 std::shared_ptr<Scope> Context::Lock::createScope(
     const std::shared_ptr<File> &file)
 {
-	auto scope = std::make_shared<Scope>(ctx->nextScopeID++, file, createVariableContainer());
+	auto scope = std::make_shared<Scope>(ctx->nextScopeID++, file, std::make_shared<VariableContainer>());
 	ctx->scopes.add(scope->id, scope);
 	return scope;
 }
@@ -322,11 +321,9 @@ std::shared_ptr<Scope> Context::Lock::get(Scope::ID id)
 	return ctx->scopes.get(id);
 }
 
-std::shared_ptr<VariableContainer> Context::Lock::createVariableContainer()
+void Context::Lock::track(const std::shared_ptr<VariableContainer> &vc)
 {
-	auto container = std::make_shared<VariableContainer>(ctx->nextVariableContainerID++);
-	ctx->variableContainers.add(container->id, container);
-	return container;
+	ctx->variableContainers.add(vc->id, vc);
 }
 
 std::shared_ptr<VariableContainer> Context::Lock::get(VariableContainer::ID id)

@@ -19,8 +19,12 @@
 #include "Type.hpp"
 #include "Value.hpp"
 
+#include "marl/mutex.h"
+#include "marl/tsa.h"
+
+#include <algorithm>
+#include <atomic>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -41,7 +45,7 @@ class VariableContainer : public Value
 public:
 	using ID = dbg::ID<VariableContainer>;
 
-	inline VariableContainer(ID id);
+	inline VariableContainer();
 
 	// foreach() calls cb with each of the variables in the container.
 	// F must be a function with the signature void(const Variable&).
@@ -68,6 +72,8 @@ public:
 	const ID id;
 
 private:
+	static std::atomic<int> nextID;
+
 	struct ForeachIndex
 	{
 		size_t start;
@@ -80,14 +86,14 @@ private:
 	inline std::shared_ptr<Type> type() const override;
 	inline const void *get() const override;
 
-	mutable std::mutex mutex;
-	std::vector<Variable> variables;
-	std::unordered_map<std::string, int> indices;
-	std::vector<std::shared_ptr<VariableContainer>> extends;
+	mutable marl::mutex mutex;
+	std::vector<Variable> variables GUARDED_BY(mutex);
+	std::unordered_map<std::string, int> indices GUARDED_BY(mutex);
+	std::vector<std::shared_ptr<VariableContainer>> extends GUARDED_BY(mutex);
 };
 
-VariableContainer::VariableContainer(ID id)
-    : id(id)
+VariableContainer::VariableContainer()
+    : id(nextID++)
 {}
 
 template<typename F>
@@ -100,7 +106,7 @@ void VariableContainer::foreach(size_t startIndex, size_t count, const F &cb) co
 template<typename F>
 void VariableContainer::foreach(ForeachIndex &index, const F &cb) const
 {
-	std::unique_lock<std::mutex> lock(mutex);
+	marl::lock lock(mutex);
 	for(size_t i = index.start; i < variables.size() && i < index.count; i++)
 	{
 		cb(variables[i]);
@@ -118,7 +124,7 @@ void VariableContainer::foreach(ForeachIndex &index, const F &cb) const
 template<typename F>
 bool VariableContainer::find(const std::string &name, const F &cb) const
 {
-	std::unique_lock<std::mutex> lock(mutex);
+	marl::lock lock(mutex);
 	for(auto const &var : variables)
 	{
 		if(var.name == name)
@@ -139,7 +145,7 @@ bool VariableContainer::find(const std::string &name, const F &cb) const
 
 void VariableContainer::put(const Variable &var)
 {
-	std::unique_lock<std::mutex> lock(mutex);
+	marl::lock lock(mutex);
 	auto it = indices.find(var.name);
 	if(it == indices.end())
 	{
@@ -160,7 +166,7 @@ void VariableContainer::put(const std::string &name,
 
 void VariableContainer::extend(const std::shared_ptr<VariableContainer> &base)
 {
-	std::unique_lock<std::mutex> lock(mutex);
+	marl::lock lock(mutex);
 	extends.emplace_back(base);
 }
 

@@ -18,13 +18,6 @@
 #include "ExecutableMemory.hpp"
 #include "Routine.hpp"
 
-#if defined(__clang__)
-// LLVM has occurrences of the extra-semi warning in its headers, which will be
-// treated as an error in SwiftShader targets.
-#	pragma clang diagnostic push
-#	pragma clang diagnostic ignored "-Wextra-semi"
-#endif  // defined(__clang__)
-
 // TODO(b/143539525): Eliminate when warning has been fixed.
 #ifdef _MSC_VER
 __pragma(warning(push))
@@ -50,6 +43,7 @@ __pragma(warning(push))
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/Host.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Transforms/Coroutines.h"
@@ -59,14 +53,11 @@ __pragma(warning(push))
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/GVN.h"
 
-#if defined(__clang__)
-#	pragma clang diagnostic pop
-#endif  // defined(__clang__)
-
 #ifdef _MSC_VER
     __pragma(warning(pop))
 #endif
 
+#include <atomic>
 #include <unordered_map>
 
 #if defined(_WIN64)
@@ -85,41 +76,6 @@ extern "C" signed __aeabi_idivmod();
 
 namespace {
 
-// Cache provides a simple, thread-safe key-value store.
-template<typename KEY, typename VALUE>
-class Cache
-{
-public:
-	Cache() = default;
-	Cache(const Cache &other);
-	VALUE getOrCreate(KEY key, std::function<VALUE()> create);
-
-private:
-	mutable std::mutex mutex;  // mutable required for copy constructor.
-	std::unordered_map<KEY, VALUE> map;
-};
-
-template<typename KEY, typename VALUE>
-Cache<KEY, VALUE>::Cache(const Cache &other)
-{
-	std::unique_lock<std::mutex> lock(other.mutex);
-	map = other.map;
-}
-
-template<typename KEY, typename VALUE>
-VALUE Cache<KEY, VALUE>::getOrCreate(KEY key, std::function<VALUE()> create)
-{
-	std::unique_lock<std::mutex> lock(mutex);
-	auto it = map.find(key);
-	if(it != map.end())
-	{
-		return it->second;
-	}
-	auto value = create();
-	map.emplace(key, value);
-	return value;
-}
-
 // JITGlobals is a singleton that holds all the immutable machine specific
 // information for the host device.
 class JITGlobals
@@ -135,7 +91,7 @@ public:
 	const llvm::TargetOptions targetOptions;
 	const llvm::DataLayout dataLayout;
 
-	TargetMachineSPtr getTargetMachine(rr::Optimization::Level optlevel);
+	TargetMachineSPtr createTargetMachine(rr::Optimization::Level optlevel);
 
 private:
 	static JITGlobals create();
@@ -146,8 +102,6 @@ private:
 	           const llvm::TargetOptions &targetOptions,
 	           const llvm::DataLayout &dataLayout);
 	JITGlobals(const JITGlobals &) = default;
-
-	Cache<rr::Optimization::Level, TargetMachineSPtr> targetMachines;
 };
 
 JITGlobals *JITGlobals::get()
@@ -156,7 +110,7 @@ JITGlobals *JITGlobals::get()
 	return &instance;
 }
 
-JITGlobals::TargetMachineSPtr JITGlobals::getTargetMachine(rr::Optimization::Level optlevel)
+JITGlobals::TargetMachineSPtr JITGlobals::createTargetMachine(rr::Optimization::Level optlevel)
 {
 #ifdef ENABLE_RR_DEBUG_INFO
 	auto llvmOptLevel = toLLVM(rr::Optimization::Level::None);
@@ -164,15 +118,13 @@ JITGlobals::TargetMachineSPtr JITGlobals::getTargetMachine(rr::Optimization::Lev
 	auto llvmOptLevel = toLLVM(optlevel);
 #endif  // ENABLE_RR_DEBUG_INFO
 
-	return targetMachines.getOrCreate(optlevel, [&]() {
-		return TargetMachineSPtr(llvm::EngineBuilder()
-		                             .setOptLevel(llvmOptLevel)
-		                             .setMCPU(mcpu)
-		                             .setMArch(march)
-		                             .setMAttrs(mattrs)
-		                             .setTargetOptions(targetOptions)
-		                             .selectTarget());
-	});
+	return TargetMachineSPtr(llvm::EngineBuilder()
+	                             .setOptLevel(llvmOptLevel)
+	                             .setMCPU(mcpu)
+	                             .setMArch(march)
+	                             .setMAttrs(mattrs)
+	                             .setTargetOptions(targetOptions)
+	                             .selectTarget());
 }
 
 JITGlobals JITGlobals::create()
@@ -270,7 +222,7 @@ JITGlobals::JITGlobals(const char *mcpu,
 {
 }
 
-class MemoryMapper : public llvm::SectionMemoryManager::MemoryMapper
+class MemoryMapper final : public llvm::SectionMemoryManager::MemoryMapper
 {
 public:
 	MemoryMapper() {}
@@ -302,11 +254,7 @@ public:
 		// Round down base address to align with a page boundary. This matches
 		// DefaultMMapper behavior.
 		void *addr = block.base();
-#if LLVM_VERSION_MAJOR >= 9
 		size_t size = block.allocatedSize();
-#else
-		size_t size = block.size();
-#endif
 		size_t pageSize = rr::memoryPageSize();
 		addr = reinterpret_cast<void *>(
 		    reinterpret_cast<uintptr_t>(addr) & ~(pageSize - 1));
@@ -319,11 +267,7 @@ public:
 
 	std::error_code releaseMappedMemory(llvm::sys::MemoryBlock &block)
 	{
-#if LLVM_VERSION_MAJOR >= 9
 		size_t size = block.allocatedSize();
-#else
-		size_t size = block.size();
-#endif
 
 		rr::deallocateMemoryPages(block.base(), size);
 		return std::error_code();
@@ -482,6 +426,9 @@ void *resolveExternalSymbol(const char *name)
 
 		Resolver()
 		{
+#ifdef ENABLE_RR_PRINT
+			functions.emplace("rr::DebugPrintf", reinterpret_cast<void *>(rr::DebugPrintf));
+#endif
 			functions.emplace("nop", reinterpret_cast<void *>(F::nop));
 			functions.emplace("floorf", reinterpret_cast<void *>(floorf));
 			functions.emplace("nearbyintf", reinterpret_cast<void *>(nearbyintf));
@@ -585,15 +532,21 @@ void *resolveExternalSymbol(const char *name)
 // settings and no Reactor routine directly links against another.
 class JITRoutine : public rr::Routine
 {
-#if LLVM_VERSION_MAJOR >= 8
 	using ObjLayer = llvm::orc::LegacyRTDyldObjectLinkingLayer;
 	using CompileLayer = llvm::orc::LegacyIRCompileLayer<ObjLayer, llvm::orc::SimpleCompiler>;
-#else
-	using ObjLayer = llvm::orc::RTDyldObjectLinkingLayer;
-	using CompileLayer = llvm::orc::IRCompileLayer<ObjLayer, llvm::orc::SimpleCompiler>;
-#endif
 
 public:
+#if defined(__clang__)
+// TODO(bclayton): Switch to new JIT
+// error: 'LegacyIRCompileLayer' is deprecated: ORCv1 layers (layers with the 'Legacy' prefix) are deprecated.
+// Please use the ORCv2 IRCompileLayer instead [-Werror,-Wdeprecated-declarations]
+#	pragma clang diagnostic push
+#	pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(__GNUC__)
+#	pragma GCC diagnostic push
+#	pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 	JITRoutine(
 	    std::unique_ptr<llvm::Module> module,
 	    llvm::Function **funcs,
@@ -617,7 +570,7 @@ public:
 			          return;
 		          }
 	          }))
-	    , targetMachine(JITGlobals::get()->getTargetMachine(config.getOptimization().getLevel()))
+	    , targetMachine(JITGlobals::get()->createTargetMachine(config.getOptimization().getLevel()))
 	    , compileLayer(objLayer, llvm::orc::SimpleCompiler(*targetMachine))
 	    , objLayer(
 	          session,
@@ -637,11 +590,18 @@ public:
 	          })
 	    , addresses(count)
 	{
+
+#if defined(__clang__)
+#	pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#	pragma GCC diagnostic pop
+#endif
+
 		std::vector<std::string> mangledNames(count);
 		for(size_t i = 0; i < count; i++)
 		{
 			auto func = funcs[i];
-			static size_t numEmittedFunctions = 0;
+			static std::atomic<size_t> numEmittedFunctions = { 0 };
 			std::string name = "f" + llvm::Twine(numEmittedFunctions++).str();
 			func->setName(name);
 			func->setLinkage(llvm::GlobalValue::ExternalLinkage);

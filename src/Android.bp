@@ -45,6 +45,7 @@ cc_defaults {
         android: {
             cflags: [
                 "-DHAVE_GRALLOC1",
+                "-DHAVE_GRALLOC3",
                 "-DHAVE_GRALLOC4",
             ],
             relative_install_path: "egl",
@@ -53,6 +54,7 @@ cc_defaults {
                 "libnativebase_headers",
             ],
             shared_libs: [
+                "android.hardware.graphics.mapper@3.0",
                 "android.hardware.graphics.mapper@4.0",
                 "libnativewindow",
                 "libhardware",
@@ -203,7 +205,7 @@ cc_defaults {
     ],
 
     static_libs: [
-        "libLLVM7_swiftshader",
+        "libLLVM10_swiftshader",
     ],
 
     shared_libs: [
@@ -234,7 +236,7 @@ cc_defaults {
     ],
 
     static_libs: [
-        "libLLVM7_swiftshader",
+        "libLLVM10_swiftshader",
     ],
 
     shared_libs: [
@@ -352,7 +354,7 @@ cc_defaults {
     defaults: [ "libswiftshader_release" ],
     static_libs: [
         "libswiftshader_llvm",
-        "libLLVM7_swiftshader",
+        "libLLVM10_swiftshader",
     ],
 }
 
@@ -362,7 +364,7 @@ cc_defaults {
     defaults: [ "libswiftshader_debug" ],
     static_libs: [
         "libswiftshader_llvm_debug",
-        "libLLVM7_swiftshader",
+        "libLLVM10_swiftshader",
     ],
 }
 
@@ -545,6 +547,7 @@ cc_defaults {
         "-D__STDC_CONSTANT_MACROS",
         "-D__STDC_FORMAT_MACROS",
         "-DHAVE_GRALLOC1",
+        "-DHAVE_GRALLOC3",
         "-DHAVE_GRALLOC4",
         "-DNO_SANITIZE_FUNCTION=",
         // FIXME: Use <android/api-level.h> instead?
@@ -583,6 +586,7 @@ cc_defaults {
                 "hwvulkan_headers",
             ],
             shared_libs: [
+                "android.hardware.graphics.mapper@3.0",
                 "android.hardware.graphics.mapper@4.0",
                 "libnativewindow",
                 "libhardware",
@@ -664,7 +668,7 @@ cc_library_shared {
 
     static_libs: [
         "libswiftshadervk_llvm_debug",
-        "libLLVM7_swiftshader",
+        "libLLVM10_swiftshader",
     ],
 
     defaults: [
@@ -678,7 +682,7 @@ cc_library_shared {
 
     static_libs: [
         "libswiftshadervk_llvm_debug",
-        "libLLVM7_swiftshader",
+        "libLLVM10_swiftshader",
     ],
 
     cflags: [
