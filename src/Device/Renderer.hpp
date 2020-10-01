@@ -90,6 +90,7 @@ struct DrawData
 	float slopeDepthBias;
 	float depthRange;
 	float depthNear;
+	float depthBiasClamp;
 
 	unsigned int *colorBuffer[RENDERTARGETS];
 	int colorPitchB[RENDERTARGETS];
@@ -163,6 +164,7 @@ struct DrawCall
 	SetupFunction setupPrimitives;
 	SetupProcessor::State setupState;
 
+	vk::Device *device;
 	vk::ImageView *renderTarget[RENDERTARGETS];
 	vk::ImageView *depthBuffer;
 	vk::ImageView *stencilBuffer;

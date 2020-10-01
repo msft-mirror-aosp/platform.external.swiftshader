@@ -497,6 +497,12 @@ void Image::copy(Buffer *buffer, const VkBufferImageCopy &region, bool bufferIsS
 	Format copyFormat = getFormat(aspect);
 
 	VkExtent3D imageExtent = imageExtentInBlocks(region.imageExtent, aspect);
+
+	if(imageExtent.width == 0 || imageExtent.height == 0 || imageExtent.depth == 0)
+	{
+		return;
+	}
+
 	VkExtent2D bufferExtent = bufferExtentInBlocks({ imageExtent.width, imageExtent.height }, region);
 	int bytesPerBlock = copyFormat.bytesPerBlock();
 	int bufferRowPitchBytes = bufferExtent.width * bytesPerBlock;
@@ -524,36 +530,30 @@ void Image::copy(Buffer *buffer, const VkBufferImageCopy &region, bool bufferIsS
 	                     (imageSlicePitchBytes == bufferSlicePitchBytes);
 
 	VkDeviceSize copySize = 0;
-	VkDeviceSize bufferLayerSize = 0;
 	if(isSingleRow)
 	{
 		copySize = imageExtent.width * bytesPerBlock;
-		bufferLayerSize = copySize;
 	}
 	else if(isEntireRow && isSingleSlice)
 	{
-		copySize = imageExtent.height * imageRowPitchBytes;
-		bufferLayerSize = copySize;
+		copySize = (imageExtent.height - 1) * imageRowPitchBytes + imageExtent.width * bytesPerBlock;
 	}
 	else if(isEntireSlice)
 	{
-		copySize = imageExtent.depth * imageSlicePitchBytes;  // Copy multiple slices
-		bufferLayerSize = copySize;
+		copySize = (imageExtent.depth - 1) * imageSlicePitchBytes + (imageExtent.height - 1) * imageRowPitchBytes + imageExtent.width * bytesPerBlock;  // Copy multiple slices
 	}
 	else if(isEntireRow)  // Copy slice by slice
 	{
-		copySize = imageExtent.height * imageRowPitchBytes;
-		bufferLayerSize = copySize * imageExtent.depth;
+		copySize = (imageExtent.height - 1) * imageRowPitchBytes + imageExtent.width * bytesPerBlock;
 	}
 	else  // Copy row by row
 	{
 		copySize = imageExtent.width * bytesPerBlock;
-		bufferLayerSize = copySize * imageExtent.depth * imageExtent.height;
 	}
 
 	VkDeviceSize imageLayerSize = getLayerSize(aspect);
-	VkDeviceSize srcLayerSize = bufferIsSource ? bufferLayerSize : imageLayerSize;
-	VkDeviceSize dstLayerSize = bufferIsSource ? imageLayerSize : bufferLayerSize;
+	VkDeviceSize srcLayerSize = bufferIsSource ? bufferSlicePitchBytes : imageLayerSize;
+	VkDeviceSize dstLayerSize = bufferIsSource ? imageLayerSize : bufferSlicePitchBytes;
 
 	for(uint32_t i = 0; i < region.imageSubresource.layerCount; i++)
 	{
@@ -942,22 +942,7 @@ void Image::copyTo(uint8_t *dst, unsigned int dstPitch) const
 
 void Image::resolveTo(Image *dstImage, const VkImageResolve &region) const
 {
-	VkImageBlit blitRegion;
-
-	blitRegion.srcOffsets[0] = blitRegion.srcOffsets[1] = region.srcOffset;
-	blitRegion.srcOffsets[1].x += region.extent.width;
-	blitRegion.srcOffsets[1].y += region.extent.height;
-	blitRegion.srcOffsets[1].z += region.extent.depth;
-
-	blitRegion.dstOffsets[0] = blitRegion.dstOffsets[1] = region.dstOffset;
-	blitRegion.dstOffsets[1].x += region.extent.width;
-	blitRegion.dstOffsets[1].y += region.extent.height;
-	blitRegion.dstOffsets[1].z += region.extent.depth;
-
-	blitRegion.srcSubresource = region.srcSubresource;
-	blitRegion.dstSubresource = region.dstSubresource;
-
-	device->getBlitter()->blit(this, dstImage, blitRegion, VK_FILTER_NEAREST);
+	device->getBlitter()->resolve(this, dstImage, region);
 }
 
 VkFormat Image::getClearFormat() const

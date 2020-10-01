@@ -14,8 +14,10 @@
 
 #include "SpirvShader.hpp"
 
-// If enabled, each instruction will be printed before processing.
-#define PRINT_EACH_PROCESSED_INSTRUCTION 0
+// If enabled, each instruction will be printed before defining.
+#define PRINT_EACH_DEFINED_DBG_INSTRUCTION 0
+// If enabled, each instruction will be printed before emitting.
+#define PRINT_EACH_EMITTED_INSTRUCTION 0
 // If enabled, each instruction will be printed before executing.
 #define PRINT_EACH_EXECUTED_INSTRUCTION 0
 // If enabled, debugger variables will contain debug information (addresses,
@@ -33,6 +35,7 @@
 #	include "spirv-tools/libspirv.h"
 
 #	include <algorithm>
+#	include <queue>
 
 namespace {
 
@@ -51,6 +54,14 @@ struct ArgTy<R (C::*)(Arg) const>
 
 template<typename T>
 using ArgTyT = typename ArgTy<T>::type;
+
+template<typename T>
+T take(std::queue<T> &queue)
+{
+	auto v = queue.front();
+	queue.pop();
+	return v;
+}
 
 }  // anonymous namespace
 
@@ -256,12 +267,26 @@ struct Type : public Object
 		       kind == Kind::TemplateType;
 	}
 
+	std::pair<const Type *, uint32_t> index(std::queue<uint32_t> &&indices) const
+	{
+		if(indices.size() == 0)
+		{
+			return { this, 0 };
+		}
+		return indexMember(std::move(indices));
+	}
+
 	// sizeInBytes() returns the number of bytes of the given debug type.
 	virtual uint32_t sizeInBytes() const = 0;
 
 	// value() returns a shared pointer to a vk::dbg::Value that views the data
 	// at ptr of this type.
-	virtual std::shared_ptr<vk::dbg::Value> value(vk::dbg::Context::Lock &lock, void *ptr, bool interleaved) const = 0;
+	virtual std::shared_ptr<vk::dbg::Value> value(void *ptr, bool interleaved) const = 0;
+
+protected:
+	// indexMember() returns the nested inner element debug type and byte offset
+	// from the base of this type, using the list of indices.
+	virtual std::pair<const Type *, uint32_t> indexMember(std::queue<uint32_t> &&) const = 0;
 };
 
 struct CompilationUnit : ObjectImpl<CompilationUnit, Scope, Object::Kind::CompilationUnit>
@@ -286,7 +311,13 @@ struct BasicType : ObjectImpl<BasicType, Type, Object::Kind::BasicType>
 
 	uint32_t sizeInBytes() const override { return size / 8; }
 
-	std::shared_ptr<vk::dbg::Value> value(vk::dbg::Context::Lock &lock, void *ptr, bool interleaved) const override
+	std::pair<const Type *, uint32_t> indexMember(std::queue<uint32_t> &&) const override
+	{
+		DABORT("indexMember() called on BasicType %s", name.c_str());
+		return {};
+	}
+
+	std::shared_ptr<vk::dbg::Value> value(void *ptr, bool interleaved) const override
 	{
 		switch(encoding)
 		{
@@ -397,20 +428,38 @@ struct ArrayType : ObjectImpl<ArrayType, Type, Object::Kind::ArrayType>
 		return numBytes;
 	}
 
-	std::shared_ptr<vk::dbg::Value> value(vk::dbg::Context::Lock &lock, void *ptr, bool interleaved) const override
+	std::pair<const Type *, uint32_t> indexMember(std::queue<uint32_t> &&indices) const override
 	{
-		auto vc = lock.createVariableContainer();
+		std::vector<uint32_t> arrIndices(dimensions.size());
+		for(size_t i = 0; i < dimensions.size(); i++)
+		{
+			arrIndices[i] = take(indices);
+		}
+
+		auto out = base->index(std::move(indices));
+		auto stride = base->sizeInBytes();
+		for(int i = static_cast<int>(dimensions.size()) - 1; i >= 0; i--)
+		{
+			out.second += arrIndices[i] * stride;
+			stride *= dimensions[i];
+		}
+		return out;
+	}
+
+	std::shared_ptr<vk::dbg::Value> value(void *ptr, bool interleaved) const override
+	{
+		auto vc = std::make_shared<vk::dbg::VariableContainer>();
 		build(
 		    vc,
 		    [&](std::shared_ptr<vk::dbg::VariableContainer> &parent, uint32_t idx) {
-			    auto child = lock.createVariableContainer();
+			    auto child = std::make_shared<vk::dbg::VariableContainer>();
 			    parent->put(tostring(idx), child);
 			    return child;
 		    },
 		    [&](std::shared_ptr<vk::dbg::VariableContainer> &parent, uint32_t idx, uint32_t offset) {
 			    offset = offset * base->sizeInBytes() * (interleaved ? sw::SIMD::Width : 1);
 			    auto addr = static_cast<uint8_t *>(ptr) + offset;
-			    auto child = base->value(lock, addr, interleaved);
+			    auto child = base->value(addr, interleaved);
 			    auto key = tostring(idx);
 #	if DEBUG_ANNOTATE_VARIABLE_KEYS
 			    key += " (" + tostring(addr) + " +" + tostring(offset) + ", idx: " + tostring(idx) + ")" + (interleaved ? "I" : "F");
@@ -431,10 +480,18 @@ struct VectorType : ObjectImpl<VectorType, Type, Object::Kind::VectorType>
 		return base->sizeInBytes() * components;
 	}
 
-	std::shared_ptr<vk::dbg::Value> value(vk::dbg::Context::Lock &lock, void *ptr, bool interleaved) const override
+	std::pair<const Type *, uint32_t> indexMember(std::queue<uint32_t> &&indices) const override
+	{
+		auto idx = take(indices);
+		auto out = base->index(std::move(indices));
+		out.second += base->sizeInBytes() * idx;
+		return out;
+	}
+
+	std::shared_ptr<vk::dbg::Value> value(void *ptr, bool interleaved) const override
 	{
 		const auto elSize = base->sizeInBytes();
-		auto vc = lock.createVariableContainer();
+		auto vc = std::make_shared<vk::dbg::VariableContainer>();
 		for(uint32_t i = 0; i < components; i++)
 		{
 			auto offset = elSize * i * (interleaved ? sw::SIMD::Width : 1);
@@ -443,7 +500,7 @@ struct VectorType : ObjectImpl<VectorType, Type, Object::Kind::VectorType>
 #	if DEBUG_ANNOTATE_VARIABLE_KEYS
 			elKey += " (" + tostring(elPtr) + " +" + tostring(offset) + ")" + (interleaved ? "I" : "F");
 #	endif
-			vc->put(elKey, base->value(lock, elPtr, interleaved));
+			vc->put(elKey, base->value(elPtr, interleaved));
 		}
 		return vc;
 	}
@@ -456,7 +513,12 @@ struct FunctionType : ObjectImpl<FunctionType, Type, Object::Kind::FunctionType>
 	std::vector<Type *> paramTys;
 
 	uint32_t sizeInBytes() const override { return 0; }
-	std::shared_ptr<vk::dbg::Value> value(vk::dbg::Context::Lock &lock, void *ptr, bool interleaved) const override { return nullptr; }
+	std::pair<const Type *, uint32_t> indexMember(std::queue<uint32_t> &&indices) const override
+	{
+		DABORT("indexMember() called on FunctionType");
+		return {};
+	}
+	std::shared_ptr<vk::dbg::Value> value(void *ptr, bool interleaved) const override { return nullptr; }
 };
 
 struct Member : ObjectImpl<Member, Object, Object::Kind::Member>
@@ -486,9 +548,19 @@ struct CompositeType : ObjectImpl<CompositeType, Type, Object::Kind::CompositeTy
 	std::vector<Member *> members;
 
 	uint32_t sizeInBytes() const override { return size / 8; }
-	std::shared_ptr<vk::dbg::Value> value(vk::dbg::Context::Lock &lock, void *ptr, bool interleaved) const override
+
+	std::pair<const Type *, uint32_t> indexMember(std::queue<uint32_t> &&indices) const override
 	{
-		auto vc = lock.createVariableContainer();
+		auto idx = take(indices);
+		auto member = members[idx];
+		auto out = member->type->index(std::move(indices));
+		out.second += member->offset / 8;
+		return out;
+	}
+
+	std::shared_ptr<vk::dbg::Value> value(void *ptr, bool interleaved) const override
+	{
+		auto vc = std::make_shared<vk::dbg::VariableContainer>();
 		for(auto &member : members)
 		{
 			auto offset = (member->offset / 8) * (interleaved ? sw::SIMD::Width : 1);
@@ -497,7 +569,7 @@ struct CompositeType : ObjectImpl<CompositeType, Type, Object::Kind::CompositeTy
 #	if DEBUG_ANNOTATE_VARIABLE_KEYS
 			// elKey += " (" + tostring(elPtr) + " +" + tostring(offset) + ")" + (interleaved ? "I" : "F");
 #	endif
-			vc->put(elKey, member->type->value(lock, elPtr, interleaved));
+			vc->put(elKey, member->type->value(elPtr, interleaved));
 		}
 		return vc;
 	}
@@ -519,9 +591,13 @@ struct TemplateType : ObjectImpl<TemplateType, Type, Object::Kind::TemplateType>
 	std::vector<TemplateParameter *> parameters;
 
 	uint32_t sizeInBytes() const override { return target->sizeInBytes(); }
-	std::shared_ptr<vk::dbg::Value> value(vk::dbg::Context::Lock &lock, void *ptr, bool interleaved) const override
+	std::pair<const Type *, uint32_t> indexMember(std::queue<uint32_t> &&indices) const override
 	{
-		return target->value(lock, ptr, interleaved);
+		return target->index(std::move(indices));
+	}
+	std::shared_ptr<vk::dbg::Value> value(void *ptr, bool interleaved) const override
+	{
+		return target->value(ptr, interleaved);
 	}
 };
 
@@ -604,7 +680,7 @@ struct Declare : ObjectImpl<Declare, Object, Object::Kind::Declare>
 struct Value : ObjectImpl<Value, Object, Object::Kind::Value>
 {
 	LocalVariable *local = nullptr;
-	sw::SpirvShader::Object::ID variable;
+	sw::SpirvShader::Object::ID value;
 	Expression *expression = nullptr;
 	std::vector<uint32_t> indexes;
 };
@@ -657,6 +733,7 @@ namespace sw {
 // sw::SpirvShader::Impl::Debugger
 //
 // Private struct holding debugger information for the SpirvShader.
+// There is an instance of this class per shader program.
 ////////////////////////////////////////////////////////////////////////////////
 struct SpirvShader::Impl::Debugger
 {
@@ -674,6 +751,13 @@ struct SpirvShader::Impl::Debugger
 	void setNextSetLocationIsStep();
 	void setLocation(EmitState *state, const std::shared_ptr<vk::dbg::File> &, int line, int column);
 	void setLocation(EmitState *state, const std::string &path, int line, int column);
+
+	// foreachLane() calls f for each debugger group representing the SIMD
+	// lanes of execution.
+	// FUNC is a function with the signature:
+	//   (int lane, const Group &group, auto &key)
+	template<typename Key, typename Func>
+	void foreachLane(const Key &key, const debug::Scope *scope, EmitState *state, Func &&f) const;
 
 	// exposeVariable exposes the variable with the given ID to the debugger
 	// using the specified key.
@@ -704,6 +788,17 @@ struct SpirvShader::Impl::Debugger
 	std::unordered_map<const void *, int> spirvLineMappings;  // instruction pointer to line
 	std::unordered_map<const void *, Object::ID> results;     // instruction pointer to result ID
 
+	// Shadow memory is used to construct a contiguous memory block for local
+	// variables that may be formed from multiple SSA values.
+	struct Shadow
+	{
+		// Offset in the shadow memory allocation for the given local variable.
+		std::unordered_map<debug::LocalVariable *, uint32_t> offsets;
+
+		// Total size of the shadow memory in bytes.
+		uint32_t size;
+	} shadow;
+
 private:
 	// add() registers the debug object with the given id.
 	template<typename ID>
@@ -721,6 +816,12 @@ private:
 	// A returned nullptr represents a None value or type.
 	template<typename T>
 	T *get(SpirvID<T> id) const;
+
+	// getOrNull() returns the debug object with the given id if
+	// the object exists and is of type (or derive from type) T.
+	// Otherwise, returns nullptr.
+	template<typename T>
+	T *getOrNull(SpirvID<T> id) const;
 
 	// use get() and add() to access this
 	std::unordered_map<debug::Object::ID, std::unique_ptr<debug::Object>> objects;
@@ -747,6 +848,7 @@ private:
 // sw::SpirvShader::Impl::Debugger::State
 //
 // State holds the runtime data structures for the shader debug session.
+// There is an instance of this class per shader invocation.
 ////////////////////////////////////////////////////////////////////////////////
 class SpirvShader::Impl::Debugger::State
 {
@@ -793,6 +895,7 @@ public:
 
 	const Debugger *debugger;
 	const std::shared_ptr<vk::dbg::Thread> thread;
+	std::unique_ptr<uint8_t[]> const shadow;
 	std::unordered_map<const debug::Scope *, Scopes> scopes;
 	Scopes globals;                          // Scope for globals.
 	debug::SourceScope *srcScope = nullptr;  // Current source scope.
@@ -814,6 +917,7 @@ void SpirvShader::Impl::Debugger::State::destroy(State *state)
 SpirvShader::Impl::Debugger::State::State(const Debugger *debugger, const char *stackBase, vk::dbg::Context::Lock &lock)
     : debugger(debugger)
     , thread(lock.currentThread())
+    , shadow(new uint8_t[debugger->shadow.size])
     , initialThreadDepth(thread->depth())
 {
 	enter(lock, stackBase);
@@ -823,7 +927,7 @@ SpirvShader::Impl::Debugger::State::State(const Debugger *debugger, const char *
 		globals.hovers = frame.hovers;
 		for(int i = 0; i < sw::SIMD::Width; i++)
 		{
-			auto locals = lock.createVariableContainer();
+			auto locals = std::make_shared<vk::dbg::VariableContainer>();
 			frame.locals->variables->put(laneNames[i], locals);
 			globals.localsByLane[i] = locals;
 		}
@@ -874,7 +978,7 @@ vk::dbg::VariableContainer *SpirvShader::Impl::Debugger::State::localsLane(const
 template<typename K>
 vk::dbg::VariableContainer *SpirvShader::Impl::Debugger::State::group(vk::dbg::VariableContainer *vc, K key)
 {
-	auto out = debugger->ctx->lock().createVariableContainer();
+	auto out = std::make_shared<vk::dbg::VariableContainer>();
 	vc->put(tostring(key), out);
 	return out.get();
 }
@@ -888,8 +992,7 @@ void SpirvShader::Impl::Debugger::State::putVal(vk::dbg::VariableContainer *vc, 
 template<typename K>
 void SpirvShader::Impl::Debugger::State::putPtr(vk::dbg::VariableContainer *vc, K key, void *ptr, bool interleaved, const debug::Type *type)
 {
-	auto lock = debugger->ctx->lock();
-	vc->put(tostring(key), type->value(lock, ptr, interleaved));
+	vc->put(tostring(key), type->value(ptr, interleaved));
 }
 
 template<typename K, typename V>
@@ -913,7 +1016,7 @@ void SpirvShader::Impl::Debugger::State::createScope(const debug::Scope *spirvSc
 
 	for(int i = 0; i < sw::SIMD::Width; i++)
 	{
-		auto locals = lock.createVariableContainer();
+		auto locals = std::make_shared<vk::dbg::VariableContainer>();
 		s.localsByLane[i] = locals;
 		s.locals->variables->put(laneNames[i], locals);
 	}
@@ -1195,7 +1298,12 @@ void SpirvShader::Impl::Debugger::process(const SpirvShader *shader, const InsnI
 		case OpenCLDebugInfo100DebugTypeFunction:
 			defineOrEmit(insn, pass, [&](debug::FunctionType *type) {
 				type->flags = insn.word(5);
-				type->returnTy = get(debug::Type::ID(insn.word(6)));
+				type->returnTy = getOrNull(debug::Type::ID(insn.word(6)));
+
+				// 'Return Type' operand must be a debug type or OpTypeVoid. See
+				// https://www.khronos.org/registry/spir-v/specs/unified1/OpenCL.DebugInfo.100.html#DebugTypeFunction
+				ASSERT_MSG(type->returnTy != nullptr || shader->getType(insn.word(6)).opcode() == spv::Op::OpTypeVoid, "Invalid return type of DebugTypeFunction: %d", insn.word(6));
+
 				for(uint32_t i = 7; i < insn.wordCount(); i++)
 				{
 					type->paramTys.push_back(get(debug::Type::ID(insn.word(i))));
@@ -1264,11 +1372,15 @@ void SpirvShader::Impl::Debugger::process(const SpirvShader *shader, const InsnI
 				var->column = insn.word(9);
 				var->parent = get(debug::Scope::ID(insn.word(10)));
 				var->linkage = shader->getString(insn.word(11));
-				var->variable = insn.word(12);
+				var->variable = isNone(insn.word(12)) ? 0 : insn.word(12);
 				var->flags = insn.word(13);
 				// static member declaration: word(14)
 
-				exposeVariable(shader, var->name.c_str(), &debug::Scope::Global, var->type, var->variable, state);
+				// TODO(b/148401179): Instead of simply hiding variables that have been stripped by optimizations, show them in the debugger as `<optimized-away>`
+				if(var->variable != 0)
+				{
+					exposeVariable(shader, var->name.c_str(), &debug::Scope::Global, var->type, var->variable, state);
+				}
 			});
 			break;
 		case OpenCLDebugInfo100DebugFunction:
@@ -1356,11 +1468,92 @@ void SpirvShader::Impl::Debugger::process(const SpirvShader *shader, const InsnI
 		case OpenCLDebugInfo100DebugValue:
 			defineOrEmit(insn, pass, [&](debug::Value *value) {
 				value->local = get(debug::LocalVariable::ID(insn.word(5)));
-				value->variable = Object::ID(insn.word(6));
+				value->value = Object::ID(insn.word(6));
 				value->expression = get(debug::Expression::ID(insn.word(7)));
 				for(uint32_t i = 8; i < insn.wordCount(); i++)
 				{
-					value->indexes.push_back(insn.word(i));
+					auto idx = shader->GetConstScalarInt(insn.word(i));
+					value->indexes.push_back(idx);
+				}
+
+				// DebugValue partially updates a DebugLocalVariable with an SSA
+				// value. This is typically used to update a DebugLocalVariable
+				// of a composite type, which holds structure member offsets
+				// from a base address.
+				// To handle these, we allocate shadow memory to hold a copy of
+				// the entire variable in contiguous memory and have the
+				// DebugLocalVariable point to this memory. Whenever we
+				// encounter a DebugValue, we copy the necessary fields to the
+				// shadow memory.
+
+				// type of the full DebugLocalVariable.
+				auto type = value->local->type;
+
+				// base address of the variable.
+				// Start by pointing base to the root of the shadow memory.
+				// This will be offset to the variable, then the member within
+				// the variable below.
+				SIMD::Pointer base(*Pointer<Pointer<Byte>>(state->routine->dbgState + OFFSET(State, shadow)), shadow.size);
+
+				// All variables are considered local, and therefore
+				// interleaved.
+				base = InterleaveByLane(base);
+
+				// Have we already allocated shadow memory for this variable?
+				auto it = shadow.offsets.find(value->local);
+				if(it == shadow.offsets.end())
+				{
+					// No shadow memory has been allocated for this local
+					// variable yet.
+
+					// Allocate the memory for the variable.
+					auto offset = shadow.size;
+					shadow.offsets.emplace(value->local, offset);
+					auto size = type->sizeInBytes() * SIMD::Width;
+					base += offset;
+					shadow.size += size;
+
+					// Expose the variable.
+					auto name = value->local->name.c_str();
+					auto scope = value->local->parent;
+					auto offsets = base.offsets();
+					foreachLane(name, scope, state, [&](int lane, const Group &group, auto &key) {
+						auto ptr = base.base + Extract(offsets, lane);
+						group.putPtr<const char *>(name, ptr, true, value->local->type);
+					});
+				}
+				else
+				{
+					// Shadow memory already allocated for this variable.
+					// Offset base to point to it.
+					base += it->second;
+				}
+
+				// Find the byte offset on the indexed member of the variable.
+				std::queue<uint32_t> indices;
+				for(auto idx : value->indexes)
+				{
+					indices.emplace(idx);
+				}
+				auto offset = type->index(std::move(indices)).second;
+
+				// Update base to point to the particular member.
+				base += offset;
+
+				// Now copy the updated value into shadow memory representation
+				// of the variable.
+				// TODO(b/148401179): This assumes tight packing of all
+				// components, which may not match with the debug structure
+				// layout.
+				auto &valObject = shader->getObject(value->value);
+				auto &valType = shader->getType(valObject);
+				for(auto i = 0u; i < valType.componentCount; i++)
+				{
+					auto val = Operand(shader, state, value->value).Int(i);
+					auto dst = base + i * sizeof(uint32_t) * SIMD::Width;
+					// Use RobustBufferAccess as the size as described by the
+					// debug type may be smaller than the true SSA size.
+					dst.Store(val, sw::OutOfBoundsBehavior::RobustBufferAccess, state->activeLaneMask());
 				}
 			});
 			break;
@@ -1390,6 +1583,15 @@ void SpirvShader::Impl::Debugger::process(const SpirvShader *shader, const InsnI
 				}
 			});
 			break;
+		case OpenCLDebugInfo100DebugOperation:
+			defineOrEmit(insn, pass, [&](debug::Operation *operation) {
+				operation->opcode = insn.word(5);
+				for(uint32_t i = 6; i < insn.wordCount(); i++)
+				{
+					operation->operands.push_back(insn.word(i));
+				}
+			});
+			break;
 
 		case OpenCLDebugInfo100DebugTypePointer:
 		case OpenCLDebugInfo100DebugTypeQualifier:
@@ -1402,7 +1604,6 @@ void SpirvShader::Impl::Debugger::process(const SpirvShader *shader, const InsnI
 		case OpenCLDebugInfo100DebugFunctionDeclaration:
 		case OpenCLDebugInfo100DebugLexicalBlockDiscriminator:
 		case OpenCLDebugInfo100DebugInlinedVariable:
-		case OpenCLDebugInfo100DebugOperation:
 		case OpenCLDebugInfo100DebugMacroDef:
 		case OpenCLDebugInfo100DebugMacroUndef:
 		case OpenCLDebugInfo100DebugImportedEntity:
@@ -1471,6 +1672,33 @@ T *SpirvShader::Impl::Debugger::get(SpirvID<T> id) const
 	return ptr;
 }
 
+template<typename T>
+T *SpirvShader::Impl::Debugger::getOrNull(SpirvID<T> id) const
+{
+	auto it = objects.find(debug::Object::ID(id.value()));
+	if(it == objects.end()) { return nullptr; }  // Not found.
+	auto ptr = debug::cast<T>(it->second.get());
+	ASSERT_MSG(ptr, "Debug object %d is not of the correct type. Got: %s, want: %s",
+	           id.value(), cstr(it->second->kind), cstr(T::KIND));
+	return ptr;
+}
+
+template<typename Key, typename Func>
+void SpirvShader::Impl::Debugger::foreachLane(
+    const Key &key,
+    const debug::Scope *scope,
+    EmitState *state,
+    Func &&f) const
+{
+	auto dbgState = state->routine->dbgState;
+	auto hover = Group::hovers(dbgState, scope).group<Key>(key);
+	for(int lane = 0; lane < SIMD::Width; lane++)
+	{
+		f(lane, Group::localsLane(dbgState, scope, lane), key);
+		f(lane, hover, laneNames[lane]);
+	}
+}
+
 template<typename Key>
 void SpirvShader::Impl::Debugger::exposeVariable(
     const SpirvShader *shader,
@@ -1480,13 +1708,9 @@ void SpirvShader::Impl::Debugger::exposeVariable(
     Object::ID id,
     EmitState *state) const
 {
-	auto dbgState = state->routine->dbgState;
-	auto hover = Group::hovers(dbgState, scope).group<Key>(key);
-	for(int lane = 0; lane < SIMD::Width; lane++)
-	{
-		exposeVariable(shader, Group::localsLane(dbgState, scope, lane), lane, key, type, id, state);
-		exposeVariable(shader, hover, lane, laneNames[lane], type, id, state);
-	}
+	foreachLane(key, scope, state, [&](int lane, const Group &group, auto &key) {
+		exposeVariable(shader, group, lane, laneNames[lane], type, id, state);
+	});
 }
 
 template<typename Key>
@@ -1826,7 +2050,7 @@ void SpirvShader::dbgEndEmit(EmitState *state) const
 
 void SpirvShader::dbgBeginEmitInstruction(InsnIterator insn, EmitState *state) const
 {
-#	if PRINT_EACH_PROCESSED_INSTRUCTION
+#	if PRINT_EACH_EMITTED_INSTRUCTION
 	{
 		auto instruction = spvtools::spvInstructionBinaryToText(
 		    SPV_ENV_VULKAN_1_1,
@@ -1837,7 +2061,7 @@ void SpirvShader::dbgBeginEmitInstruction(InsnIterator insn, EmitState *state) c
 		    SPV_BINARY_TO_TEXT_OPTION_NO_HEADER);
 		printf("%s\n", instruction.c_str());
 	}
-#	endif  // PRINT_EACH_PROCESSED_INSTRUCTION
+#	endif  // PRINT_EACH_EMITTED_INSTRUCTION
 
 #	if PRINT_EACH_EXECUTED_INSTRUCTION
 	{
@@ -1940,6 +2164,19 @@ SpirvShader::EmitResult SpirvShader::EmitLine(InsnIterator insn, EmitState *stat
 
 void SpirvShader::DefineOpenCLDebugInfo100(const InsnIterator &insn)
 {
+#	if PRINT_EACH_DEFINED_DBG_INSTRUCTION
+	{
+		auto instruction = spvtools::spvInstructionBinaryToText(
+		    SPV_ENV_VULKAN_1_1,
+		    insn.wordPointer(0),
+		    insn.wordCount(),
+		    insns.data(),
+		    insns.size(),
+		    SPV_BINARY_TO_TEXT_OPTION_NO_HEADER);
+		printf("%s\n", instruction.c_str());
+	}
+#	endif  // PRINT_EACH_DEFINED_DBG_INSTRUCTION
+
 	auto dbg = impl.debugger;
 	if(!dbg) { return; }
 
