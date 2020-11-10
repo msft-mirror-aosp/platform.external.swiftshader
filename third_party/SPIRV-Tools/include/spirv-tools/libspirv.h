@@ -1,4 +1,6 @@
-// Copyright (c) 2015-2016 The Khronos Group Inc.
+// Copyright (c) 2015-2020 The Khronos Group Inc.
+// Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights
+// reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -165,6 +167,12 @@ typedef enum spv_operand_type_t {
   SPV_OPERAND_TYPE_KERNEL_ENQ_FLAGS,              // SPIR-V Sec 3.29
   SPV_OPERAND_TYPE_KERNEL_PROFILING_INFO,         // SPIR-V Sec 3.30
   SPV_OPERAND_TYPE_CAPABILITY,                    // SPIR-V Sec 3.31
+  SPV_OPERAND_TYPE_RAY_FLAGS,                     // SPIR-V Sec 3.RF
+  SPV_OPERAND_TYPE_RAY_QUERY_INTERSECTION,        // SPIR-V Sec 3.RQIntersection
+  SPV_OPERAND_TYPE_RAY_QUERY_COMMITTED_INTERSECTION_TYPE,  // SPIR-V Sec
+                                                           // 3.RQCommitted
+  SPV_OPERAND_TYPE_RAY_QUERY_CANDIDATE_INTERSECTION_TYPE,  // SPIR-V Sec
+                                                           // 3.RQCandidate
 
   // Set 5:  Operands that are a single word bitmask.
   // Sometimes a set bit indicates the instruction requires still more operands.
@@ -667,6 +675,12 @@ SPIRV_TOOLS_EXPORT void spvFuzzerOptionsEnableReplayValidation(
 // should be initialized.
 SPIRV_TOOLS_EXPORT void spvFuzzerOptionsSetRandomSeed(
     spv_fuzzer_options options, uint32_t seed);
+
+// Sets the range of transformations that should be applied during replay: 0
+// means all transformations, +N means the first N transformations, -N means all
+// except the final N transformations.
+SPIRV_TOOLS_EXPORT void spvFuzzerOptionsSetReplayRange(
+    spv_fuzzer_options options, int32_t replay_range);
 
 // Sets the maximum number of steps that the shrinker should take before giving
 // up.

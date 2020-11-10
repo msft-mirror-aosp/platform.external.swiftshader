@@ -979,15 +979,19 @@ class InterestingThenRandom : public InterestingnessTest {
 // The |step_limit| parameter restricts the number of steps that the shrinker
 // will try; it can be set to something small for a faster (but less thorough)
 // test.
+//
+// The |validator_options| parameter provides validator options that should be
+// used during shrinking.
 void RunAndCheckShrinker(
     const spv_target_env& target_env, const std::vector<uint32_t>& binary_in,
     const protobufs::FactSequence& initial_facts,
     const protobufs::TransformationSequence& transformation_sequence_in,
     const Shrinker::InterestingnessFunction& interestingness_function,
     const std::vector<uint32_t>& expected_binary_out,
-    uint32_t expected_transformations_out_size, uint32_t step_limit) {
+    uint32_t expected_transformations_out_size, uint32_t step_limit,
+    spv_validator_options validator_options) {
   // Run the shrinker.
-  Shrinker shrinker(target_env, step_limit, false);
+  Shrinker shrinker(target_env, step_limit, false, validator_options);
   shrinker.SetMessageConsumer(kSilentConsumer);
 
   std::vector<uint32_t> binary_out;
@@ -1035,7 +1039,8 @@ void RunFuzzerAndShrinker(const std::string& shader,
   // Run the fuzzer and check that it successfully yields a valid binary.
   std::vector<uint32_t> fuzzer_binary_out;
   protobufs::TransformationSequence fuzzer_transformation_sequence_out;
-  Fuzzer fuzzer(env, seed, true);
+  spvtools::ValidatorOptions validator_options;
+  Fuzzer fuzzer(env, seed, true, validator_options);
   fuzzer.SetMessageConsumer(kSilentConsumer);
   auto fuzzer_result_status =
       fuzzer.Run(binary_in, initial_facts, donor_suppliers, &fuzzer_binary_out,
@@ -1048,9 +1053,10 @@ void RunFuzzerAndShrinker(const std::string& shader,
 
   // With the AlwaysInteresting test, we should quickly shrink to the original
   // binary with no transformations remaining.
-  RunAndCheckShrinker(
-      env, binary_in, initial_facts, fuzzer_transformation_sequence_out,
-      AlwaysInteresting().AsFunction(), binary_in, 0, kReasonableStepLimit);
+  RunAndCheckShrinker(env, binary_in, initial_facts,
+                      fuzzer_transformation_sequence_out,
+                      AlwaysInteresting().AsFunction(), binary_in, 0,
+                      kReasonableStepLimit, validator_options);
 
   // With the OnlyInterestingFirstTime test, no shrinking should be achieved.
   RunAndCheckShrinker(
@@ -1058,14 +1064,14 @@ void RunFuzzerAndShrinker(const std::string& shader,
       OnlyInterestingFirstTime().AsFunction(), fuzzer_binary_out,
       static_cast<uint32_t>(
           fuzzer_transformation_sequence_out.transformation_size()),
-      kReasonableStepLimit);
+      kReasonableStepLimit, validator_options);
 
   // The PingPong test is unpredictable; passing an empty expected binary
   // means that we don't check anything beyond that shrinking completes
   // successfully.
-  RunAndCheckShrinker(env, binary_in, initial_facts,
-                      fuzzer_transformation_sequence_out,
-                      PingPong().AsFunction(), {}, 0, kSmallStepLimit);
+  RunAndCheckShrinker(
+      env, binary_in, initial_facts, fuzzer_transformation_sequence_out,
+      PingPong().AsFunction(), {}, 0, kSmallStepLimit, validator_options);
 
   // The InterestingThenRandom test is unpredictable; passing an empty
   // expected binary means that we do not check anything about shrinking
@@ -1073,7 +1079,7 @@ void RunFuzzerAndShrinker(const std::string& shader,
   RunAndCheckShrinker(
       env, binary_in, initial_facts, fuzzer_transformation_sequence_out,
       InterestingThenRandom(PseudoRandomGenerator(seed)).AsFunction(), {}, 0,
-      kSmallStepLimit);
+      kSmallStepLimit, validator_options);
 }
 
 TEST(FuzzerShrinkerTest, Miscellaneous1) {
@@ -1103,6 +1109,18 @@ TEST(FuzzerShrinkerTest, Miscellaneous3) {
     *resolution_y_eq_100.mutable_constant_word()->Add() = 100;
     protobufs::Fact temp;
     *temp.mutable_constant_uniform_fact() = resolution_y_eq_100;
+    *facts.mutable_fact()->Add() = temp;
+  }
+  // Also add an invalid fact, which should be ignored.
+  {
+    protobufs::FactConstantUniform bad_fact;
+    // The descriptor set, binding and indices used here deliberately make no
+    // sense.
+    *bad_fact.mutable_uniform_buffer_element_descriptor() =
+        MakeUniformBufferElementDescriptor(22, 33, {44, 55});
+    *bad_fact.mutable_constant_word()->Add() = 100;
+    protobufs::Fact temp;
+    *temp.mutable_constant_uniform_fact() = bad_fact;
     *facts.mutable_fact()->Add() = temp;
   }
 

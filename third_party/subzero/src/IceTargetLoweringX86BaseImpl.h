@@ -614,7 +614,8 @@ template <typename TraitsType> void TargetX86Base<TraitsType>::translateOm1() {
   genTargetHelperCalls();
 
   // Do not merge Alloca instructions, and lay out the stack.
-  static constexpr bool SortAndCombineAllocas = false;
+  // static constexpr bool SortAndCombineAllocas = false;
+  static constexpr bool SortAndCombineAllocas = true; // TODO(b/171222930): Fix Win32 bug when this is false
   Func->processAllocas(SortAndCombineAllocas);
   Func->dump("After Alloca processing");
 
@@ -2098,6 +2099,7 @@ void TargetX86Base<TraitsType>::lowerArithmetic(const InstArithmetic *Instr) {
       _mov(DestLo, T_4Lo);
       _add(T_4Hi, T_1);
       _mov(T_2, Src1Hi);
+      Src0Lo = legalize(Src0Lo, Legal_Reg | Legal_Mem);
       _imul(T_2, Src0Lo);
       _add(T_4Hi, T_2);
       _mov(DestHi, T_4Hi);
@@ -2332,10 +2334,13 @@ void TargetX86Base<TraitsType>::lowerArithmetic(const InstArithmetic *Instr) {
       _mov(Dest, T);
     } else if (auto *ImmConst = llvm::dyn_cast<ConstantInteger32>(Src1)) {
       T = makeReg(Ty);
+      Src0 = legalize(Src0, Legal_Reg | Legal_Mem);
       _imul_imm(T, Src0, ImmConst);
       _mov(Dest, T);
     } else {
       _mov(T, Src0);
+      // No need to legalize Src1 to Reg | Mem because the Imm case is handled
+      // already by the ConstantInteger32 case above.
       _imul(T, Src0 == Src1 ? T : Src1);
       _mov(Dest, T);
     }

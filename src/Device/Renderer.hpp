@@ -17,7 +17,6 @@
 
 #include "Blitter.hpp"
 #include "PixelProcessor.hpp"
-#include "Plane.hpp"
 #include "Primitive.hpp"
 #include "SetupProcessor.hpp"
 #include "VertexProcessor.hpp"
@@ -38,6 +37,7 @@ namespace vk {
 class DescriptorSet;
 class Device;
 class Query;
+class PipelineLayout;
 
 }  // namespace vk
 
@@ -87,9 +87,12 @@ struct DrawData
 	float4 halfPixelX;
 	float4 halfPixelY;
 	float viewportHeight;
-	float slopeDepthBias;
 	float depthRange;
 	float depthNear;
+	float minimumResolvableDepthDifference;
+	float constantDepthBias;
+	float slopeDepthBias;
+	float depthBiasClamp;
 
 	unsigned int *colorBuffer[RENDERTARGETS];
 	int colorPitchB[RENDERTARGETS];
@@ -158,13 +161,17 @@ struct DrawCall
 	VertexProcessor::RoutineType vertexRoutine;
 	SetupProcessor::RoutineType setupRoutine;
 	PixelProcessor::RoutineType pixelRoutine;
+	bool containsImageWrite;
 
 	SetupFunction setupPrimitives;
 	SetupProcessor::State setupState;
 
+	vk::Device *device;
 	vk::ImageView *renderTarget[RENDERTARGETS];
 	vk::ImageView *depthBuffer;
 	vk::ImageView *stencilBuffer;
+	vk::DescriptorSet::Array descriptorSetObjects;
+	const vk::PipelineLayout *pipelineLayout;
 	TaskEvents *events;
 
 	vk::Query *occlusionQuery;
@@ -190,7 +197,7 @@ struct DrawCall
 	static bool setupPoint(Primitive &primitive, Triangle &triangle, const DrawCall &draw);
 };
 
-class alignas(16) Renderer : public VertexProcessor, public PixelProcessor, public SetupProcessor
+class alignas(16) Renderer
 {
 public:
 	Renderer(vk::Device *device);
@@ -209,6 +216,8 @@ public:
 	// Viewport & Clipper
 	void setViewport(const VkViewport &viewport);
 	void setScissor(const VkRect2D &scissor);
+
+	void setBlendConstant(const float4 &blendConstant);
 
 	void addQuery(vk::Query *query);
 	void removeQuery(vk::Query *query);
@@ -229,6 +238,10 @@ private:
 	vk::Query *occlusionQuery = nullptr;
 	marl::Ticket::Queue drawTickets;
 	marl::Ticket::Queue clusterQueues[MaxClusterCount];
+
+	VertexProcessor vertexProcessor;
+	PixelProcessor pixelProcessor;
+	SetupProcessor setupProcessor;
 
 	VertexProcessor::State vertexState;
 	SetupProcessor::State setupState;

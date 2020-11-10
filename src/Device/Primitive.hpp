@@ -66,8 +66,10 @@ struct Primitive MEMORY_SANITIZER_ONLY(
 
 	float pointCoordX;
 	float pointCoordY;
+	float pointSizeInv;
 
 	PlaneEquation z;
+	float4 zBias;
 	PlaneEquation w;
 	PlaneEquation V[MAX_INTERFACE_COMPONENTS];
 
