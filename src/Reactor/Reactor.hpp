@@ -24,7 +24,7 @@
 #include <cstdio>
 #include <limits>
 #include <tuple>
-#include <unordered_set>
+#include <unordered_map>
 
 #ifdef ENABLE_RR_DEBUG_INFO
 // Functions used for generating JIT debug info.
@@ -120,6 +120,10 @@ public:
 
 	virtual Type *getType() const = 0;
 
+	// This function is only public for testing purposes, as it affects performance.
+	// It is not considered part of Reactor's public API.
+	static void materializeAll();
+
 protected:
 	Variable();
 	Variable(const Variable &) = default;
@@ -127,14 +131,27 @@ protected:
 	virtual ~Variable();
 
 private:
-	static void materializeAll();
 	static void killUnmaterialized();
 
 	virtual Value *allocate() const;
 
+	// Set of variables that do not have a stack location yet.
+	class UnmaterializedVariables
+	{
+	public:
+		void add(const Variable *v);
+		void remove(const Variable *v);
+		void clear();
+		void materializeAll();
+
+	private:
+		int counter = 0;
+		std::unordered_map<const Variable *, int> variables;
+	};
+
 	// This has to be a raw pointer because glibc 2.17 doesn't support __cxa_thread_atexit_impl
 	// for destructing objects at exit. See crbug.com/1074222
-	static thread_local std::unordered_set<const Variable *> *unmaterializedVariables;
+	static thread_local UnmaterializedVariables *unmaterializedVariables;
 
 	mutable Value *rvalue = nullptr;
 	mutable Value *address = nullptr;
@@ -2254,6 +2271,7 @@ public:
 	Float4(const Swizzle2<Float4, X> &x, const SwizzleMask2<Float4, Y> &y);
 	template<int X, int Y>
 	Float4(const SwizzleMask2<Float4, X> &x, const SwizzleMask2<Float4, Y> &y);
+	Float4(RValue<Float2> lo, RValue<Float2> hi);
 
 	RValue<Float4> operator=(float replicate);
 	RValue<Float4> operator=(RValue<Float4> rhs);
@@ -3503,8 +3521,8 @@ enum
 	IFELSE_NUM__
 };
 
-#define If(cond)                                                        \
-	for(IfElseData ifElse__(cond); ifElse__ < IFELSE_NUM__; ++ifElse__) \
+#define If(cond)                                                          \
+	for(IfElseData ifElse__{ cond }; ifElse__ < IFELSE_NUM__; ++ifElse__) \
 		if(ifElse__ == IF_BLOCK__)
 
 #define Else                           \

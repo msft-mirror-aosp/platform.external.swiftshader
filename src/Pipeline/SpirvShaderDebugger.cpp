@@ -1790,7 +1790,7 @@ void SpirvShader::Impl::Debugger::process(const InsnIterator &insn, EmitState *s
 					auto idx = shader->GetConstScalarInt(insn.word(i));
 					value->indexes.push_back(idx);
 
-					auto it = node->children.find(i);
+					auto it = node->children.find(idx);
 					if(it != node->children.end())
 					{
 						node = it->second.get();
@@ -1800,7 +1800,7 @@ void SpirvShader::Impl::Debugger::process(const InsnIterator &insn, EmitState *s
 						auto parent = node;
 						auto child = std::make_unique<debug::LocalVariable::ValueNode>();
 						node = child.get();
-						parent->children.emplace(i, std::move(child));
+						parent->children.emplace(idx, std::move(child));
 					}
 				}
 
@@ -2549,7 +2549,7 @@ void SpirvShader::dbgCreateFile()
 	for(auto insn : *this)
 	{
 		auto instruction = spvtools::spvInstructionBinaryToText(
-		                       SPV_ENV_VULKAN_1_1,
+		                       vk::SPIRV_VERSION,
 		                       insn.wordPointer(0),
 		                       insn.wordCount(),
 		                       insns.data(),
@@ -2648,7 +2648,7 @@ void SpirvShader::dbgBeginEmitInstruction(InsnIterator insn, EmitState *state) c
 #	if PRINT_EACH_EMITTED_INSTRUCTION
 	{
 		auto instruction = spvtools::spvInstructionBinaryToText(
-		    SPV_ENV_VULKAN_1_1,
+		    vk::SPIRV_VERSION,
 		    insn.wordPointer(0),
 		    insn.wordCount(),
 		    insns.data(),
@@ -2661,7 +2661,7 @@ void SpirvShader::dbgBeginEmitInstruction(InsnIterator insn, EmitState *state) c
 #	if PRINT_EACH_EXECUTED_INSTRUCTION
 	{
 		auto instruction = spvtools::spvInstructionBinaryToText(
-		    SPV_ENV_VULKAN_1_1,
+		    vk::SPIRV_VERSION,
 		    insn.wordPointer(0),
 		    insn.wordCount(),
 		    insns.data(),
@@ -2757,7 +2757,7 @@ void SpirvShader::DefineOpenCLDebugInfo100(const InsnIterator &insn)
 #	if PRINT_EACH_DEFINED_DBG_INSTRUCTION
 	{
 		auto instruction = spvtools::spvInstructionBinaryToText(
-		    SPV_ENV_VULKAN_1_1,
+		    vk::SPIRV_VERSION,
 		    insn.wordPointer(0),
 		    insn.wordCount(),
 		    insns.data(),
