@@ -170,7 +170,7 @@ private:
 };
 
 #if SWIFTSHADER_EXTERNAL_MEMORY_OPAQUE_FD
-#	if defined(__linux__) || defined(__ANDROID__)
+#	if defined(__linux__) && !defined(__ANDROID__)
 #		include "VkDeviceMemoryExternalLinux.hpp"
 #	else
 #		error "Missing VK_KHR_external_memory_fd implementation for this platform!"
@@ -304,6 +304,23 @@ bool DeviceMemory::checkExternalMemoryHandleType(
 	// one specified during VkCreate{Image,Buffer}(), through a
 	// VkExternalMemory{Image,Buffer}AllocateInfo struct.
 	return (supportedHandleTypes & handle_type_bit) != 0;
+}
+
+bool DeviceMemory::hasExternalImageProperties() const
+{
+	return external && external->hasExternalImageProperties();
+}
+
+int DeviceMemory::externalImageRowPitchBytes() const
+{
+	if(external)
+	{
+		return external->externalImageRowPitchBytes();
+	}
+
+	// This function should never be called on non-external memory.
+	ASSERT(false);
+	return -1;
 }
 
 #if SWIFTSHADER_EXTERNAL_MEMORY_OPAQUE_FD
