@@ -1258,7 +1258,6 @@ TEST(ReactorUnitTests, Args_GreaterThan5Mixed)
 // required pages. See https://docs.microsoft.com/en-us/windows/win32/devnotes/-win32-chkstk.
 TEST(ReactorUnitTests, LargeStack)
 {
-#if defined(_WIN32)
 	// An empirically large enough value to access outside the guard pages
 	constexpr int ArrayByteSize = 24 * 1024;
 	constexpr int ArraySize = ArrayByteSize / sizeof(int32_t);
@@ -1280,7 +1279,15 @@ TEST(ReactorUnitTests, LargeStack)
 		}
 	}
 
-	auto routine = function("one");
+	// LLVM takes very long to generate this routine when InstructionCombining
+	// and O2 optimizations are enabled. Disable for now.
+	// TODO(b/174031014): Remove this once we fix LLVM taking so long
+	auto cfg = Config::Edit{}
+	               .remove(Optimization::Pass::InstructionCombining)
+	               .set(Optimization::Level::None);
+
+	auto routine = function(cfg, "one");
+
 	std::array<int32_t, ArraySize> v;
 
 	// Run this in a thread, so that we get the default reserved stack size (8K on Win64).
@@ -1293,7 +1300,6 @@ TEST(ReactorUnitTests, LargeStack)
 	{
 		EXPECT_EQ(v[i], i);
 	}
-#endif
 }
 
 TEST(ReactorUnitTests, Call)
