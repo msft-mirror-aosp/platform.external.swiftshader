@@ -16,6 +16,7 @@
 
 #include "Debug.hpp"
 #include "ExecutableMemory.hpp"
+#include "LLVMAsm.hpp"
 #include "Routine.hpp"
 
 // TODO(b/143539525): Eliminate when warning has been fixed.
@@ -452,6 +453,7 @@ class ExternalSymbolGenerator : public llvm::orc::JITDylib::DefinitionGenerator
 			functions.try_emplace("exp2f", reinterpret_cast<void *>(exp2f));
 			functions.try_emplace("log2f", reinterpret_cast<void *>(log2f));
 
+			functions.try_emplace("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(fmod)));
 			functions.try_emplace("sin", reinterpret_cast<void *>(static_cast<double (*)(double)>(sin)));
 			functions.try_emplace("cos", reinterpret_cast<void *>(static_cast<double (*)(double)>(cos)));
 			functions.try_emplace("asin", reinterpret_cast<void *>(static_cast<double (*)(double)>(asin)));
@@ -620,6 +622,7 @@ auto &Unwrap(T &&v)
 // settings and no Reactor routine directly links against another.
 class JITRoutine : public rr::Routine
 {
+	std::string name;
 	llvm::orc::ExecutionSession session;
 	llvm::orc::RTDyldObjectLinkingLayer objectLayer;
 	llvm::orc::IRCompileLayer compileLayer;
@@ -631,10 +634,12 @@ class JITRoutine : public rr::Routine
 public:
 	JITRoutine(
 	    std::unique_ptr<llvm::Module> module,
+	    const char *name,
 	    llvm::Function **funcs,
 	    size_t count,
 	    const rr::Config &config)
-	    : objectLayer(session, []() {
+	    : name(name)
+	    , objectLayer(session, []() {
 		    static MemoryMapper memoryMapper;
 		    return std::make_unique<llvm::SectionMemoryManager>(&memoryMapper);
 	    })
@@ -683,6 +688,11 @@ public:
 			names[i] = mangle(func->getName());
 		}
 
+#ifdef ENABLE_RR_EMIT_ASM_FILE
+		const auto asmFilename = rr::AsmFile::generateFilename(name);
+		rr::AsmFile::emitAsmFile(asmFilename, JITGlobals::get()->getTargetMachineBuilder(config.getOptimization().getLevel()), *module);
+#endif
+
 		// Once the module is passed to the compileLayer, the
 		// llvm::Functions are freed. Make sure funcs are not referenced
 		// after this point.
@@ -698,6 +708,10 @@ public:
 			           (int)i, llvm::toString(symbol.takeError()).c_str());
 			addresses[i] = reinterpret_cast<void *>(static_cast<intptr_t>(symbol->getAddress()));
 		}
+
+#ifdef ENABLE_RR_EMIT_ASM_FILE
+		rr::AsmFile::fixupAsmFile(asmFilename, addresses);
+#endif
 	}
 
 	~JITRoutine()
@@ -770,10 +784,10 @@ void JITBuilder::optimize(const rr::Config &cfg)
 	passManager.run(*module);
 }
 
-std::shared_ptr<rr::Routine> JITBuilder::acquireRoutine(llvm::Function **funcs, size_t count, const rr::Config &cfg)
+std::shared_ptr<rr::Routine> JITBuilder::acquireRoutine(const char *name, llvm::Function **funcs, size_t count, const rr::Config &cfg)
 {
 	ASSERT(module);
-	return std::make_shared<JITRoutine>(std::move(module), funcs, count, cfg);
+	return std::make_shared<JITRoutine>(std::move(module), name, funcs, count, cfg);
 }
 
 }  // namespace rr
