@@ -119,6 +119,7 @@ class Variable
 {
 	friend class Nucleus;
 
+	Variable() = delete;
 	Variable &operator=(const Variable &) = delete;
 
 public:
@@ -130,22 +131,21 @@ public:
 	Value *getBaseAddress() const;
 	Value *getElementPointer(Value *index, bool unsignedIndex) const;
 
-	virtual Type *getType() const = 0;
+	Type *getType() const { return type; }
+	int getArraySize() const { return arraySize; }
 
 	// This function is only public for testing purposes, as it affects performance.
 	// It is not considered part of Reactor's public API.
 	static void materializeAll();
 
 protected:
-	Variable();
+	Variable(Type *type, int arraySize);
 	Variable(const Variable &) = default;
 
 	virtual ~Variable();
 
 private:
 	static void killUnmaterialized();
-
-	virtual Value *allocate() const;
 
 	// Set of variables that do not have a stack location yet.
 	class UnmaterializedVariables
@@ -165,6 +165,8 @@ private:
 	// for destructing objects at exit. See crbug.com/1074222
 	static thread_local UnmaterializedVariables *unmaterializedVariables;
 
+	Type *const type;
+	const int arraySize;
 	mutable Value *rvalue = nullptr;
 	mutable Value *address = nullptr;
 };
@@ -173,7 +175,7 @@ template<class T>
 class LValue : public Variable
 {
 public:
-	LValue();
+	LValue(int arraySize = 0);
 
 	RValue<Pointer<T>> operator&();
 
@@ -187,11 +189,6 @@ public:
 		this->storeValue(rvalue.value());
 
 		return rvalue;
-	}
-
-	Type *getType() const override
-	{
-		return T::type();
 	}
 
 	// self() returns the this pointer to this LValue<T> object.
@@ -2548,11 +2545,6 @@ public:
 	// self() returns the this pointer to this Array object.
 	// This function exists because operator&() is overloaded by LValue<T>.
 	inline Array *self() { return this; }
-
-private:
-	Value *allocate() const override;
-
-	const int arraySize;
 };
 
 //	RValue<Array<T>> operator++(Array<T> &val, int);   // Post-increment
@@ -2639,14 +2631,16 @@ public:
 
 	// Hide base implementations of operator()
 
-	RoutineType operator()(const char *name, ...)
+	template<typename... VarArgs>
+	RoutineType operator()(const char *name, VarArgs... varArgs)
 	{
-		return RoutineType(BaseType::operator()(name));
+		return RoutineType(BaseType::operator()(name, std::forward<VarArgs>(varArgs)...));
 	}
 
-	RoutineType operator()(const Config::Edit &cfg, const char *name, ...)
+	template<typename... VarArgs>
+	RoutineType operator()(const Config::Edit &cfg, const char *name, VarArgs... varArgs)
 	{
-		return RoutineType(BaseType::operator()(cfg, name));
+		return RoutineType(BaseType::operator()(cfg, name, std::forward<VarArgs>(varArgs)...));
 	}
 };
 
@@ -2659,7 +2653,8 @@ RValue<Long> Ticks();
 namespace rr {
 
 template<class T>
-LValue<T>::LValue()
+LValue<T>::LValue(int arraySize)
+    : Variable(T::type(), arraySize)
 {
 #ifdef ENABLE_RR_DEBUG_INFO
 	materialize();
@@ -3058,20 +3053,14 @@ Type *Pointer<T>::type()
 
 template<class T, int S>
 Array<T, S>::Array(int size)
-    : arraySize(size)
+    : LValue<T>(size)
 {
-}
-
-template<class T, int S>
-Value *Array<T, S>::allocate() const
-{
-	return Nucleus::allocateStackVariable(T::type(), arraySize);
 }
 
 template<class T, int S>
 Reference<T> Array<T, S>::operator[](int index)
 {
-	assert(index < arraySize);
+	assert(index < Variable::getArraySize());
 	Value *element = this->getElementPointer(Nucleus::createConstantInt(index), false);
 
 	return Reference<T>(element);
@@ -3080,7 +3069,7 @@ Reference<T> Array<T, S>::operator[](int index)
 template<class T, int S>
 Reference<T> Array<T, S>::operator[](unsigned int index)
 {
-	assert(index < static_cast<unsigned int>(arraySize));
+	assert(index < static_cast<unsigned int>(Variable::getArraySize()));
 	Value *element = this->getElementPointer(Nucleus::createConstantInt(index), true);
 
 	return Reference<T>(element);
