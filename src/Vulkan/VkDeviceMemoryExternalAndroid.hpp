@@ -63,11 +63,13 @@ public:
 
 	void setDevicePtr(vk::Device *pDevice) override { device = pDevice; }
 
+	static VkFormat GetVkFormatFromAHBFormat(uint32_t ahbFormat);
 	static VkResult GetAndroidHardwareBufferFormatProperties(const AHardwareBuffer_Desc &ahbDesc, VkAndroidHardwareBufferFormatPropertiesANDROID *pFormat);
 	static VkResult GetAndroidHardwareBufferProperties(VkDevice &device, const AHardwareBuffer *buffer, VkAndroidHardwareBufferPropertiesANDROID *pProperties);
 
 	bool hasExternalImageProperties() const override final { return true; }
-	int externalImageRowPitchBytes() const override final;
+	int externalImageRowPitchBytes(VkImageAspectFlagBits aspect) const override final;
+	VkDeviceSize externalImageMemoryOffset(VkImageAspectFlagBits aspect) const override final;
 
 #ifdef SWIFTSHADER_DEVICE_MEMORY_REPORT
 	bool isImport() const override
@@ -85,6 +87,7 @@ private:
 
 	AHardwareBuffer *ahb = nullptr;
 	AHardwareBuffer_Desc ahbDesc = {};
+	AHardwareBuffer_Planes ahbPlanes = {};
 	vk::Device *device = nullptr;
 	AllocateInfo allocateInfo;
 };
