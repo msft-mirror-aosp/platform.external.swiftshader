@@ -217,6 +217,12 @@ static void getPhysicalDeviceShaderSubgroupExtendedTypesFeatures(T *features)
 	features->shaderSubgroupExtendedTypes = VK_TRUE;
 }
 
+template<typename T>
+static void getPhysicalDeviceScalarBlockLayoutFeatures(T *features)
+{
+	features->scalarBlockLayout = VK_TRUE;
+}
+
 #ifdef SWIFTSHADER_DEVICE_MEMORY_REPORT
 template<typename T>
 static void getPhysicalDeviceDeviceMemoryReportFeaturesEXT(T *features)
@@ -224,6 +230,12 @@ static void getPhysicalDeviceDeviceMemoryReportFeaturesEXT(T *features)
 	features->deviceMemoryReport = VK_TRUE;
 }
 #endif  // SWIFTSHADER_DEVICE_MEMORY_REPORT
+
+template<typename T>
+static void getPhysicalDeviceUniformBufferStandardLayoutFeatures(T *features)
+{
+	features->uniformBufferStandardLayout = VK_TRUE;
+}
 
 template<typename T>
 static void getPhysicalDeviceVulkan12Features(T *features)
@@ -256,9 +268,9 @@ static void getPhysicalDeviceVulkan12Features(T *features)
 	features->descriptorBindingVariableDescriptorCount = VK_FALSE;
 	features->runtimeDescriptorArray = VK_FALSE;
 	features->samplerFilterMinmax = VK_FALSE;
-	features->scalarBlockLayout = VK_FALSE;
+	getPhysicalDeviceScalarBlockLayoutFeatures(features);
 	getPhysicalDeviceImagelessFramebufferFeatures(features);
-	features->uniformBufferStandardLayout = VK_FALSE;
+	getPhysicalDeviceUniformBufferStandardLayoutFeatures(features);
 	getPhysicalDeviceShaderSubgroupExtendedTypesFeatures(features);
 	getPhysicalDeviceSeparateDepthStencilLayoutsFeaturesKHR(features);
 	features->hostQueryReset = VK_FALSE;
@@ -328,11 +340,17 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES_KHR:
 				getPhysicalDeviceShaderSubgroupExtendedTypesFeatures(reinterpret_cast<VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures *>(curExtension));
 				break;
+			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES:
+				getPhysicalDeviceScalarBlockLayoutFeatures(reinterpret_cast<VkPhysicalDeviceScalarBlockLayoutFeatures *>(curExtension));
+				break;
 #ifdef SWIFTSHADER_DEVICE_MEMORY_REPORT
 			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_MEMORY_REPORT_FEATURES_EXT:
 				getPhysicalDeviceDeviceMemoryReportFeaturesEXT(reinterpret_cast<VkPhysicalDeviceDeviceMemoryReportFeaturesEXT *>(curExtension));
 				break;
 #endif  // SWIFTSHADER_DEVICE_MEMORY_REPORT
+			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES:
+				getPhysicalDeviceUniformBufferStandardLayoutFeatures(reinterpret_cast<VkPhysicalDeviceUniformBufferStandardLayoutFeatures *>(curExtension));
+				break;
 			default:
 				LOG_TRAP("curExtension->pNext->sType = %s", vk::Stringify(curExtension->sType).c_str());
 				break;
@@ -792,8 +810,14 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFor
 		case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
 		case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
 		case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+		case VK_FORMAT_R16_UNORM:
+		case VK_FORMAT_R16_SNORM:
 		case VK_FORMAT_R16_SFLOAT:
+		case VK_FORMAT_R16G16_UNORM:
+		case VK_FORMAT_R16G16_SNORM:
 		case VK_FORMAT_R16G16_SFLOAT:
+		case VK_FORMAT_R16G16B16A16_UNORM:
+		case VK_FORMAT_R16G16B16A16_SNORM:
 		case VK_FORMAT_R16G16B16A16_SFLOAT:
 		case VK_FORMAT_R32_SFLOAT:
 		case VK_FORMAT_R32G32_SFLOAT:
