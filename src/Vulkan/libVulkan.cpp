@@ -73,6 +73,8 @@
 #	include "WSI/Win32SurfaceKHR.hpp"
 #endif
 
+#include "WSI/HeadlessSurfaceKHR.hpp"
+
 #ifdef __ANDROID__
 #	include "commit.h"
 #	include "System/GrallocAndroid.hpp"
@@ -406,6 +408,7 @@ static const VkExtensionProperties deviceExtensionProperties[] = {
 	{ VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME, VK_EXT_HOST_QUERY_RESET_SPEC_VERSION },
 	{ VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME, VK_EXT_SCALAR_BLOCK_LAYOUT_SPEC_VERSION },
 	{ VK_EXT_SEPARATE_STENCIL_USAGE_EXTENSION_NAME, VK_EXT_SEPARATE_STENCIL_USAGE_SPEC_VERSION },
+	{ VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME, VK_KHR_DEPTH_STENCIL_RESOLVE_SPEC_VERSION },
 	{ VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME, VK_KHR_IMAGE_FORMAT_LIST_SPEC_VERSION },
 	{ VK_KHR_IMAGELESS_FRAMEBUFFER_EXTENSION_NAME, VK_KHR_IMAGELESS_FRAMEBUFFER_SPEC_VERSION },
 	{ VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME, VK_KHR_SHADER_FLOAT_CONTROLS_SPEC_VERSION },
@@ -3739,6 +3742,14 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vkGetPhysicalDeviceWin32PresentationSupportKHR(Vk
 	return VK_TRUE;
 }
 #endif
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateHeadlessSurfaceEXT(VkInstance instance, const VkHeadlessSurfaceCreateInfoEXT *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkSurfaceKHR *pSurface)
+{
+	TRACE("(VkInstance instance = %p, VkHeadlessSurfaceCreateInfoEXT* pCreateInfo = %p, VkAllocationCallbacks* pAllocator = %p, VkSurface* pSurface = %p)",
+	      instance, pCreateInfo, pAllocator, pSurface);
+
+	return vk::HeadlessSurfaceKHR::Create(pAllocator, pCreateInfo, pSurface);
+}
 
 #ifndef __ANDROID__
 VKAPI_ATTR void VKAPI_CALL vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface, const VkAllocationCallbacks *pAllocator)
