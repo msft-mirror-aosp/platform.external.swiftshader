@@ -20,22 +20,14 @@
 
 #include <array>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <thread>
 #include <tuple>
 
-// TODO(b/174843857): Remove once we upgrade to C++17
-#if(__cplusplus >= 201703L)
-#	define HAS_STD_FILESYSTEM
-#endif
-
-#if(defined(HAS_STD_FILESYSTEM))
-#	include <filesystem>
-#endif
-
 using namespace rr;
 
-std::string testName()
+static std::string testName()
 {
 	auto info = ::testing::UnitTest::GetInstance()->current_test_info();
 	return std::string{ info->test_suite_name() } + "_" + info->name();
@@ -84,6 +76,66 @@ TEST(ReactorUnitTests, Sample)
 	int one[2] = { 1, 0 };
 	int result = routine(&one[1], 2);
 	EXPECT_EQ(result, reference(&one[1], 2));
+}
+
+// This test demonstrates the use of a 'trampoline', where a routine calls
+// a static function which then generates another routine during the execution
+// of the first routine. Also note the code generated for the second routine
+// depends on a parameter passed to the first routine.
+TEST(ReactorUnitTests, Trampoline)
+{
+	using SecondaryFunc = int(int, int);
+
+	static auto generateSecondary = [](int upDown) {
+		FunctionT<SecondaryFunc> secondary;
+		{
+			Int x = secondary.Arg<0>();
+			Int y = secondary.Arg<1>();
+			Int r;
+
+			if(upDown > 0)
+			{
+				r = x + y;
+			}
+			else if(upDown < 0)
+			{
+				r = x - y;
+			}
+			else
+			{
+				r = 0;
+			}
+
+			Return(r);
+		}
+
+		static auto routine = secondary((testName() + "_secondary").c_str());
+		return routine.getEntry();
+	};
+
+	using SecondaryGeneratorFunc = SecondaryFunc *(*)(int);
+	SecondaryGeneratorFunc secondaryGenerator = (SecondaryGeneratorFunc)generateSecondary;
+
+	using PrimaryFunc = int(int, int, int);
+	RoutineT<PrimaryFunc> routine;
+	{
+		FunctionT<PrimaryFunc> primary;
+		{
+			Int x = primary.Arg<0>();
+			Int y = primary.Arg<1>();
+			Int z = primary.Arg<2>();
+
+			Pointer<Byte> secondary = Call(secondaryGenerator, z);
+			Int r = Call<SecondaryFunc>(secondary, x, y);
+
+			Return(r);
+		}
+
+		routine = primary((testName() + "_primary").c_str());
+	}
+
+	int result = routine(100, 20, -3);
+	EXPECT_EQ(result, 80);
 }
 
 TEST(ReactorUnitTests, Uninitialized)
@@ -3293,7 +3345,7 @@ TEST(ReactorUnitTests, SpillLocalCopiesOfArgs)
 	EXPECT_EQ(result, expected);
 }
 
-#if defined(ENABLE_RR_EMIT_ASM_FILE) && defined(HAS_STD_FILESYSTEM)
+#if defined(ENABLE_RR_EMIT_ASM_FILE)
 TEST(ReactorUnitTests, EmitAsm)
 {
 	// Only supported by LLVM for now

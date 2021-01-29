@@ -14,28 +14,44 @@
 
 #include "benchmark/benchmark.h"
 
-#define VK_USE_PLATFORM_WIN32_KHR
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
-VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
-
-#include "SPIRV/GlslangToSpv.h"
-#include "StandAlone/ResourceLimits.h"
-#include "glslang/Public/ShaderLang.h"
-
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
+#include "Buffer.hpp"
+#include "Framebuffer.hpp"
+#include "Image.hpp"
+#include "Swapchain.hpp"
+#include "Util.hpp"
+#include "VulkanHeaders.hpp"
+#include "Window.hpp"
 
 #include <cassert>
 #include <vector>
+
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
 class VulkanBenchmark
 {
 public:
 	VulkanBenchmark()
 	{
+	}
+
+	virtual ~VulkanBenchmark()
+	{
+		device.waitIdle();
+		device.destroy(nullptr);
+		instance.destroy(nullptr);
+	}
+
+	// Call once after construction so that virtual functions may be called during init
+	void initialize()
+	{
 		// TODO(b/158231104): Other platforms
+#if defined(_WIN32)
 		dl = std::make_unique<vk::DynamicLoader>("./vk_swiftshader.dll");
+#elif defined(__linux__)
+		dl = std::make_unique<vk::DynamicLoader>("./libvk_swiftshader.so");
+#else
+#	error Unimplemented platform
+#endif
 		assert(dl->success());
 
 		PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = dl->getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
@@ -63,49 +79,25 @@ public:
 		queue = device.getQueue(queueFamilyIndex, 0);
 	}
 
-	virtual ~VulkanBenchmark()
-	{
-		device.waitIdle();
-		device.destroy(nullptr);
-		instance.destroy(nullptr);
-	}
-
-protected:
-	uint32_t getMemoryTypeIndex(uint32_t typeBits, vk::MemoryPropertyFlags properties)
-	{
-		vk::PhysicalDeviceMemoryProperties deviceMemoryProperties = physicalDevice.getMemoryProperties();
-		for(uint32_t i = 0; i < deviceMemoryProperties.memoryTypeCount; i++)
-		{
-			if((typeBits & 1) == 1)
-			{
-				if((deviceMemoryProperties.memoryTypes[i].propertyFlags & properties) == properties)
-				{
-					return i;
-				}
-			}
-			typeBits >>= 1;
-		}
-
-		assert(false);
-		return -1;
-	}
-
-	const uint32_t queueFamilyIndex = 0;
-
-	vk::Instance instance;
-	vk::PhysicalDevice physicalDevice;
-	vk::Device device;
-	vk::Queue queue;
-
 private:
 	std::unique_ptr<vk::DynamicLoader> dl;
+
+protected:
+	const uint32_t queueFamilyIndex = 0;
+
+	vk::Instance instance;  // Owning handle
+	vk::PhysicalDevice physicalDevice;
+	vk::Device device;  // Owning handle
+	vk::Queue queue;
 };
 
 class ClearImageBenchmark : public VulkanBenchmark
 {
 public:
-	ClearImageBenchmark(vk::Format clearFormat, vk::ImageAspectFlagBits clearAspect)
+	void initialize(vk::Format clearFormat, vk::ImageAspectFlagBits clearAspect)
 	{
+		VulkanBenchmark::initialize();
+
 		vk::ImageCreateInfo imageInfo;
 		imageInfo.imageType = vk::ImageType::e2D;
 		imageInfo.format = clearFormat;
@@ -178,7 +170,7 @@ public:
 
 	~ClearImageBenchmark()
 	{
-		device.freeCommandBuffers(commandPool, { commandBuffer });
+		device.freeCommandBuffers(commandPool, 1, &commandBuffer);
 		device.destroyCommandPool(commandPool, nullptr);
 		device.freeMemory(memory, nullptr);
 		device.destroyImage(image, nullptr);
@@ -195,16 +187,16 @@ public:
 	}
 
 private:
-	vk::CommandPool commandPool;
-	vk::CommandBuffer commandBuffer;
-
-	vk::Image image;
-	vk::DeviceMemory memory;
+	vk::Image image;                  // Owning handle
+	vk::DeviceMemory memory;          // Owning handle
+	vk::CommandPool commandPool;      // Owning handle
+	vk::CommandBuffer commandBuffer;  // Owning handle
 };
 
 static void ClearImage(benchmark::State &state, vk::Format clearFormat, vk::ImageAspectFlagBits clearAspect)
 {
-	ClearImageBenchmark benchmark(clearFormat, clearAspect);
+	ClearImageBenchmark benchmark;
+	benchmark.initialize(clearFormat, clearAspect);
 
 	// Execute once to have the Reactor routine generated.
 	benchmark.clear();
@@ -214,346 +206,27 @@ static void ClearImage(benchmark::State &state, vk::Format clearFormat, vk::Imag
 		benchmark.clear();
 	}
 }
-BENCHMARK_CAPTURE(ClearImage, VK_FORMAT_R8G8B8A8_UNORM, vk::Format::eR8G8B8A8Unorm, vk::ImageAspectFlagBits::eColor)->Unit(benchmark::kMillisecond);
-BENCHMARK_CAPTURE(ClearImage, VK_FORMAT_R32_SFLOAT, vk::Format::eR32Sfloat, vk::ImageAspectFlagBits::eColor)->Unit(benchmark::kMillisecond);
-BENCHMARK_CAPTURE(ClearImage, VK_FORMAT_D32_SFLOAT, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth)->Unit(benchmark::kMillisecond);
 
-class Window
+enum class Multisample
 {
-public:
-	Window(vk::Instance instance, vk::Extent2D windowSize)
-	{
-		moduleInstance = GetModuleHandle(NULL);
-
-		windowClass.cbSize = sizeof(WNDCLASSEX);
-		windowClass.style = CS_HREDRAW | CS_VREDRAW;
-		windowClass.lpfnWndProc = DefWindowProc;
-		windowClass.cbClsExtra = 0;
-		windowClass.cbWndExtra = 0;
-		windowClass.hInstance = moduleInstance;
-		windowClass.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-		windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
-		windowClass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-		windowClass.lpszMenuName = NULL;
-		windowClass.lpszClassName = "Window";
-		windowClass.hIconSm = LoadIcon(NULL, IDI_WINLOGO);
-
-		RegisterClassEx(&windowClass);
-
-		DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
-		DWORD extendedStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;
-
-		RECT windowRect;
-		windowRect.left = 0L;
-		windowRect.top = 0L;
-		windowRect.right = (long)windowSize.width;
-		windowRect.bottom = (long)windowSize.height;
-
-		AdjustWindowRectEx(&windowRect, style, FALSE, extendedStyle);
-		uint32_t x = (GetSystemMetrics(SM_CXSCREEN) - windowRect.right) / 2;
-		uint32_t y = (GetSystemMetrics(SM_CYSCREEN) - windowRect.bottom) / 2;
-
-		window = CreateWindowEx(extendedStyle, "Window", "Hello",
-		                        style | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
-		                        x, y,
-		                        windowRect.right - windowRect.left,
-		                        windowRect.bottom - windowRect.top,
-		                        NULL, NULL, moduleInstance, NULL);
-
-		SetForegroundWindow(window);
-		SetFocus(window);
-
-		// Create the Vulkan surface
-		vk::Win32SurfaceCreateInfoKHR surfaceCreateInfo;
-		surfaceCreateInfo.hinstance = moduleInstance;
-		surfaceCreateInfo.hwnd = window;
-		surface = instance.createWin32SurfaceKHR(surfaceCreateInfo);
-		assert(surface);
-	}
-
-	~Window()
-	{
-		instance.destroySurfaceKHR(surface, nullptr);
-
-		DestroyWindow(window);
-		UnregisterClass("Window", moduleInstance);
-	}
-
-	vk::SurfaceKHR getSurface()
-	{
-		return surface;
-	}
-
-	void show()
-	{
-		ShowWindow(window, SW_SHOW);
-	}
-
-private:
-	HWND window;
-	HINSTANCE moduleInstance;
-	WNDCLASSEX windowClass;
-
-	const vk::Instance instance;
-	vk::SurfaceKHR surface;
+	False,
+	True
 };
 
-class Swapchain
+class DrawBenchmark : public VulkanBenchmark
 {
 public:
-	Swapchain(vk::PhysicalDevice physicalDevice, vk::Device device, Window *window)
-	    : device(device)
+	DrawBenchmark(Multisample multisample)
+	    : multisample(multisample == Multisample::True)
 	{
-		vk::SurfaceKHR surface = window->getSurface();
-
-		// Create the swapchain
-		vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
-
-		vk::SwapchainCreateInfoKHR swapchainCreateInfo;
-		swapchainCreateInfo.surface = surface;
-		swapchainCreateInfo.minImageCount = 2;  // double-buffered
-		swapchainCreateInfo.imageFormat = colorFormat;
-		swapchainCreateInfo.imageColorSpace = vk::ColorSpaceKHR::eSrgbNonlinear;
-		swapchainCreateInfo.imageExtent = surfaceCapabilities.currentExtent;
-		swapchainCreateInfo.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
-		swapchainCreateInfo.preTransform = vk::SurfaceTransformFlagBitsKHR::eIdentity;
-		swapchainCreateInfo.imageArrayLayers = 1;
-		swapchainCreateInfo.imageSharingMode = vk::SharingMode::eExclusive;
-		swapchainCreateInfo.presentMode = vk::PresentModeKHR::eFifo;
-		swapchainCreateInfo.clipped = VK_TRUE;
-		swapchainCreateInfo.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
-
-		swapchain = device.createSwapchainKHR(swapchainCreateInfo);
-
-		// Obtain the images and create views for them
-		images = device.getSwapchainImagesKHR(swapchain);
-
-		imageViews.resize(images.size());
-		for(size_t i = 0; i < imageViews.size(); i++)
-		{
-			vk::ImageViewCreateInfo colorAttachmentView;
-			colorAttachmentView.image = images[i];
-			colorAttachmentView.viewType = vk::ImageViewType::e2D;
-			colorAttachmentView.format = colorFormat;
-			colorAttachmentView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-			colorAttachmentView.subresourceRange.baseMipLevel = 0;
-			colorAttachmentView.subresourceRange.levelCount = 1;
-			colorAttachmentView.subresourceRange.baseArrayLayer = 0;
-			colorAttachmentView.subresourceRange.layerCount = 1;
-
-			imageViews[i] = device.createImageView(colorAttachmentView);
-		}
 	}
 
-	~Swapchain()
+	void initialize()
 	{
-		for(auto &imageView : imageViews)
-		{
-			device.destroyImageView(imageView, nullptr);
-		}
+		VulkanBenchmark::initialize();
 
-		device.destroySwapchainKHR(swapchain, nullptr);
-	}
-
-	void acquireNextImage(VkSemaphore presentCompleteSemaphore, uint32_t &imageIndex)
-	{
-		auto result = device.acquireNextImageKHR(swapchain, UINT64_MAX, presentCompleteSemaphore, vk::Fence());
-		imageIndex = result.value;
-	}
-
-	void queuePresent(vk::Queue queue, uint32_t imageIndex, vk::Semaphore waitSemaphore)
-	{
-		vk::PresentInfoKHR presentInfo;
-		presentInfo.pWaitSemaphores = &waitSemaphore;
-		presentInfo.waitSemaphoreCount = 1;
-		presentInfo.swapchainCount = 1;
-		presentInfo.pSwapchains = &swapchain;
-		presentInfo.pImageIndices = &imageIndex;
-
-		queue.presentKHR(presentInfo);
-	}
-
-	size_t imageCount() const
-	{
-		return images.size();
-	}
-
-	vk::ImageView getImageView(size_t i) const
-	{
-		return imageViews[i];
-	}
-
-	const vk::Format colorFormat = vk::Format::eB8G8R8A8Unorm;
-
-private:
-	const vk::Device device;
-
-	vk::SwapchainKHR swapchain;
-
-	std::vector<vk::Image> images;  // Weak pointers. Presentable images owned by swapchain object.
-	std::vector<vk::ImageView> imageViews;
-};
-
-class Image
-{
-public:
-	Image(vk::Device device, uint32_t width, uint32_t height, vk::Format format, vk::SampleCountFlagBits sampleCount = vk::SampleCountFlagBits::e1)
-	    : device(device)
-	{
-		vk::ImageCreateInfo imageInfo;
-		imageInfo.imageType = vk::ImageType::e2D;
-		imageInfo.format = format;
-		imageInfo.tiling = vk::ImageTiling::eOptimal;
-		imageInfo.initialLayout = vk::ImageLayout::eGeneral;
-		imageInfo.usage = vk::ImageUsageFlagBits::eColorAttachment;
-		imageInfo.samples = sampleCount;
-		imageInfo.extent = vk::Extent3D(width, height, 1);
-		imageInfo.mipLevels = 1;
-		imageInfo.arrayLayers = 1;
-
-		image = device.createImage(imageInfo);
-
-		vk::MemoryRequirements memoryRequirements = device.getImageMemoryRequirements(image);
-
-		vk::MemoryAllocateInfo allocateInfo;
-		allocateInfo.allocationSize = memoryRequirements.size;
-		allocateInfo.memoryTypeIndex = 0;  //getMemoryTypeIndex(memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-		imageMemory = device.allocateMemory(allocateInfo);
-
-		device.bindImageMemory(image, imageMemory, 0);
-
-		vk::ImageViewCreateInfo imageViewInfo;
-		imageViewInfo.image = image;
-		imageViewInfo.viewType = vk::ImageViewType::e2D;
-		imageViewInfo.format = format;
-		imageViewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-		imageViewInfo.subresourceRange.baseMipLevel = 0;
-		imageViewInfo.subresourceRange.levelCount = 1;
-		imageViewInfo.subresourceRange.baseArrayLayer = 0;
-		imageViewInfo.subresourceRange.layerCount = 1;
-
-		imageView = device.createImageView(imageViewInfo);
-	}
-
-	~Image()
-	{
-		device.destroyImage(image);
-		device.destroyImageView(imageView);
-		device.freeMemory(imageMemory);
-	}
-
-	vk::ImageView getImageView()
-	{
-		return imageView;
-	}
-
-private:
-	const vk::Device device;
-
-	vk::Image image;
-	vk::DeviceMemory imageMemory;
-	vk::ImageView imageView;
-};
-
-class Framebuffer
-{
-public:
-	Framebuffer(vk::Device device, vk::ImageView attachment, vk::Format colorFormat, vk::RenderPass renderPass, uint32_t width, uint32_t height, bool multisample)
-	    : device(device)
-	{
-		std::vector<vk::ImageView> attachments(multisample ? 2 : 1);
-
-		if(multisample)
-		{
-			multisampleImage = new Image(device, width, height, colorFormat, vk::SampleCountFlagBits::e4);
-
-			// We'll be rendering to attachment location 0
-			attachments[0] = multisampleImage->getImageView();
-			attachments[1] = attachment;  // Resolve attachment
-		}
-		else
-		{
-			attachments[0] = attachment;
-		}
-
-		vk::FramebufferCreateInfo framebufferCreateInfo;
-
-		framebufferCreateInfo.renderPass = renderPass;
-		framebufferCreateInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-		framebufferCreateInfo.pAttachments = attachments.data();
-		framebufferCreateInfo.width = width;
-		framebufferCreateInfo.height = height;
-		framebufferCreateInfo.layers = 1;
-
-		framebuffer = device.createFramebuffer(framebufferCreateInfo);
-	}
-
-	~Framebuffer()
-	{
-		device.destroyFramebuffer(framebuffer);
-
-		delete multisampleImage;
-	}
-
-	vk::Framebuffer getFramebuffer()
-	{
-		return framebuffer;
-	}
-
-private:
-	const vk::Device device;
-
-	vk::Framebuffer framebuffer;
-
-	Image *multisampleImage = nullptr;
-};
-
-static std::vector<uint32_t> compileGLSLtoSPIRV(const char *glslSource, EShLanguage glslLanguage)
-{
-	// glslang requires one-time initialization.
-	const struct GlslangProcessInitialiser
-	{
-		GlslangProcessInitialiser() { glslang::InitializeProcess(); }
-		~GlslangProcessInitialiser() { glslang::FinalizeProcess(); }
-	} glslangInitialiser;
-
-	std::unique_ptr<glslang::TShader> glslangShader = std::make_unique<glslang::TShader>(glslLanguage);
-
-	glslangShader->setStrings(&glslSource, 1);
-	glslangShader->setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_1);
-	glslangShader->setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_3);
-
-	const int defaultVersion = 100;
-	EShMessages messages = static_cast<EShMessages>(EShMessages::EShMsgDefault | EShMessages::EShMsgSpvRules | EShMessages::EShMsgVulkanRules);
-	bool parseResult = glslangShader->parse(&glslang::DefaultTBuiltInResource, defaultVersion, false, messages);
-
-	if(!parseResult)
-	{
-		std::string debugLog = glslangShader->getInfoDebugLog();
-		std::string infoLog = glslangShader->getInfoLog();
-		assert(false);
-	}
-
-	glslang::TIntermediate *intermediateRepresentation = glslangShader->getIntermediate();
-	assert(intermediateRepresentation);
-
-	std::vector<uint32_t> spirv;
-	glslang::SpvOptions options;
-	glslang::GlslangToSpv(*intermediateRepresentation, spirv, &options);
-	assert(spirv.size() != 0);
-
-	return spirv;
-}
-
-class TriangleBenchmark : public VulkanBenchmark
-{
-public:
-	TriangleBenchmark(bool multisample)
-	    : multisample(multisample)
-	{
-		window = new Window(instance, windowSize);
-		swapchain = new Swapchain(physicalDevice, device, window);
+		window.reset(new Window(instance, windowSize));
+		swapchain.reset(new Swapchain(physicalDevice, device, *window));
 
 		renderPass = createRenderPass(swapchain->colorFormat);
 		createFramebuffers(renderPass);
@@ -567,34 +240,42 @@ public:
 		createCommandBuffers(renderPass);
 	}
 
-	~TriangleBenchmark()
+	~DrawBenchmark()
 	{
-		device.destroyPipelineLayout(pipelineLayout, nullptr);
-		device.destroyPipelineCache(pipelineCache, nullptr);
+		device.freeCommandBuffers(commandPool, commandBuffers);
 
-		device.destroyBuffer(vertices.buffer, nullptr);
-		device.freeMemory(vertices.memory, nullptr);
-
-		device.destroySemaphore(presentCompleteSemaphore, nullptr);
-		device.destroySemaphore(renderCompleteSemaphore, nullptr);
+		device.destroyDescriptorPool(descriptorPool);
+		for(auto &sampler : samplers)
+		{
+			device.destroySampler(sampler, nullptr);
+		}
+		images.clear();
+		device.destroyCommandPool(commandPool, nullptr);
 
 		for(auto &fence : waitFences)
 		{
 			device.destroyFence(fence, nullptr);
 		}
 
-		for(auto *framebuffer : framebuffers)
+		device.destroySemaphore(renderCompleteSemaphore, nullptr);
+		device.destroySemaphore(presentCompleteSemaphore, nullptr);
+
+		device.destroyPipeline(pipeline);
+		device.destroyPipelineLayout(pipelineLayout, nullptr);
+		device.destroyDescriptorSetLayout(descriptorSetLayout);
+
+		device.freeMemory(vertices.memory, nullptr);
+		device.destroyBuffer(vertices.buffer, nullptr);
+
+		for(auto &framebuffer : framebuffers)
 		{
-			delete framebuffer;
+			framebuffer.reset();
 		}
 
 		device.destroyRenderPass(renderPass, nullptr);
 
-		device.freeCommandBuffers(commandPool, commandBuffers);
-		device.destroyCommandPool(commandPool, nullptr);
-
-		delete swapchain;
-		delete window;
+		swapchain.reset();
+		window.reset();
 	}
 
 	void renderFrame()
@@ -625,7 +306,7 @@ public:
 		window->show();
 	}
 
-protected:
+private:
 	void createSynchronizationPrimitives()
 	{
 		vk::SemaphoreCreateInfo semaphoreCreateInfo;
@@ -648,9 +329,34 @@ protected:
 		commandPoolCreateInfo.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
 		commandPool = device.createCommandPool(commandPoolCreateInfo);
 
+		std::vector<vk::DescriptorSet> descriptorSets;
+		if(descriptorSetLayout)
+		{
+			std::array<vk::DescriptorPoolSize, 1> poolSizes = {};
+			poolSizes[0].type = vk::DescriptorType::eCombinedImageSampler;
+			poolSizes[0].descriptorCount = 1;
+
+			vk::DescriptorPoolCreateInfo poolInfo;
+			poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+			poolInfo.pPoolSizes = poolSizes.data();
+			poolInfo.maxSets = 1;
+
+			descriptorPool = device.createDescriptorPool(poolInfo);
+
+			std::vector<vk::DescriptorSetLayout> layouts(1, descriptorSetLayout);
+			vk::DescriptorSetAllocateInfo allocInfo;
+			allocInfo.descriptorPool = descriptorPool;
+			allocInfo.descriptorSetCount = 1;
+			allocInfo.pSetLayouts = layouts.data();
+
+			descriptorSets = device.allocateDescriptorSets(allocInfo);
+
+			doUpdateDescriptorSet(commandPool, descriptorSets[0]);
+		}
+
 		vk::CommandBufferAllocateInfo commandBufferAllocateInfo;
 		commandBufferAllocateInfo.commandPool = commandPool;
-		commandBufferAllocateInfo.commandBufferCount = swapchain->imageCount();
+		commandBufferAllocateInfo.commandBufferCount = static_cast<uint32_t>(swapchain->imageCount());
 		commandBufferAllocateInfo.level = vk::CommandBufferLevel::ePrimary;
 
 		commandBuffers = device.allocateCommandBuffers(commandBufferAllocateInfo);
@@ -669,21 +375,27 @@ protected:
 			renderPassBeginInfo.renderArea.offset.x = 0;
 			renderPassBeginInfo.renderArea.offset.y = 0;
 			renderPassBeginInfo.renderArea.extent = windowSize;
-			renderPassBeginInfo.clearValueCount = 2;
+			renderPassBeginInfo.clearValueCount = ARRAY_SIZE(clearValues);
 			renderPassBeginInfo.pClearValues = clearValues;
 			commandBuffers[i].beginRenderPass(renderPassBeginInfo, vk::SubpassContents::eInline);
 
 			// Set dynamic state
-			vk::Viewport viewport(0.0f, 0.0f, windowSize.width, windowSize.height, 0.0f, 1.0f);
+			vk::Viewport viewport(0.0f, 0.0f, static_cast<float>(windowSize.width), static_cast<float>(windowSize.height), 0.0f, 1.0f);
 			commandBuffers[i].setViewport(0, 1, &viewport);
 
 			vk::Rect2D scissor(vk::Offset2D(0, 0), windowSize);
 			commandBuffers[i].setScissor(0, 1, &scissor);
 
-			// Draw a triangle
-			commandBuffers[i].bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.get());
-			commandBuffers[i].bindVertexBuffers(0, { vertices.buffer }, { 0 });
-			commandBuffers[i].draw(3, 1, 0, 0);
+			if(!descriptorSets.empty())
+			{
+				commandBuffers[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptorSets[0], 0, nullptr);
+			}
+
+			// Draw
+			commandBuffers[i].bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+			VULKAN_HPP_NAMESPACE::DeviceSize offset = 0;
+			commandBuffers[i].bindVertexBuffers(0, 1, &vertices.buffer, &offset);
+			commandBuffers[i].draw(vertices.numVertices, 1, 0, 0);
 
 			commandBuffers[i].endRenderPass();
 			commandBuffers[i].end();
@@ -692,45 +404,7 @@ protected:
 
 	void prepareVertices()
 	{
-		struct Vertex
-		{
-			float position[3];
-			float color[3];
-		};
-
-		Vertex vertexBufferData[] = {
-			{ { 1.0f, 1.0f, 0.05f }, { 1.0f, 0.0f, 0.0f } },
-			{ { -1.0f, 1.0f, 0.5f }, { 0.0f, 1.0f, 0.0f } },
-			{ { 0.0f, -1.0f, 0.5f }, { 0.0f, 0.0f, 1.0f } }
-		};
-
-		vk::BufferCreateInfo vertexBufferInfo;
-		vertexBufferInfo.size = sizeof(vertexBufferData);
-		vertexBufferInfo.usage = vk::BufferUsageFlagBits::eVertexBuffer;
-		vertices.buffer = device.createBuffer(vertexBufferInfo);
-
-		vk::MemoryAllocateInfo memoryAllocateInfo;
-		vk::MemoryRequirements memoryRequirements = device.getBufferMemoryRequirements(vertices.buffer);
-		memoryAllocateInfo.allocationSize = memoryRequirements.size;
-		memoryAllocateInfo.memoryTypeIndex = getMemoryTypeIndex(memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-		vk::DeviceMemory vertexBufferMemory = device.allocateMemory(memoryAllocateInfo);
-
-		void *data = device.mapMemory(vertexBufferMemory, 0, VK_WHOLE_SIZE);
-		memcpy(data, vertexBufferData, sizeof(vertexBufferData));
-		device.unmapMemory(vertexBufferMemory);
-		device.bindBufferMemory(vertices.buffer, vertexBufferMemory, 0);
-
-		vertices.inputBinding.binding = 0;
-		vertices.inputBinding.stride = sizeof(Vertex);
-		vertices.inputBinding.inputRate = vk::VertexInputRate::eVertex;
-
-		vertices.inputAttributes.push_back(vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)));
-		vertices.inputAttributes.push_back(vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)));
-
-		vertices.inputState.vertexBindingDescriptionCount = 1;
-		vertices.inputState.pVertexBindingDescriptions = &vertices.inputBinding;
-		vertices.inputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertices.inputAttributes.size());
-		vertices.inputState.pVertexAttributeDescriptions = vertices.inputAttributes.data();
+		doCreateVertexBuffers();
 	}
 
 	void createFramebuffers(vk::RenderPass renderPass)
@@ -739,7 +413,7 @@ protected:
 
 		for(size_t i = 0; i < framebuffers.size(); i++)
 		{
-			framebuffers[i] = new Framebuffer(device, swapchain->getImageView(i), swapchain->colorFormat, renderPass, windowSize.width, windowSize.height, multisample);
+			framebuffers[i].reset(new Framebuffer(device, swapchain->getImageView(i), swapchain->colorFormat, renderPass, swapchain->getExtent(), multisample));
 		}
 	}
 
@@ -824,22 +498,25 @@ protected:
 		return device.createRenderPass(renderPassInfo);
 	}
 
-	vk::UniqueShaderModule createShaderModule(const char *glslSource, EShLanguage glslLanguage)
+	vk::Pipeline createGraphicsPipeline(vk::RenderPass renderPass)
 	{
-		auto spirv = compileGLSLtoSPIRV(glslSource, glslLanguage);
+		auto setLayoutBindings = doCreateDescriptorSetLayouts();
 
-		vk::ShaderModuleCreateInfo moduleCreateInfo;
-		moduleCreateInfo.codeSize = spirv.size() * sizeof(uint32_t);
-		moduleCreateInfo.pCode = (uint32_t *)spirv.data();
+		std::vector<vk::DescriptorSetLayout> setLayouts;
+		if(!setLayoutBindings.empty())
+		{
+			vk::DescriptorSetLayoutCreateInfo layoutInfo;
+			layoutInfo.bindingCount = static_cast<uint32_t>(setLayoutBindings.size());
+			layoutInfo.pBindings = setLayoutBindings.data();
+			descriptorSetLayout = device.createDescriptorSetLayout(layoutInfo);
 
-		return device.createShaderModuleUnique(moduleCreateInfo);
-	}
+			setLayouts.push_back(descriptorSetLayout);
+		}
 
-	vk::UniquePipeline createGraphicsPipeline(vk::RenderPass renderPass)
-	{
-		vk::PipelineLayoutCreateInfo pPipelineLayoutCreateInfo;
-		pPipelineLayoutCreateInfo.setLayoutCount = 0;
-		pipelineLayout = device.createPipelineLayout(pPipelineLayoutCreateInfo);
+		vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo;
+		pipelineLayoutCreateInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+		pipelineLayoutCreateInfo.pSetLayouts = setLayouts.data();
+		pipelineLayout = device.createPipelineLayout(pipelineLayoutCreateInfo);
 
 		vk::GraphicsPipelineCreateInfo pipelineCreateInfo;
 		pipelineCreateInfo.layout = pipelineLayout;
@@ -890,40 +567,19 @@ protected:
 		multisampleState.rasterizationSamples = multisample ? vk::SampleCountFlagBits::e4 : vk::SampleCountFlagBits::e1;
 		multisampleState.pSampleMask = nullptr;
 
-		const char *vertexShader = R"(#version 310 es
-			layout(location = 0) in vec3 inPos;
-			layout(location = 1) in vec3 inColor;
-			layout(location = 0) out vec3 outColor;
+		vk::ShaderModule vertexModule = doCreateVertexShader();
+		vk::ShaderModule fragmentModule = doCreateFragmentShader();
 
-			void main()
-			{
-				outColor = inColor;
-				gl_Position = vec4(inPos.xyz, 1.0);
-			}
-		)";
-
-		const char *fragmentShader = R"(#version 310 es
-			precision highp float;
-
-			layout(location = 0) in vec3 inColor;
-			layout(location = 0) out vec4 outColor;
-
-			void main()
-			{
-				outColor = vec4(inColor, 1.0);
-			}
-		)";
-
-		vk::UniqueShaderModule vertexModule = createShaderModule(vertexShader, EShLanguage::EShLangVertex);
-		vk::UniqueShaderModule fragmentModule = createShaderModule(fragmentShader, EShLanguage::EShLangFragment);
+		assert(vertexModule);    // TODO: if nullptr, use a default
+		assert(fragmentModule);  // TODO: if nullptr, use a default
 
 		std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages;
 
-		shaderStages[0].module = vertexModule.get();
+		shaderStages[0].module = vertexModule;
 		shaderStages[0].stage = vk::ShaderStageFlagBits::eVertex;
 		shaderStages[0].pName = "main";
 
-		shaderStages[1].module = fragmentModule.get();
+		shaderStages[1].module = fragmentModule;
 		shaderStages[1].stage = vk::ShaderStageFlagBits::eFragment;
 		shaderStages[1].pName = "main";
 
@@ -939,45 +595,431 @@ protected:
 		pipelineCreateInfo.renderPass = renderPass;
 		pipelineCreateInfo.pDynamicState = &dynamicState;
 
-		return device.createGraphicsPipelineUnique(nullptr, pipelineCreateInfo).value;
+		auto pipeline = device.createGraphicsPipeline(nullptr, pipelineCreateInfo).value;
+
+		device.destroyShaderModule(fragmentModule);
+		device.destroyShaderModule(vertexModule);
+
+		return pipeline;
 	}
 
+protected:
+	/////////////////////////
+	// Hooks
+	/////////////////////////
+
+	// Called from prepareVertices.
+	// Child type may call addVertexBuffer() from this function.
+	virtual void doCreateVertexBuffers() {}
+
+	// Called from createGraphicsPipeline.
+	// Child type may return vector of DescriptorSetLayoutBindings for which a DescriptorSetLayout
+	// will be created and stored in this->descriptorSetLayout.
+	virtual std::vector<vk::DescriptorSetLayoutBinding> doCreateDescriptorSetLayouts()
+	{
+		return {};
+	}
+
+	// Called from createGraphicsPipeline.
+	// Child type may call createShaderModule() and return the result.
+	virtual vk::ShaderModule doCreateVertexShader()
+	{
+		return nullptr;
+	}
+
+	// Called from createGraphicsPipeline.
+	// Child type may call createShaderModule() and return the result.
+	virtual vk::ShaderModule doCreateFragmentShader()
+	{
+		return nullptr;
+	}
+
+	// Called from createCommandBuffers.
+	// Child type may create resources (addImage, addSampler, etc.), and make sure to
+	// call device.updateDescriptorSets.
+	virtual void doUpdateDescriptorSet(vk::CommandPool &commandPool, vk::DescriptorSet &descriptorSet)
+	{
+	}
+
+	/////////////////////////
+	// Resource Management
+	/////////////////////////
+
+	// Call from doCreateFragmentShader()
+	vk::ShaderModule createShaderModule(const char *glslSource, EShLanguage glslLanguage)
+	{
+		auto spirv = Util::compileGLSLtoSPIRV(glslSource, glslLanguage);
+
+		vk::ShaderModuleCreateInfo moduleCreateInfo;
+		moduleCreateInfo.codeSize = spirv.size() * sizeof(uint32_t);
+		moduleCreateInfo.pCode = (uint32_t *)spirv.data();
+
+		return device.createShaderModule(moduleCreateInfo);
+	}
+
+	// Call from doCreateVertexBuffers()
+	template<typename VertexType>
+	void addVertexBuffer(VertexType *vertexBufferData, size_t vertexBufferDataSize, std::vector<vk::VertexInputAttributeDescription> inputAttributes)
+	{
+		assert(!vertices.buffer);  // For now, only support adding once
+
+		vk::BufferCreateInfo vertexBufferInfo;
+		vertexBufferInfo.size = vertexBufferDataSize;
+		vertexBufferInfo.usage = vk::BufferUsageFlagBits::eVertexBuffer;
+		vertices.buffer = device.createBuffer(vertexBufferInfo);
+
+		vk::MemoryAllocateInfo memoryAllocateInfo;
+		vk::MemoryRequirements memoryRequirements = device.getBufferMemoryRequirements(vertices.buffer);
+		memoryAllocateInfo.allocationSize = memoryRequirements.size;
+		memoryAllocateInfo.memoryTypeIndex = Util::getMemoryTypeIndex(physicalDevice, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+		vertices.memory = device.allocateMemory(memoryAllocateInfo);
+
+		void *data = device.mapMemory(vertices.memory, 0, VK_WHOLE_SIZE);
+		memcpy(data, vertexBufferData, vertexBufferDataSize);
+		device.unmapMemory(vertices.memory);
+		device.bindBufferMemory(vertices.buffer, vertices.memory, 0);
+
+		vertices.inputBinding.binding = 0;
+		vertices.inputBinding.stride = sizeof(VertexType);
+		vertices.inputBinding.inputRate = vk::VertexInputRate::eVertex;
+
+		vertices.inputAttributes = std::move(inputAttributes);
+
+		vertices.inputState.vertexBindingDescriptionCount = 1;
+		vertices.inputState.pVertexBindingDescriptions = &vertices.inputBinding;
+		vertices.inputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertices.inputAttributes.size());
+		vertices.inputState.pVertexAttributeDescriptions = vertices.inputAttributes.data();
+
+		// Note that we assume data is tightly packed
+		vertices.numVertices = static_cast<uint32_t>(vertexBufferDataSize / sizeof(VertexType));
+	}
+
+	template<typename T>
+	struct Resource
+	{
+		size_t id;
+		T &obj;
+	};
+
+	template<typename... Args>
+	Resource<Image> addImage(Args &&... args)
+	{
+		images.emplace_back(std::make_unique<Image>(std::forward<Args>(args)...));
+		return { images.size() - 1, *images.back() };
+	}
+
+	Image &getImageById(size_t id)
+	{
+		return *images[id].get();
+	}
+
+	Resource<vk::Sampler> addSampler(const vk::SamplerCreateInfo &samplerCreateInfo)
+	{
+		auto sampler = device.createSampler(samplerCreateInfo);
+		samplers.push_back(sampler);
+		return { samplers.size() - 1, sampler };
+	}
+
+	vk::Sampler &getSamplerById(size_t id)
+	{
+		return samplers[id];
+	}
+
+private:
 	const vk::Extent2D windowSize = { 1280, 720 };
 	const bool multisample;
-	Window *window = nullptr;
 
-	Swapchain *swapchain = nullptr;
+	std::unique_ptr<Window> window;
+	std::unique_ptr<Swapchain> swapchain;
 
-	vk::RenderPass renderPass;
-	std::vector<Framebuffer *> framebuffers;
+	vk::RenderPass renderPass;  // Owning handle
+	std::vector<std::unique_ptr<Framebuffer>> framebuffers;
 	uint32_t currentFrameBuffer = 0;
 
 	struct VertexBuffer
 	{
-		vk::Buffer buffer;
-		vk::DeviceMemory memory;
+		vk::Buffer buffer;        // Owning handle
+		vk::DeviceMemory memory;  // Owning handle
 
-		vk::PipelineVertexInputStateCreateInfo inputState;
 		vk::VertexInputBindingDescription inputBinding;
 		std::vector<vk::VertexInputAttributeDescription> inputAttributes;
+		vk::PipelineVertexInputStateCreateInfo inputState;
+
+		uint32_t numVertices;
 	} vertices;
 
-	vk::PipelineLayout pipelineLayout;
-	vk::PipelineCache pipelineCache;
-	vk::UniquePipeline pipeline;
+	vk::DescriptorSetLayout descriptorSetLayout;  // Owning handle
+	vk::PipelineLayout pipelineLayout;            // Owning handle
+	vk::Pipeline pipeline;                        // Owning handle
 
-	vk::CommandPool commandPool;
-	std::vector<vk::CommandBuffer> commandBuffers;
+	vk::Semaphore presentCompleteSemaphore;  // Owning handle
+	vk::Semaphore renderCompleteSemaphore;   // Owning handle
+	std::vector<vk::Fence> waitFences;       // Owning handles
 
-	vk::Semaphore presentCompleteSemaphore;
-	vk::Semaphore renderCompleteSemaphore;
+	vk::CommandPool commandPool;        // Owning handle
+	vk::DescriptorPool descriptorPool;  // Owning handle
 
-	std::vector<vk::Fence> waitFences;
+	// Resources
+	std::vector<std::unique_ptr<Image>> images;
+	std::vector<vk::Sampler> samplers;  // Owning handles
+
+	std::vector<vk::CommandBuffer> commandBuffers;  // Owning handles
 };
 
-static void Triangle(benchmark::State &state, bool multisample)
+class TriangleSolidColorBenchmark : public DrawBenchmark
 {
-	TriangleBenchmark benchmark(multisample);
+public:
+	TriangleSolidColorBenchmark(Multisample multisample)
+	    : DrawBenchmark(multisample)
+	{}
+
+protected:
+	void doCreateVertexBuffers() override
+	{
+		struct Vertex
+		{
+			float position[3];
+		};
+
+		Vertex vertexBufferData[] = {
+			{ { 1.0f, 1.0f, 0.5f } },
+			{ { -1.0f, 1.0f, 0.5f } },
+			{ { 0.0f, -1.0f, 0.5f } }
+		};
+
+		std::vector<vk::VertexInputAttributeDescription> inputAttributes;
+		inputAttributes.push_back(vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)));
+
+		addVertexBuffer(vertexBufferData, sizeof(vertexBufferData), std::move(inputAttributes));
+	}
+
+	vk::ShaderModule doCreateVertexShader() override
+	{
+		const char *vertexShader = R"(#version 310 es
+			layout(location = 0) in vec3 inPos;
+
+			void main()
+			{
+				gl_Position = vec4(inPos.xyz, 1.0);
+			})";
+
+		return createShaderModule(vertexShader, EShLanguage::EShLangVertex);
+	}
+
+	vk::ShaderModule doCreateFragmentShader() override
+	{
+		const char *fragmentShader = R"(#version 310 es
+			precision highp float;
+
+			layout(location = 0) out vec4 outColor;
+
+			void main()
+			{
+				outColor = vec4(1.0, 1.0, 1.0, 1.0);
+			})";
+
+		return createShaderModule(fragmentShader, EShLanguage::EShLangFragment);
+	}
+};
+
+class TriangleInterpolateColorBenchmark : public DrawBenchmark
+{
+public:
+	TriangleInterpolateColorBenchmark(Multisample multisample)
+	    : DrawBenchmark(multisample)
+	{}
+
+protected:
+	void doCreateVertexBuffers() override
+	{
+		struct Vertex
+		{
+			float position[3];
+			float color[3];
+		};
+
+		Vertex vertexBufferData[] = {
+			{ { 1.0f, 1.0f, 0.05f }, { 1.0f, 0.0f, 0.0f } },
+			{ { -1.0f, 1.0f, 0.5f }, { 0.0f, 1.0f, 0.0f } },
+			{ { 0.0f, -1.0f, 0.5f }, { 0.0f, 0.0f, 1.0f } }
+		};
+
+		std::vector<vk::VertexInputAttributeDescription> inputAttributes;
+		inputAttributes.push_back(vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)));
+		inputAttributes.push_back(vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)));
+
+		addVertexBuffer(vertexBufferData, sizeof(vertexBufferData), std::move(inputAttributes));
+	}
+
+	vk::ShaderModule doCreateVertexShader() override
+	{
+		const char *vertexShader = R"(#version 310 es
+			layout(location = 0) in vec3 inPos;
+			layout(location = 1) in vec3 inColor;
+
+			layout(location = 0) out vec3 outColor;
+
+			void main()
+			{
+				outColor = inColor;
+				gl_Position = vec4(inPos.xyz, 1.0);
+			})";
+
+		return createShaderModule(vertexShader, EShLanguage::EShLangVertex);
+	}
+
+	vk::ShaderModule doCreateFragmentShader() override
+	{
+		const char *fragmentShader = R"(#version 310 es
+			precision highp float;
+
+			layout(location = 0) in vec3 inColor;
+
+			layout(location = 0) out vec4 outColor;
+
+			void main()
+			{
+				outColor = vec4(inColor, 1.0);
+			})";
+
+		return createShaderModule(fragmentShader, EShLanguage::EShLangFragment);
+	}
+};
+
+class TriangleSampleTextureBenchmark : public DrawBenchmark
+{
+public:
+	TriangleSampleTextureBenchmark(Multisample multisample)
+	    : DrawBenchmark(multisample)
+	{}
+
+protected:
+	void doCreateVertexBuffers() override
+	{
+		struct Vertex
+		{
+			float position[3];
+			float color[3];
+			float texCoord[2];
+		};
+
+		Vertex vertexBufferData[] = {
+			{ { 1.0f, 1.0f, 0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
+			{ { -1.0f, 1.0f, 0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 1.0f } },
+			{ { 0.0f, -1.0f, 0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f } }
+		};
+
+		std::vector<vk::VertexInputAttributeDescription> inputAttributes;
+		inputAttributes.push_back(vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)));
+		inputAttributes.push_back(vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)));
+		inputAttributes.push_back(vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord)));
+
+		addVertexBuffer(vertexBufferData, sizeof(vertexBufferData), std::move(inputAttributes));
+	}
+
+	vk::ShaderModule doCreateVertexShader() override
+	{
+		const char *vertexShader = R"(#version 310 es
+			layout(location = 0) in vec3 inPos;
+			layout(location = 1) in vec3 inColor;
+
+			layout(location = 0) out vec3 outColor;
+			layout(location = 1) out vec2 fragTexCoord;
+
+			void main()
+			{
+				outColor = inColor;
+				gl_Position = vec4(inPos.xyz, 1.0);
+				fragTexCoord = inPos.xy;
+			})";
+
+		return createShaderModule(vertexShader, EShLanguage::EShLangVertex);
+	}
+
+	vk::ShaderModule doCreateFragmentShader() override
+	{
+		const char *fragmentShader = R"(#version 310 es
+			precision highp float;
+
+			layout(location = 0) in vec3 inColor;
+			layout(location = 1) in vec2 fragTexCoord;
+
+			layout(location = 0) out vec4 outColor;
+
+			layout(binding = 0) uniform sampler2D texSampler;
+
+			void main()
+			{
+				outColor = texture(texSampler, fragTexCoord) * vec4(inColor, 1.0);
+			})";
+
+		return createShaderModule(fragmentShader, EShLanguage::EShLangFragment);
+	}
+
+	std::vector<vk::DescriptorSetLayoutBinding> doCreateDescriptorSetLayouts() override
+	{
+		vk::DescriptorSetLayoutBinding samplerLayoutBinding;
+		samplerLayoutBinding.binding = 1;
+		samplerLayoutBinding.descriptorCount = 1;
+		samplerLayoutBinding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+		samplerLayoutBinding.pImmutableSamplers = nullptr;
+		samplerLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+
+		return { samplerLayoutBinding };
+	}
+
+	void doUpdateDescriptorSet(vk::CommandPool &commandPool, vk::DescriptorSet &descriptorSet) override
+	{
+		auto &texture = addImage(device, 16, 16, vk::Format::eR8G8B8A8Unorm).obj;
+
+		// Fill texture with white
+		vk::DeviceSize bufferSize = 16 * 16 * 4;
+		Buffer buffer(device, bufferSize, vk::BufferUsageFlagBits::eTransferSrc);
+		void *data = buffer.mapMemory();
+		memset(data, 255, bufferSize);
+		buffer.unmapMemory();
+
+		Util::transitionImageLayout(device, commandPool, queue, texture.getImage(), vk::Format::eR8G8B8A8Unorm, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+		Util::copyBufferToImage(device, commandPool, queue, buffer.getBuffer(), texture.getImage(), 16, 16);
+		Util::transitionImageLayout(device, commandPool, queue, texture.getImage(), vk::Format::eR8G8B8A8Unorm, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+		vk::SamplerCreateInfo samplerInfo;
+		samplerInfo.magFilter = vk::Filter::eLinear;
+		samplerInfo.minFilter = vk::Filter::eLinear;
+		samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
+		samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
+		samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
+		samplerInfo.anisotropyEnable = VK_FALSE;
+		samplerInfo.unnormalizedCoordinates = VK_FALSE;
+		samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+		samplerInfo.mipLodBias = 0.0f;
+		samplerInfo.minLod = 0.0f;
+		samplerInfo.maxLod = 0.0f;
+
+		auto sampler = addSampler(samplerInfo);
+
+		vk::DescriptorImageInfo imageInfo;
+		imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+		imageInfo.imageView = texture.getImageView();
+		imageInfo.sampler = sampler.obj;
+
+		std::array<vk::WriteDescriptorSet, 1> descriptorWrites = {};
+
+		descriptorWrites[0].dstSet = descriptorSet;
+		descriptorWrites[0].dstBinding = 1;
+		descriptorWrites[0].dstArrayElement = 0;
+		descriptorWrites[0].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+		descriptorWrites[0].descriptorCount = 1;
+		descriptorWrites[0].pImageInfo = &imageInfo;
+
+		device.updateDescriptorSets(static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+	}
+};
+
+template<typename T>
+static void RunBenchmark(benchmark::State &state, T &benchmark)
+{
+	benchmark.initialize();
 
 	if(false) benchmark.show();  // Enable for visual verification.
 
@@ -989,5 +1031,32 @@ static void Triangle(benchmark::State &state, bool multisample)
 		benchmark.renderFrame();
 	}
 }
-BENCHMARK_CAPTURE(Triangle, Hello, false)->Unit(benchmark::kMillisecond);
-BENCHMARK_CAPTURE(Triangle, Multisample, true)->Unit(benchmark::kMillisecond);
+
+static void TriangleSolidColor(benchmark::State &state, Multisample multisample)
+{
+	TriangleSolidColorBenchmark benchmark(multisample);
+	RunBenchmark(state, benchmark);
+}
+
+static void TriangleInterpolateColor(benchmark::State &state, Multisample multisample)
+{
+	TriangleInterpolateColorBenchmark benchmark(multisample);
+	RunBenchmark(state, benchmark);
+}
+
+static void TriangleSampleTexture(benchmark::State &state, Multisample multisample)
+{
+	TriangleSampleTextureBenchmark benchmark(multisample);
+	RunBenchmark(state, benchmark);
+}
+
+BENCHMARK_CAPTURE(ClearImage, VK_FORMAT_R8G8B8A8_UNORM, vk::Format::eR8G8B8A8Unorm, vk::ImageAspectFlagBits::eColor)->Unit(benchmark::kMillisecond);
+BENCHMARK_CAPTURE(ClearImage, VK_FORMAT_R32_SFLOAT, vk::Format::eR32Sfloat, vk::ImageAspectFlagBits::eColor)->Unit(benchmark::kMillisecond);
+BENCHMARK_CAPTURE(ClearImage, VK_FORMAT_D32_SFLOAT, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth)->Unit(benchmark::kMillisecond);
+
+BENCHMARK_CAPTURE(TriangleSolidColor, TriangleSolidColor, Multisample::False)->Unit(benchmark::kMillisecond);
+BENCHMARK_CAPTURE(TriangleInterpolateColor, TriangleInterpolateColor, Multisample::False)->Unit(benchmark::kMillisecond);
+BENCHMARK_CAPTURE(TriangleSampleTexture, TriangleSampleTexture, Multisample::False)->Unit(benchmark::kMillisecond);
+BENCHMARK_CAPTURE(TriangleSolidColor, TriangleSolidColor_Multisample, Multisample::True)->Unit(benchmark::kMillisecond);
+BENCHMARK_CAPTURE(TriangleInterpolateColor, TriangleInterpolateColor_Multisample, Multisample::True)->Unit(benchmark::kMillisecond);
+BENCHMARK_CAPTURE(TriangleSampleTexture, TriangleSampleTexture_Multisample, Multisample::True)->Unit(benchmark::kMillisecond);

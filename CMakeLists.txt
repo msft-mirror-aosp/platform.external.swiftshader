@@ -16,7 +16,7 @@ cmake_minimum_required(VERSION 3.13)
 
 project(SwiftShader C CXX ASM)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CXX_STANDARD_REQUIRED ON)
 # MSVC doesn't define __cplusplus by default
 if(MSVC)
@@ -984,15 +984,16 @@ if(SWIFTSHADER_BUILD_TESTS)
 endif()
 
 if(SWIFTSHADER_BUILD_BENCHMARKS)
+    if (NOT TARGET glslang)
+        add_subdirectory(${THIRD_PARTY_DIR}/glslang)
+    endif()
+    add_subdirectory(${TESTS_DIR}/VulkanWrapper) # Add VulkanWrapper target
+
     if (NOT TARGET benchmark::benchmark)
         set(BENCHMARK_ENABLE_TESTING FALSE CACHE BOOL FALSE FORCE)
         add_subdirectory(${THIRD_PARTY_DIR}/benchmark)
         set_target_properties(benchmark PROPERTIES FOLDER "third_party")
         set_target_properties(benchmark_main PROPERTIES FOLDER "third_party")
-    endif()
-
-    if (NOT TARGET glslang)
-        add_subdirectory(${THIRD_PARTY_DIR}/glslang)
     endif()
 
     add_subdirectory(${TESTS_DIR}/ReactorBenchmarks) # Add ReactorBenchmarks target
