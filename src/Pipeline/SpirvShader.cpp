@@ -139,6 +139,25 @@ SpirvShader::SpirvShader(
 				break;
 			}
 
+			case spv::OpDecorateId:
+			{
+				auto decoration = static_cast<spv::Decoration>(insn.word(2));
+
+				// Currently OpDecorateId only supports UniformId, which provides information for
+				// potential optimizations that we don't perform, and CounterBuffer, which is used
+				// by HLSL to build the graphics pipeline with shader reflection. At the driver level,
+				// the CounterBuffer decoration does nothing, so we can safely ignore both decorations.
+				ASSERT(decoration == spv::DecorationUniformId || decoration == spv::DecorationCounterBuffer);
+				break;
+			}
+
+			case spv::OpDecorateString:
+			case spv::OpMemberDecorateString:
+			{
+				// We assume these are for HLSL semantics, ignore them.
+				break;
+			}
+
 			case spv::OpDecorationGroup:
 				// Nothing to do here. We don't need to record the definition of the group; we'll just have
 				// the bundle of decorations float around. If we were to ever walk the decorations directly,
@@ -464,7 +483,7 @@ SpirvShader::SpirvShader(
 			case spv::OpFunctionParameter:
 				// These should have all been removed by preprocessing passes. If we see them here,
 				// our assumptions are wrong and we will probably generate wrong code.
-				UNREACHABLE("%s should have already been lowered.", OpcodeName(opcode).c_str());
+				UNREACHABLE("%s should have already been lowered.", OpcodeName(opcode));
 				break;
 
 			case spv::OpFunctionCall:
@@ -673,6 +692,7 @@ SpirvShader::SpirvShader(
 			case spv::OpGroupNonUniformLogicalOr:
 			case spv::OpGroupNonUniformLogicalXor:
 			case spv::OpCopyObject:
+			case spv::OpCopyLogical:
 			case spv::OpArrayLength:
 				// Instructions that yield an intermediate value or divergent pointer
 				DefineResult(insn);
@@ -717,12 +737,13 @@ SpirvShader::SpirvShader(
 				if(!strcmp(ext, "SPV_KHR_device_group")) break;
 				if(!strcmp(ext, "SPV_KHR_multiview")) break;
 				if(!strcmp(ext, "SPV_EXT_shader_stencil_export")) break;
+				if(!strcmp(ext, "SPV_KHR_float_controls")) break;
 				UNSUPPORTED("SPIR-V Extension: %s", ext);
 				break;
 			}
 
 			default:
-				UNSUPPORTED("%s", OpcodeName(opcode).c_str());
+				UNSUPPORTED("%s", OpcodeName(opcode));
 		}
 	}
 
@@ -966,7 +987,7 @@ uint32_t SpirvShader::ComputeTypeSize(InsnIterator insn)
 			return 1;
 
 		default:
-			UNREACHABLE("%s", OpcodeName(insn.opcode()).c_str());
+			UNREACHABLE("%s", OpcodeName(insn.opcode()));
 			return 0;
 	}
 }
@@ -1089,7 +1110,7 @@ void SpirvShader::ApplyDecorationsForAccessChain(Decorations *d, DescriptorDecor
 				d->InsideMatrix = true;
 				break;
 			default:
-				UNREACHABLE("%s", OpcodeName(type.definition.opcode()).c_str());
+				UNREACHABLE("%s", OpcodeName(type.definition.opcode()));
 		}
 	}
 }
@@ -1198,7 +1219,7 @@ SIMD::Pointer SpirvShader::WalkExplicitLayoutAccessChain(Object::ID baseId, uint
 				break;
 			}
 			default:
-				UNREACHABLE("%s", OpcodeName(type.definition.opcode()).c_str());
+				UNREACHABLE("%s", OpcodeName(type.definition.opcode()));
 		}
 	}
 
@@ -1279,7 +1300,7 @@ SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, uint32_t numIndexe
 			}
 
 			default:
-				UNREACHABLE("%s", OpcodeName(type.opcode()).c_str());
+				UNREACHABLE("%s", OpcodeName(type.opcode()));
 		}
 	}
 
@@ -1325,7 +1346,7 @@ uint32_t SpirvShader::WalkLiteralAccessChain(Type::ID typeId, uint32_t numIndexe
 			}
 
 			default:
-				UNREACHABLE("%s", OpcodeName(type.opcode()).c_str());
+				UNREACHABLE("%s", OpcodeName(type.opcode()));
 		}
 	}
 
@@ -1632,7 +1653,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 #if SPIRV_SHADER_ENABLE_DBG
 	{
 		auto text = spvtools::spvInstructionBinaryToText(
-		    SPV_ENV_VULKAN_1_1,
+		    vk::SPIRV_VERSION,
 		    insn.wordPointer(0),
 		    insn.wordCount(),
 		    insns.data(),
@@ -1682,6 +1703,9 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 		case spv::OpGroupDecorate:
 		case spv::OpGroupMemberDecorate:
 		case spv::OpDecorationGroup:
+		case spv::OpDecorateId:
+		case spv::OpDecorateString:
+		case spv::OpMemberDecorateString:
 		case spv::OpName:
 		case spv::OpMemberName:
 		case spv::OpSource:
@@ -1954,6 +1978,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 			return EmitSampledImageCombineOrSplit(insn, state);
 
 		case spv::OpCopyObject:
+		case spv::OpCopyLogical:
 			return EmitCopyObject(insn, state);
 
 		case spv::OpCopyMemory:
@@ -2003,7 +2028,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 			return EmitArrayLength(insn, state);
 
 		default:
-			UNREACHABLE("%s", OpcodeName(opcode).c_str());
+			UNREACHABLE("%s", OpcodeName(opcode));
 			break;
 	}
 
@@ -2303,7 +2328,7 @@ SpirvShader::EmitResult SpirvShader::EmitAtomicOp(InsnIterator insn, EmitState *
 					v = ExchangeAtomic(Pointer<UInt>(&ptr.base[offset]), laneValue, memoryOrder);
 					break;
 				default:
-					UNREACHABLE("%s", OpcodeName(insn.opcode()).c_str());
+					UNREACHABLE("%s", OpcodeName(insn.opcode()));
 					break;
 			}
 			result = Insert(result, v, j);

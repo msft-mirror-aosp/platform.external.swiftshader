@@ -1250,8 +1250,7 @@ private:
 	void WriteCFGGraphVizDotFile(const char *path) const;
 
 	// OpcodeName() returns the name of the opcode op.
-	// If NDEBUG is defined, then OpcodeName() will only return the numerical code.
-	static std::string OpcodeName(spv::Op op);
+	static const char *OpcodeName(spv::Op op);
 	static std::memory_order MemoryOrder(spv::MemorySemanticsMask memorySemantics);
 
 	// IsStatement() returns true if the given opcode actually performs
@@ -1370,7 +1369,7 @@ public:
 	// are only used when debugging. See b/146486064 for more information.
 	// Give careful consideration to the runtime performance loss before adding
 	// more state here.
-	SIMD::Int windowSpacePosition[2];
+	std::array<SIMD::Int, 2> windowSpacePosition;
 	Int viewID;  // slice offset into input attachments for multiview, even if the shader doesn't use ViewIndex
 	Int instanceID;
 	SIMD::Int vertexIndex;

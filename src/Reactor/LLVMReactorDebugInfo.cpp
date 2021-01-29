@@ -56,7 +56,16 @@ __pragma(warning(push))
 
 	std::pair<llvm::StringRef, llvm::StringRef> splitPath(const char *path)
 	{
-		return llvm::StringRef(path).rsplit('/');
+#	ifdef _WIN32
+		auto dirAndFile = llvm::StringRef(path).rsplit('\\');
+#	else
+	auto dirAndFile = llvm::StringRef(path).rsplit('/');
+#	endif
+		if(dirAndFile.second == "")
+		{
+			dirAndFile.second = "<unknown>";
+		}
+		return dirAndFile;
 	}
 
 	// Note: createGDBRegistrationListener() returns a pointer to a singleton.
@@ -82,11 +91,11 @@ DebugInfo::DebugInfo(
 
 	auto location = getCallerLocation();
 
-	auto fileAndDir = splitPath(location.function.file.c_str());
+	auto dirAndFile = splitPath(location.function.file.c_str());
 	diBuilder.reset(new llvm::DIBuilder(*module));
 	diCU = diBuilder->createCompileUnit(
 	    llvm::dwarf::DW_LANG_C,
-	    diBuilder->createFile(fileAndDir.first, fileAndDir.second),
+	    diBuilder->createFile(dirAndFile.second, dirAndFile.first),
 	    "Reactor",
 	    0, "", 0);
 
@@ -135,7 +144,10 @@ void DebugInfo::EmitLocation()
 
 void DebugInfo::Flush()
 {
-	emitPending(diScope.back(), builder);
+	if(!diScope.empty())
+	{
+		emitPending(diScope.back(), builder);
+	}
 }
 
 void DebugInfo::syncScope(Backtrace const &backtrace)
@@ -182,7 +194,7 @@ void DebugInfo::syncScope(Backtrace const &backtrace)
 			LOG("  STACK(%d): Jumped backwards %d -> %d. di: %p -> %p", int(i),
 			    oldLocation.line, newLocation.line, scope.di, di);
 			emitPending(scope, builder);
-			scope = { newLocation, di };
+			scope = { newLocation, di, {}, {} };
 			shrink(i + 1);
 			break;
 		}
@@ -214,7 +226,7 @@ void DebugInfo::syncScope(Backtrace const &backtrace)
 		    DINode::FlagPrototyped,         // flags
 		    DISubprogram::SPFlagDefinition  // subprogram flags
 		);
-		diScope.push_back({ location, func });
+		diScope.push_back({ location, func, {}, {} });
 		LOG("+ STACK(%d): di: %p, location: %s:%d", int(i), di,
 		    location.function.file.c_str(), int(location.line));
 	}
@@ -376,17 +388,15 @@ void DebugInfo::emitPending(Scope &scope, IRBuilder *builder)
 	scope.pending = Pending{};
 }
 
-void DebugInfo::NotifyObjectEmitted(const llvm::object::ObjectFile &Obj, const llvm::LoadedObjectInfo &L)
+void DebugInfo::NotifyObjectEmitted(uint64_t key, const llvm::object::ObjectFile &obj, const llvm::LoadedObjectInfo &l)
 {
 	std::unique_lock<std::mutex> lock(jitEventListenerMutex);
-	auto key = reinterpret_cast<llvm::JITEventListener::ObjectKey>(&Obj);
-	jitEventListener->notifyObjectLoaded(key, Obj, static_cast<const llvm::RuntimeDyld::LoadedObjectInfo &>(L));
+	jitEventListener->notifyObjectLoaded(key, obj, static_cast<const llvm::RuntimeDyld::LoadedObjectInfo &>(l));
 }
 
-void DebugInfo::NotifyFreeingObject(const llvm::object::ObjectFile &Obj)
+void DebugInfo::NotifyFreeingObject(uint64_t key)
 {
 	std::unique_lock<std::mutex> lock(jitEventListenerMutex);
-	auto key = reinterpret_cast<llvm::JITEventListener::ObjectKey>(&Obj);
 	jitEventListener->notifyFreeingObject(key);
 }
 
@@ -432,7 +442,8 @@ void DebugInfo::registerBasicTypes()
 
 Location DebugInfo::getCallerLocation() const
 {
-	return getCallerBacktrace(1)[0];
+	auto backtrace = getCallerBacktrace(1);
+	return backtrace.empty() ? Location{} : backtrace[0];
 }
 
 Backtrace DebugInfo::getCallerBacktrace(size_t limit /* = 0 */) const
@@ -502,7 +513,7 @@ DebugInfo::LineTokens const *DebugInfo::getOrParseFileTokens(const char *path)
 			{
 				if(match.str(1) == "return")
 				{
-					(*tokens)[lineCount] = Token{ Token::Return };
+					(*tokens)[lineCount] = Token{ Token::Return, "" };
 				}
 				else
 				{

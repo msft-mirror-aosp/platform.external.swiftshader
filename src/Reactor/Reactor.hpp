@@ -24,7 +24,7 @@
 #include <cstdio>
 #include <limits>
 #include <tuple>
-#include <unordered_set>
+#include <unordered_map>
 
 #ifdef ENABLE_RR_DEBUG_INFO
 // Functions used for generating JIT debug info.
@@ -52,7 +52,29 @@ int DebugPrintf(const char *format, ...);
 }
 #endif
 
+// A Clang extension to determine compiler features.
+// We use it to detect Sanitizer builds (e.g. -fsanitize=memory).
+#ifndef __has_feature
+#	define __has_feature(x) 0
+#endif
+
+// Whether Reactor routine instrumentation is enabled for MSan builds.
+// TODO(b/155148722): Remove when unconditionally instrumenting for all build systems.
+#if !defined REACTOR_ENABLE_MEMORY_SANITIZER_INSTRUMENTATION
+#	define REACTOR_ENABLE_MEMORY_SANITIZER_INSTRUMENTATION 0
+#endif
+
 namespace rr {
+
+// These generally map to the precision types as specified by the Vulkan specification.
+// See https://www.khronos.org/registry/vulkan/specs/1.2/html/chap37.html#spirvenv-precision-operation
+enum class Precision
+{
+	/*Exact,*/  // 0 ULP with correct rounding (i.e. Math.h)
+	Full,       // Single precision, but not relaxed
+	Relaxed,    // Single precision, relaxed
+	/*Half,*/   // Half precision
+};
 
 std::string BackendName();
 
@@ -107,6 +129,7 @@ class Variable
 {
 	friend class Nucleus;
 
+	Variable() = delete;
 	Variable &operator=(const Variable &) = delete;
 
 public:
@@ -118,24 +141,42 @@ public:
 	Value *getBaseAddress() const;
 	Value *getElementPointer(Value *index, bool unsignedIndex) const;
 
-	virtual Type *getType() const = 0;
+	Type *getType() const { return type; }
+	int getArraySize() const { return arraySize; }
+
+	// This function is only public for testing purposes, as it affects performance.
+	// It is not considered part of Reactor's public API.
+	static void materializeAll();
 
 protected:
-	Variable();
+	Variable(Type *type, int arraySize);
 	Variable(const Variable &) = default;
 
 	virtual ~Variable();
 
 private:
-	static void materializeAll();
 	static void killUnmaterialized();
 
-	virtual Value *allocate() const;
+	// Set of variables that do not have a stack location yet.
+	class UnmaterializedVariables
+	{
+	public:
+		void add(const Variable *v);
+		void remove(const Variable *v);
+		void clear();
+		void materializeAll();
+
+	private:
+		int counter = 0;
+		std::unordered_map<const Variable *, int> variables;
+	};
 
 	// This has to be a raw pointer because glibc 2.17 doesn't support __cxa_thread_atexit_impl
 	// for destructing objects at exit. See crbug.com/1074222
-	static thread_local std::unordered_set<const Variable *> *unmaterializedVariables;
+	static thread_local UnmaterializedVariables *unmaterializedVariables;
 
+	Type *const type;
+	const int arraySize;
 	mutable Value *rvalue = nullptr;
 	mutable Value *address = nullptr;
 };
@@ -144,7 +185,7 @@ template<class T>
 class LValue : public Variable
 {
 public:
-	LValue();
+	LValue(int arraySize = 0);
 
 	RValue<Pointer<T>> operator&();
 
@@ -158,11 +199,6 @@ public:
 		this->storeValue(rvalue.value());
 
 		return rvalue;
-	}
-
-	Type *getType() const override
-	{
-		return T::type();
 	}
 
 	// self() returns the this pointer to this LValue<T> object.
@@ -1971,7 +2007,14 @@ inline RValue<Int4> CmpGE(RValue<Int4> x, RValue<Int4> y)
 }
 RValue<Int4> Max(RValue<Int4> x, RValue<Int4> y);
 RValue<Int4> Min(RValue<Int4> x, RValue<Int4> y);
+// Convert to nearest integer. If a converted value is outside of the integer
+// range, the returned result is undefined.
 RValue<Int4> RoundInt(RValue<Float4> cast);
+// Rounds to the nearest integer, but clamps very large values to an
+// implementation-dependent range.
+// Specifically, on x86, values larger than 2147483583.0 are converted to
+// 2147483583 (0x7FFFFFBF) instead of producing 0x80000000.
+RValue<Int4> RoundIntClamped(RValue<Float4> cast);
 RValue<Short8> PackSigned(RValue<Int4> x, RValue<Int4> y);
 RValue<UShort8> PackUnsigned(RValue<Int4> x, RValue<Int4> y);
 RValue<Int> Extract(RValue<Int4> val, int i);
@@ -2096,7 +2139,7 @@ public:
 	template<int T>
 	Float(const SwizzleMask1<Float4, T> &rhs);
 
-	//	RValue<Float> operator=(float rhs);   // FIXME: Implement
+	RValue<Float> operator=(float rhs);
 	RValue<Float> operator=(RValue<Float> rhs);
 	RValue<Float> operator=(const Float &rhs);
 	RValue<Float> operator=(const Reference<Float> &rhs);
@@ -2129,8 +2172,14 @@ RValue<Bool> operator==(RValue<Float> lhs, RValue<Float> rhs);
 RValue<Float> Abs(RValue<Float> x);
 RValue<Float> Max(RValue<Float> x, RValue<Float> y);
 RValue<Float> Min(RValue<Float> x, RValue<Float> y);
+// Deprecated: use Rcp
+// TODO(b/147516027): Remove when GLES frontend is removed
 RValue<Float> Rcp_pp(RValue<Float> val, bool exactAtPow2 = false);
+// Deprecated: use RcpSqrt
+// TODO(b/147516027): Remove when GLES frontend is removed
 RValue<Float> RcpSqrt_pp(RValue<Float> val);
+RValue<Float> Rcp(RValue<Float> x, Precision p = Precision::Full, bool finite = false, bool exactAtPow2 = false);
+RValue<Float> RcpSqrt(RValue<Float> x, Precision p = Precision::Full);
 RValue<Float> Sqrt(RValue<Float> x);
 
 //	RValue<Int4> IsInf(RValue<Float> x);
@@ -2254,6 +2303,7 @@ public:
 	Float4(const Swizzle2<Float4, X> &x, const SwizzleMask2<Float4, Y> &y);
 	template<int X, int Y>
 	Float4(const SwizzleMask2<Float4, X> &x, const SwizzleMask2<Float4, Y> &y);
+	Float4(RValue<Float2> lo, RValue<Float2> hi);
 
 	RValue<Float4> operator=(float replicate);
 	RValue<Float4> operator=(RValue<Float4> rhs);
@@ -2292,8 +2342,15 @@ RValue<Float4> operator-(RValue<Float4> val);
 RValue<Float4> Abs(RValue<Float4> x);
 RValue<Float4> Max(RValue<Float4> x, RValue<Float4> y);
 RValue<Float4> Min(RValue<Float4> x, RValue<Float4> y);
+
+// Deprecated: use Rcp
+// TODO(b/147516027): Remove when GLES frontend is removed
 RValue<Float4> Rcp_pp(RValue<Float4> val, bool exactAtPow2 = false);
+// Deprecated: use RcpSqrt
+// TODO(b/147516027): Remove when GLES frontend is removed
 RValue<Float4> RcpSqrt_pp(RValue<Float4> val);
+RValue<Float4> Rcp(RValue<Float4> x, Precision p = Precision::Full, bool finite = false, bool exactAtPow2 = false);
+RValue<Float4> RcpSqrt(RValue<Float4> x, Precision p = Precision::Full);
 RValue<Float4> Sqrt(RValue<Float4> x);
 RValue<Float4> Insert(RValue<Float4> val, RValue<Float> element, int i);
 RValue<Float> Extract(RValue<Float4> x, int i);
@@ -2350,8 +2407,8 @@ RValue<Float4> Ceil(RValue<Float4> x);
 RValue<Float4> Sin(RValue<Float4> x);
 RValue<Float4> Cos(RValue<Float4> x);
 RValue<Float4> Tan(RValue<Float4> x);
-RValue<Float4> Asin(RValue<Float4> x);
-RValue<Float4> Acos(RValue<Float4> x);
+RValue<Float4> Asin(RValue<Float4> x, Precision p);
+RValue<Float4> Acos(RValue<Float4> x, Precision p);
 RValue<Float4> Atan(RValue<Float4> x);
 RValue<Float4> Sinh(RValue<Float4> x);
 RValue<Float4> Cosh(RValue<Float4> x);
@@ -2511,11 +2568,6 @@ public:
 	// self() returns the this pointer to this Array object.
 	// This function exists because operator&() is overloaded by LValue<T>.
 	inline Array *self() { return this; }
-
-private:
-	Value *allocate() const override;
-
-	const int arraySize;
 };
 
 //	RValue<Array<T>> operator++(Array<T> &val, int);   // Post-increment
@@ -2602,14 +2654,16 @@ public:
 
 	// Hide base implementations of operator()
 
-	RoutineType operator()(const char *name, ...)
+	template<typename... VarArgs>
+	RoutineType operator()(const char *name, VarArgs... varArgs)
 	{
-		return RoutineType(BaseType::operator()(name));
+		return RoutineType(BaseType::operator()(name, std::forward<VarArgs>(varArgs)...));
 	}
 
-	RoutineType operator()(const Config::Edit &cfg, const char *name, ...)
+	template<typename... VarArgs>
+	RoutineType operator()(const Config::Edit &cfg, const char *name, VarArgs... varArgs)
 	{
-		return RoutineType(BaseType::operator()(cfg, name));
+		return RoutineType(BaseType::operator()(cfg, name, std::forward<VarArgs>(varArgs)...));
 	}
 };
 
@@ -2622,7 +2676,8 @@ RValue<Long> Ticks();
 namespace rr {
 
 template<class T>
-LValue<T>::LValue()
+LValue<T>::LValue(int arraySize)
+    : Variable(T::type(), arraySize)
 {
 #ifdef ENABLE_RR_DEBUG_INFO
 	materialize();
@@ -3021,20 +3076,14 @@ Type *Pointer<T>::type()
 
 template<class T, int S>
 Array<T, S>::Array(int size)
-    : arraySize(size)
+    : LValue<T>(size)
 {
-}
-
-template<class T, int S>
-Value *Array<T, S>::allocate() const
-{
-	return Nucleus::allocateStackVariable(T::type(), arraySize);
 }
 
 template<class T, int S>
 Reference<T> Array<T, S>::operator[](int index)
 {
-	assert(index < arraySize);
+	assert(index < Variable::getArraySize());
 	Value *element = this->getElementPointer(Nucleus::createConstantInt(index), false);
 
 	return Reference<T>(element);
@@ -3043,7 +3092,7 @@ Reference<T> Array<T, S>::operator[](int index)
 template<class T, int S>
 Reference<T> Array<T, S>::operator[](unsigned int index)
 {
-	assert(index < static_cast<unsigned int>(arraySize));
+	assert(index < static_cast<unsigned int>(Variable::getArraySize()));
 	Value *element = this->getElementPointer(Nucleus::createConstantInt(index), true);
 
 	return Reference<T>(element);
@@ -3343,10 +3392,52 @@ inline void Call(void (Class::*fptr)(CArgs...), C &&object, RArgs &&... args)
 	             CastToReactor(std::forward<RArgs>(args))...);
 }
 
-// Calls the Reactor function pointer fptr with the signature
-// FUNCTION_SIGNATURE and arguments.
+// NonVoidFunction<F> and VoidFunction<F> are helper classes which define ReturnType
+// when F matches a non-void fuction signature or void function signature, respectively,
+// as the function's return type.
+template<typename F>
+struct NonVoidFunction
+{};
+
+template<typename Return, typename... Arguments>
+struct NonVoidFunction<Return(Arguments...)>
+{
+	using ReturnType = Return;
+};
+
+template<typename... Arguments>
+struct NonVoidFunction<void(Arguments...)>
+{
+};
+
+template<typename F>
+using NonVoidFunctionReturnType = typename NonVoidFunction<F>::ReturnType;
+
+template<typename F>
+struct VoidFunction
+{};
+
+template<typename... Arguments>
+struct VoidFunction<void(Arguments...)>
+{
+	using ReturnType = void;
+};
+
+template<typename F>
+using VoidFunctionReturnType = typename VoidFunction<F>::ReturnType;
+
+// Calls the Reactor function pointer fptr with the signature FUNCTION_SIGNATURE and arguments.
+// Overload for calling functions with non-void return type.
 template<typename FUNCTION_SIGNATURE, typename... RArgs>
-inline void Call(Pointer<Byte> fptr, RArgs &&... args)
+inline CToReactorT<NonVoidFunctionReturnType<FUNCTION_SIGNATURE>> Call(Pointer<Byte> fptr, RArgs &&... args)
+{
+	return CallHelper<FUNCTION_SIGNATURE>::Call(fptr, CastToReactor(std::forward<RArgs>(args))...);
+}
+
+// Calls the Reactor function pointer fptr with the signature FUNCTION_SIGNATURE and arguments.
+// Overload for calling functions with void return type.
+template<typename FUNCTION_SIGNATURE, typename... RArgs>
+inline VoidFunctionReturnType<FUNCTION_SIGNATURE> Call(Pointer<Byte> fptr, RArgs &&... args)
 {
 	CallHelper<FUNCTION_SIGNATURE>::Call(fptr, CastToReactor(std::forward<RArgs>(args))...);
 }
@@ -3496,8 +3587,8 @@ enum
 	IFELSE_NUM__
 };
 
-#define If(cond)                                                        \
-	for(IfElseData ifElse__(cond); ifElse__ < IFELSE_NUM__; ++ifElse__) \
+#define If(cond)                                                          \
+	for(IfElseData ifElse__{ cond }; ifElse__ < IFELSE_NUM__; ++ifElse__) \
 		if(ifElse__ == IF_BLOCK__)
 
 #define Else                           \

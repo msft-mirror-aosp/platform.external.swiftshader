@@ -48,6 +48,8 @@ public:
 		bool isDrawPoint : 1;
 		bool isDrawLine : 1;
 		bool isDrawTriangle : 1;
+		bool fixedPointDepthBuffer : 1;
+		bool applyConstantDepthBias : 1;
 		bool applySlopeDepthBias : 1;
 		bool applyDepthBiasClamp : 1;
 		bool interpolateZ : 1;
@@ -74,7 +76,7 @@ public:
 
 	SetupProcessor();
 
-	State update(const sw::Context *context) const;
+	State update(const vk::GraphicsState &pipelineState, const sw::SpirvShader *fragmentShader, const sw::SpirvShader *vertexShader, const vk::Attachments &attachments) const;
 	RoutineType routine(const State &state);
 
 	void setRoutineCacheSize(int cacheSize);
