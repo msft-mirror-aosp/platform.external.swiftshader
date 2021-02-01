@@ -20,12 +20,14 @@
 
 #include <array>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <thread>
 #include <tuple>
 
 using namespace rr;
 
-std::string testName()
+static std::string testName()
 {
 	auto info = ::testing::UnitTest::GetInstance()->current_test_info();
 	return std::string{ info->test_suite_name() } + "_" + info->name();
@@ -74,6 +76,66 @@ TEST(ReactorUnitTests, Sample)
 	int one[2] = { 1, 0 };
 	int result = routine(&one[1], 2);
 	EXPECT_EQ(result, reference(&one[1], 2));
+}
+
+// This test demonstrates the use of a 'trampoline', where a routine calls
+// a static function which then generates another routine during the execution
+// of the first routine. Also note the code generated for the second routine
+// depends on a parameter passed to the first routine.
+TEST(ReactorUnitTests, Trampoline)
+{
+	using SecondaryFunc = int(int, int);
+
+	static auto generateSecondary = [](int upDown) {
+		FunctionT<SecondaryFunc> secondary;
+		{
+			Int x = secondary.Arg<0>();
+			Int y = secondary.Arg<1>();
+			Int r;
+
+			if(upDown > 0)
+			{
+				r = x + y;
+			}
+			else if(upDown < 0)
+			{
+				r = x - y;
+			}
+			else
+			{
+				r = 0;
+			}
+
+			Return(r);
+		}
+
+		static auto routine = secondary((testName() + "_secondary").c_str());
+		return routine.getEntry();
+	};
+
+	using SecondaryGeneratorFunc = SecondaryFunc *(*)(int);
+	SecondaryGeneratorFunc secondaryGenerator = (SecondaryGeneratorFunc)generateSecondary;
+
+	using PrimaryFunc = int(int, int, int);
+	RoutineT<PrimaryFunc> routine;
+	{
+		FunctionT<PrimaryFunc> primary;
+		{
+			Int x = primary.Arg<0>();
+			Int y = primary.Arg<1>();
+			Int z = primary.Arg<2>();
+
+			Pointer<Byte> secondary = Call(secondaryGenerator, z);
+			Int r = Call<SecondaryFunc>(secondary, x, y);
+
+			Return(r);
+		}
+
+		routine = primary((testName() + "_primary").c_str());
+	}
+
+	int result = routine(100, 20, -3);
+	EXPECT_EQ(result, 80);
 }
 
 TEST(ReactorUnitTests, Uninitialized)
@@ -768,6 +830,40 @@ TEST(ReactorUnitTests, NotNeg)
 	EXPECT_EQ(out[8][1], 0x3F800000u);
 	EXPECT_EQ(out[8][2], 0x80000000u);
 	EXPECT_EQ(out[8][3], 0x00000000u);
+}
+
+TEST(ReactorUnitTests, RoundInt)
+{
+	FunctionT<int(void *)> function;
+	{
+		Pointer<Byte> out = function.Arg<0>();
+
+		*Pointer<Int4>(out + 0) = RoundInt(Float4(3.1f, 3.6f, -3.1f, -3.6f));
+		*Pointer<Int4>(out + 16) = RoundIntClamped(Float4(2147483648.0f, -2147483648.0f, 2147483520, -2147483520));
+
+		Return(0);
+	}
+
+	auto routine = function(testName().c_str());
+
+	int out[2][4];
+
+	memset(&out, 0, sizeof(out));
+
+	routine(&out);
+
+	EXPECT_EQ(out[0][0], 3);
+	EXPECT_EQ(out[0][1], 4);
+	EXPECT_EQ(out[0][2], -3);
+	EXPECT_EQ(out[0][3], -4);
+
+	// x86 returns 0x80000000 for values which cannot be represented in a 32-bit
+	// integer, but RoundIntClamped() clamps to ensure a positive value for
+	// positive input. ARM saturates to the largest representable integers.
+	EXPECT_GE(out[1][0], 2147483520);
+	EXPECT_LT(out[1][1], -2147483647);
+	EXPECT_EQ(out[1][2], 2147483520);
+	EXPECT_EQ(out[1][3], -2147483520);
 }
 
 TEST(ReactorUnitTests, FPtoUI)
@@ -3248,6 +3344,75 @@ TEST(ReactorUnitTests, SpillLocalCopiesOfArgs)
 	int expected = numLoops * (1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12);
 	EXPECT_EQ(result, expected);
 }
+
+#if defined(ENABLE_RR_EMIT_ASM_FILE)
+TEST(ReactorUnitTests, EmitAsm)
+{
+	// Only supported by LLVM for now
+	if(BackendName().find("LLVM") == std::string::npos) return;
+
+	namespace fs = std::filesystem;
+
+	FunctionT<int(void)> function;
+	{
+		Int sum;
+		For(Int i = 0, i < 10, i++)
+		{
+			sum += i;
+		}
+		Return(sum);
+	}
+
+	auto routine = function(testName().c_str());
+
+	// Returns path to first match of filename in current directory
+	auto findFile = [](const std::string filename) -> fs::path {
+		for(auto &p : fs::directory_iterator("."))
+		{
+			if(!p.is_regular_file())
+				continue;
+			auto currFilename = p.path().filename().string();
+			auto index = currFilename.find(testName());
+			if(index != std::string::npos)
+			{
+				return p.path();
+			}
+		}
+		return {};
+	};
+
+	fs::path path = findFile(testName());
+	EXPECT_FALSE(path.empty());
+
+	// Make sure an asm file was created
+	std::ifstream fin(path);
+	EXPECT_TRUE(fin);
+
+	// Make sure address of routine is in the file
+	auto findAddressInFile = [](std::ifstream &fin, size_t address) {
+		std::string addressString = [&] {
+			std::stringstream addressSS;
+			addressSS << "0x" << std::uppercase << std::hex << address;
+			return addressSS.str();
+		}();
+
+		std::string token;
+		while(fin >> token)
+		{
+			if(token.find(addressString) != std::string::npos)
+				return true;
+		}
+		return false;
+	};
+
+	size_t address = reinterpret_cast<size_t>(routine.getEntry());
+	EXPECT_TRUE(findAddressInFile(fin, address));
+
+	// Delete the file in case subsequent runs generate one with a different sequence number
+	fin.close();
+	std::filesystem::remove(path);
+}
+#endif
 
 ////////////////////////////////
 // Trait compile time checks. //
