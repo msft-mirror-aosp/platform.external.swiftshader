@@ -19,8 +19,6 @@
 #include "System/Debug.hpp"
 #include "Vulkan/VkSampler.hpp"
 
-#include <limits>
-
 namespace sw {
 
 SamplerCore::SamplerCore(Pointer<Byte> &constants, const Sampler &state)
@@ -180,6 +178,14 @@ Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Float4 uvwa[4], Floa
 					c.z *= Float4(1.0f / 0xFF00u);
 					c.w *= Float4(1.0f / 0xFF00u);
 					break;
+				case VK_FORMAT_R16_SNORM:
+				case VK_FORMAT_R16G16_SNORM:
+				case VK_FORMAT_R16G16B16A16_SNORM:
+					c.x = Max(c.x * Float4(1.0f / 0x7FFF), Float4(-1.0f));
+					c.y = Max(c.y * Float4(1.0f / 0x7FFF), Float4(-1.0f));
+					c.z = Max(c.z * Float4(1.0f / 0x7FFF), Float4(-1.0f));
+					c.w = Max(c.w * Float4(1.0f / 0x7FFF), Float4(-1.0f));
+					break;
 				default:
 					for(int component = 0; component < textureComponentCount(); component++)
 					{
@@ -233,6 +239,14 @@ Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Float4 uvwa[4], Floa
 				c.y = Float4(As<UShort4>(cs.y)) * Float4(1.0f / 0xFF00u);
 				c.z = Float4(As<UShort4>(cs.z)) * Float4(1.0f / 0xFF00u);
 				c.w = Float4(As<UShort4>(cs.w)) * Float4(1.0f / 0xFF00u);
+				break;
+			case VK_FORMAT_R16_SNORM:
+			case VK_FORMAT_R16G16_SNORM:
+			case VK_FORMAT_R16G16B16A16_SNORM:
+				c.x = Max(Float4(cs.x) * Float4(1.0f / 0x7FFF), Float4(-1.0f));
+				c.y = Max(Float4(cs.y) * Float4(1.0f / 0x7FFF), Float4(-1.0f));
+				c.z = Max(Float4(cs.z) * Float4(1.0f / 0x7FFF), Float4(-1.0f));
+				c.w = Max(Float4(cs.w) * Float4(1.0f / 0x7FFF), Float4(-1.0f));
 				break;
 			default:
 				for(int component = 0; component < textureComponentCount(); component++)
@@ -1212,10 +1226,10 @@ void SamplerCore::computeLod2D(Pointer<Byte> &texture, Float &lod, Float &anisot
 		uDelta = As<Float4>((As<Int4>(dudx) & mask) | ((As<Int4>(dudy) & ~mask)));
 		vDelta = As<Float4>((As<Int4>(dvdx) & mask) | ((As<Int4>(dvdy) & ~mask)));
 
-		anisotropy = lod * Rcp_pp(det);
+		anisotropy = lod * Rcp(det, Precision::Relaxed);
 		anisotropy = Min(anisotropy, state.maxAnisotropy);
 
-		lod *= Rcp_pp(anisotropy * anisotropy);
+		lod *= Rcp(anisotropy * anisotropy, Precision::Relaxed);
 	}
 
 	lod = log2sqrt(lod);  // log2(sqrt(lod))
@@ -1339,7 +1353,7 @@ Int4 SamplerCore::cubeFace(Float4 &U, Float4 &V, Float4 &x, Float4 &y, Float4 &z
 	face.z = (faces >> 8) & 0x7;
 	face.w = (faces >> 12) & 0x7;
 
-	M = Max(Max(absX, absY), Max(absZ, Float4(std::numeric_limits<float>::min())));
+	M = Max(Max(absX, absY), absZ);
 
 	// U = xMajor ? (neg ^ -z) : ((zMajor & neg) ^ x)
 	U = As<Float4>((xMajor & (n ^ As<Int4>(-z))) | (~xMajor & ((zMajor & n) ^ As<Int4>(x))));
@@ -1658,13 +1672,6 @@ Vector4s SamplerCore::sampleTexel(UInt index[4], Pointer<Byte> buffer)
 				c.w = Pointer<Short4>(buffer)[index[3]];
 				transpose4x4(c.x, c.y, c.z, c.w);
 				break;
-			case 3:
-				c.x = Pointer<Short4>(buffer)[index[0]];
-				c.y = Pointer<Short4>(buffer)[index[1]];
-				c.z = Pointer<Short4>(buffer)[index[2]];
-				c.w = Pointer<Short4>(buffer)[index[3]];
-				transpose4x3(c.x, c.y, c.z, c.w);
-				break;
 			case 2:
 				c.x = *Pointer<Short4>(buffer + 4 * index[0]);
 				c.x = As<Short4>(UnpackLow(c.x, *Pointer<Short4>(buffer + 4 * index[1])));
@@ -1981,15 +1988,6 @@ Vector4f SamplerCore::sampleTexel(Int4 &uuuu, Int4 &vvvv, Int4 &wwww, Float4 &dR
 				c.x = Float4(c.x.xz, c.z.xz);
 				c.y = Float4(c.y.yw, c.z.yw);
 				break;
-			case VK_FORMAT_R32G32B32_SFLOAT:
-			case VK_FORMAT_R32G32B32_SINT:
-			case VK_FORMAT_R32G32B32_UINT:
-				c.x = *Pointer<Float4>(buffer + index[0] * 16, 16);
-				c.y = *Pointer<Float4>(buffer + index[1] * 16, 16);
-				c.z = *Pointer<Float4>(buffer + index[2] * 16, 16);
-				c.w = *Pointer<Float4>(buffer + index[3] * 16, 16);
-				transpose4x3(c.x, c.y, c.z, c.w);
-				break;
 			case VK_FORMAT_R32G32B32A32_SFLOAT:
 			case VK_FORMAT_R32G32B32A32_SINT:
 			case VK_FORMAT_R32G32B32A32_UINT:
@@ -2293,10 +2291,6 @@ void SamplerCore::address(const Float4 &uvw, Int4 &xyz0, Int4 &xyz1, Float4 &f, 
 		const int oneBits = 0x3F7FFFFF;   // Value just under 1.0f
 		const int twoBits = 0x3FFFFFFF;   // Value just under 2.0f
 
-		bool pointFilter = state.textureFilter == FILTER_POINT ||
-		                   state.textureFilter == FILTER_MIN_POINT_MAG_LINEAR ||
-		                   state.textureFilter == FILTER_MIN_LINEAR_MAG_POINT;
-
 		Float4 coord = uvw;
 
 		if(state.unnormalizedCoordinates)
@@ -2348,9 +2342,10 @@ void SamplerCore::address(const Float4 &uvw, Int4 &xyz0, Int4 &xyz1, Float4 &f, 
 				{
 					case ADDRESSING_CLAMP:
 					case ADDRESSING_SEAMLESS:
-						// Linear filtering of cube doesn't require clamping because the coordinates
-						// are already in [0, 1] range and numerical imprecision is tolerated.
-						if(addressingMode != ADDRESSING_SEAMLESS || pointFilter)
+						// While cube face coordinates are nominally already in the [0.0, 1.0] range
+						// due to the projection, and numerical imprecision is tolerated due to the
+						// border of pixels for seamless filtering, the projection doesn't cause
+						// range normalization for Inf and NaN values. So we always clamp.
 						{
 							Float4 one = As<Float4>(Int4(oneBits));
 							coord = Min(Max(coord, Float4(0.0f)), one);

@@ -111,6 +111,9 @@ SpirvShader::SpirvShader(
 					case spv::DecorationInputAttachmentIndex:
 						descriptorDecorations[targetId].InputAttachmentIndex = value;
 						break;
+					case spv::DecorationSample:
+						modes.ContainsSampleQualifier = true;
+						break;
 					default:
 						// Only handling descriptor decorations here.
 						break;
@@ -136,6 +139,25 @@ SpirvShader::SpirvShader(
 
 				if(decoration == spv::DecorationCentroid)
 					modes.NeedsCentroid = true;
+				break;
+			}
+
+			case spv::OpDecorateId:
+			{
+				auto decoration = static_cast<spv::Decoration>(insn.word(2));
+
+				// Currently OpDecorateId only supports UniformId, which provides information for
+				// potential optimizations that we don't perform, and CounterBuffer, which is used
+				// by HLSL to build the graphics pipeline with shader reflection. At the driver level,
+				// the CounterBuffer decoration does nothing, so we can safely ignore both decorations.
+				ASSERT(decoration == spv::DecorationUniformId || decoration == spv::DecorationCounterBuffer);
+				break;
+			}
+
+			case spv::OpDecorateString:
+			case spv::OpMemberDecorateString:
+			{
+				// We assume these are for HLSL semantics, ignore them.
 				break;
 			}
 
@@ -375,6 +397,7 @@ SpirvShader::SpirvShader(
 					case spv::CapabilityStorageImageExtendedFormats: capabilities.StorageImageExtendedFormats = true; break;
 					case spv::CapabilityImageQuery: capabilities.ImageQuery = true; break;
 					case spv::CapabilityDerivativeControl: capabilities.DerivativeControl = true; break;
+					case spv::CapabilityInterpolationFunction: capabilities.InterpolationFunction = true; break;
 					case spv::CapabilityGroupNonUniform: capabilities.GroupNonUniform = true; break;
 					case spv::CapabilityGroupNonUniformVote: capabilities.GroupNonUniformVote = true; break;
 					case spv::CapabilityGroupNonUniformArithmetic: capabilities.GroupNonUniformArithmetic = true; break;
@@ -464,7 +487,7 @@ SpirvShader::SpirvShader(
 			case spv::OpFunctionParameter:
 				// These should have all been removed by preprocessing passes. If we see them here,
 				// our assumptions are wrong and we will probably generate wrong code.
-				UNREACHABLE("%s should have already been lowered.", OpcodeName(opcode).c_str());
+				UNREACHABLE("%s should have already been lowered.", OpcodeName(opcode));
 				break;
 
 			case spv::OpFunctionCall:
@@ -673,6 +696,7 @@ SpirvShader::SpirvShader(
 			case spv::OpGroupNonUniformLogicalOr:
 			case spv::OpGroupNonUniformLogicalXor:
 			case spv::OpCopyObject:
+			case spv::OpCopyLogical:
 			case spv::OpArrayLength:
 				// Instructions that yield an intermediate value or divergent pointer
 				DefineResult(insn);
@@ -717,12 +741,13 @@ SpirvShader::SpirvShader(
 				if(!strcmp(ext, "SPV_KHR_device_group")) break;
 				if(!strcmp(ext, "SPV_KHR_multiview")) break;
 				if(!strcmp(ext, "SPV_EXT_shader_stencil_export")) break;
+				if(!strcmp(ext, "SPV_KHR_float_controls")) break;
 				UNSUPPORTED("SPIR-V Extension: %s", ext);
 				break;
 			}
 
 			default:
-				UNSUPPORTED("%s", OpcodeName(opcode).c_str());
+				UNSUPPORTED("%s", OpcodeName(opcode));
 		}
 	}
 
@@ -874,6 +899,25 @@ void SpirvShader::ProcessInterfaceVariable(Object &object)
 	}
 }
 
+uint32_t SpirvShader::GetNumInputComponents(int32_t location) const
+{
+	ASSERT(location >= 0);
+
+	// Verify how many component(s) per input
+	// 1 to 4, for float, vec2, vec3, vec4.
+	// Note that matrices are divided over multiple inputs
+	uint32_t num_components_per_input = 0;
+	for(; num_components_per_input < 4; ++num_components_per_input)
+	{
+		if(inputs[(location << 2) | num_components_per_input].Type == ATTRIBTYPE_UNUSED)
+		{
+			break;
+		}
+	}
+
+	return num_components_per_input;
+}
+
 void SpirvShader::ProcessExecutionMode(InsnIterator insn)
 {
 	Function::ID function = insn.word(1);
@@ -892,12 +936,15 @@ void SpirvShader::ProcessExecutionMode(InsnIterator insn)
 			modes.DepthReplacing = true;
 			break;
 		case spv::ExecutionModeDepthGreater:
+			// TODO(b/177915067): Can be used to optimize depth test, currently unused.
 			modes.DepthGreater = true;
 			break;
 		case spv::ExecutionModeDepthLess:
+			// TODO(b/177915067): Can be used to optimize depth test, currently unused.
 			modes.DepthLess = true;
 			break;
 		case spv::ExecutionModeDepthUnchanged:
+			// TODO(b/177915067): Can be used to optimize depth test, currently unused.
 			modes.DepthUnchanged = true;
 			break;
 		case spv::ExecutionModeLocalSize:
@@ -966,7 +1013,7 @@ uint32_t SpirvShader::ComputeTypeSize(InsnIterator insn)
 			return 1;
 
 		default:
-			UNREACHABLE("%s", OpcodeName(insn.opcode()).c_str());
+			UNREACHABLE("%s", OpcodeName(insn.opcode()));
 			return 0;
 	}
 }
@@ -1089,7 +1136,7 @@ void SpirvShader::ApplyDecorationsForAccessChain(Decorations *d, DescriptorDecor
 				d->InsideMatrix = true;
 				break;
 			default:
-				UNREACHABLE("%s", OpcodeName(type.definition.opcode()).c_str());
+				UNREACHABLE("%s", OpcodeName(type.definition.opcode()));
 		}
 	}
 }
@@ -1198,7 +1245,7 @@ SIMD::Pointer SpirvShader::WalkExplicitLayoutAccessChain(Object::ID baseId, uint
 				break;
 			}
 			default:
-				UNREACHABLE("%s", OpcodeName(type.definition.opcode()).c_str());
+				UNREACHABLE("%s", OpcodeName(type.definition.opcode()));
 		}
 	}
 
@@ -1279,7 +1326,7 @@ SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, uint32_t numIndexe
 			}
 
 			default:
-				UNREACHABLE("%s", OpcodeName(type.opcode()).c_str());
+				UNREACHABLE("%s", OpcodeName(type.opcode()));
 		}
 	}
 
@@ -1325,7 +1372,7 @@ uint32_t SpirvShader::WalkLiteralAccessChain(Type::ID typeId, uint32_t numIndexe
 			}
 
 			default:
-				UNREACHABLE("%s", OpcodeName(type.opcode()).c_str());
+				UNREACHABLE("%s", OpcodeName(type.opcode()));
 		}
 	}
 
@@ -1632,7 +1679,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 #if SPIRV_SHADER_ENABLE_DBG
 	{
 		auto text = spvtools::spvInstructionBinaryToText(
-		    SPV_ENV_VULKAN_1_1,
+		    vk::SPIRV_VERSION,
 		    insn.wordPointer(0),
 		    insn.wordCount(),
 		    insns.data(),
@@ -1682,6 +1729,9 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 		case spv::OpGroupDecorate:
 		case spv::OpGroupMemberDecorate:
 		case spv::OpDecorationGroup:
+		case spv::OpDecorateId:
+		case spv::OpDecorateString:
+		case spv::OpMemberDecorateString:
 		case spv::OpName:
 		case spv::OpMemberName:
 		case spv::OpSource:
@@ -1954,6 +2004,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 			return EmitSampledImageCombineOrSplit(insn, state);
 
 		case spv::OpCopyObject:
+		case spv::OpCopyLogical:
 			return EmitCopyObject(insn, state);
 
 		case spv::OpCopyMemory:
@@ -2003,7 +2054,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 			return EmitArrayLength(insn, state);
 
 		default:
-			UNREACHABLE("%s", OpcodeName(opcode).c_str());
+			UNREACHABLE("%s", OpcodeName(opcode));
 			break;
 	}
 
@@ -2303,7 +2354,7 @@ SpirvShader::EmitResult SpirvShader::EmitAtomicOp(InsnIterator insn, EmitState *
 					v = ExchangeAtomic(Pointer<UInt>(&ptr.base[offset]), laneValue, memoryOrder);
 					break;
 				default:
-					UNREACHABLE("%s", OpcodeName(insn.opcode()).c_str());
+					UNREACHABLE("%s", OpcodeName(insn.opcode()));
 					break;
 			}
 			result = Insert(result, v, j);
@@ -2443,7 +2494,10 @@ void SpirvShader::emitEpilog(SpirvRoutine *routine) const
 				break;
 		}
 	}
+}
 
+void SpirvShader::clearPhis(SpirvRoutine *routine) const
+{
 	// Clear phis that are no longer used. This serves two purposes:
 	// (1) The phi rr::Variables are destructed, preventing pointless
 	//     materialization.

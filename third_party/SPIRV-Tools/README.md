@@ -136,7 +136,6 @@ As of this writing, there are 67 transforms including examples such as:
   * Loop-invariant code motion
   * Loop unroll
 * Other
-  * Generate WebGPU initializers
   * Graphics robust access
   * Upgrade memory model to VulkanKHR
 
@@ -349,10 +348,7 @@ option, like so:
 
 ```sh
 # In <spirv-dir> (the SPIRV-Tools repo root):
-git clone https://github.com/protocolbuffers/protobuf external/protobuf
-pushd external/protobuf
-git checkout v3.7.1
-popd
+git clone --depth=1 --branch v3.13.0 https://github.com/protocolbuffers/protobuf external/protobuf
 
 # In your build directory:
 cmake [-G <platform-generator>] <spirv-dir> -DSPIRV_BUILD_FUZZER=ON

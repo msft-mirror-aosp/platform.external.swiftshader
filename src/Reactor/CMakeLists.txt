@@ -20,10 +20,13 @@ set(ROOT_PROJECT_COMPILE_OPTIONS
 set(REACTOR_SRC_FILES
     Debug.cpp
     Debug.hpp
-    EmulatedReactor.cpp
+    EmulatedIntrinsics.cpp
+    EmulatedIntrinsics.hpp
     ExecutableMemory.cpp
     ExecutableMemory.hpp
     Nucleus.hpp
+    OptimalIntrinsics.cpp
+    OptimalIntrinsics.hpp
     Print.hpp
     Reactor.cpp
     Reactor.hpp
@@ -40,6 +43,8 @@ set(SUBZERO_SRC_FILES
 set(LLVM_SRC_FILES
     CPUID.cpp
     CPUID.hpp
+    LLVMAsm.cpp
+    LLVMAsm.hpp
     LLVMJIT.cpp
     LLVMReactor.cpp
     LLVMReactor.hpp
@@ -61,6 +66,13 @@ if(REACTOR_EMIT_DEBUG_INFO)
     list(APPEND REACTOR_PRIVATE_LINK_LIBRARIES Boost::boost)
 endif(REACTOR_EMIT_DEBUG_INFO)
 
+# Enable instrumentation of Reactor routines for MemorySanitizer builds (LLVM backend).
+# TODO(b/155148722): Remove when unconditionally instrumenting for all build systems.
+if(REACTOR_ENABLE_MEMORY_SANITIZER_INSTRUMENTATION)
+    list(APPEND REACTOR_PUBLIC_COMPILE_DEFINITIONS "REACTOR_ENABLE_MEMORY_SANITIZER_INSTRUMENTATION")
+endif()
+
+list(APPEND REACTOR_PRIVATE_COMPILE_DEFINITIONS "REACTOR_ANONYMOUS_MMAP_NAME=swiftshader_jit")
 
 # SubzeroReactor library
 
@@ -80,6 +92,8 @@ target_include_directories(ReactorSubzero
 )
 
 target_compile_definitions(ReactorSubzero
+    PUBLIC
+        ${REACTOR_PUBLIC_COMPILE_DEFINITIONS}
     PRIVATE
         ${REACTOR_PRIVATE_COMPILE_DEFINITIONS}
 )
@@ -115,6 +129,8 @@ target_include_directories(ReactorLLVM
 )
 
 target_compile_definitions(ReactorLLVM
+    PUBLIC
+        ${REACTOR_PUBLIC_COMPILE_DEFINITIONS}
     PRIVATE
         ${REACTOR_PRIVATE_COMPILE_DEFINITIONS}
 )
