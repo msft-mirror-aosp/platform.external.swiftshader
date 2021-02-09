@@ -78,6 +78,7 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/Analysis/ProfileSummaryInfo.cpp
     ${LLVM_DIR}/lib/Analysis/PtrUseVisitor.cpp
     ${LLVM_DIR}/lib/Analysis/RegionInfo.cpp
+    ${LLVM_DIR}/lib/Analysis/RegionPrinter.cpp
     ${LLVM_DIR}/lib/Analysis/ScalarEvolution.cpp
     ${LLVM_DIR}/lib/Analysis/ScalarEvolutionAliasAnalysis.cpp
     ${LLVM_DIR}/lib/Analysis/ScalarEvolutionExpander.cpp
@@ -92,6 +93,7 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/Analysis/ValueLatticeUtils.cpp
     ${LLVM_DIR}/lib/Analysis/ValueTracking.cpp
     ${LLVM_DIR}/lib/Analysis/VectorUtils.cpp
+    ${LLVM_DIR}/lib/Analysis/VFABIDemangling.cpp
     ${LLVM_DIR}/lib/BinaryFormat/Dwarf.cpp
     ${LLVM_DIR}/lib/BinaryFormat/Magic.cpp
     ${LLVM_DIR}/lib/BinaryFormat/Wasm.cpp
@@ -158,7 +160,10 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/CodeGen/GCMetadataPrinter.cpp
     ${LLVM_DIR}/lib/CodeGen/GCRootLowering.cpp
     ${LLVM_DIR}/lib/CodeGen/GCStrategy.cpp
+    ${LLVM_DIR}/lib/CodeGen/GlobalMerge.cpp
     ${LLVM_DIR}/lib/CodeGen/GlobalISel/CallLowering.cpp
+    ${LLVM_DIR}/lib/CodeGen/GlobalISel/Combiner.cpp
+    ${LLVM_DIR}/lib/CodeGen/GlobalISel/CombinerHelper.cpp
     ${LLVM_DIR}/lib/CodeGen/GlobalISel/CSEInfo.cpp
     ${LLVM_DIR}/lib/CodeGen/GlobalISel/CSEMIRBuilder.cpp
     ${LLVM_DIR}/lib/CodeGen/GlobalISel/GISelChangeObserver.cpp
@@ -266,6 +271,7 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/CodeGen/RegAllocGreedy.cpp
     ${LLVM_DIR}/lib/CodeGen/RegisterClassInfo.cpp
     ${LLVM_DIR}/lib/CodeGen/RegisterCoalescer.cpp
+    ${LLVM_DIR}/lib/CodeGen/RegAllocPBQP.cpp
     ${LLVM_DIR}/lib/CodeGen/RegisterPressure.cpp
     ${LLVM_DIR}/lib/CodeGen/RegisterScavenging.cpp
     ${LLVM_DIR}/lib/CodeGen/RegisterUsageInfo.cpp
@@ -382,6 +388,7 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/DebugInfo/DWARF/DWARFVerifier.cpp
     ${LLVM_DIR}/lib/Demangle/ItaniumDemangle.cpp
     ${LLVM_DIR}/lib/ExecutionEngine/ExecutionEngine.cpp
+    ${LLVM_DIR}/lib/ExecutionEngine/GDBRegistrationListener.cpp
     ${LLVM_DIR}/lib/ExecutionEngine/Orc/CompileUtils.cpp
     ${LLVM_DIR}/lib/ExecutionEngine/Orc/Core.cpp
     ${LLVM_DIR}/lib/ExecutionEngine/Orc/IRCompileLayer.cpp
@@ -453,6 +460,7 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/IR/Value.cpp
     ${LLVM_DIR}/lib/IR/ValueSymbolTable.cpp
     ${LLVM_DIR}/lib/IR/Verifier.cpp
+    ${LLVM_DIR}/lib/MC/ConstantPools.cpp
     ${LLVM_DIR}/lib/MC/ELFObjectWriter.cpp
     ${LLVM_DIR}/lib/MC/MachObjectWriter.cpp
     ${LLVM_DIR}/lib/MC/MCAsmBackend.cpp
@@ -460,6 +468,7 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/MC/MCAsmInfoCOFF.cpp
     ${LLVM_DIR}/lib/MC/MCAsmInfoDarwin.cpp
     ${LLVM_DIR}/lib/MC/MCAsmInfoELF.cpp
+    ${LLVM_DIR}/lib/MC/MCAsmMacro.cpp
     ${LLVM_DIR}/lib/MC/MCAsmStreamer.cpp
     ${LLVM_DIR}/lib/MC/MCAssembler.cpp
     ${LLVM_DIR}/lib/MC/MCCodeEmitter.cpp
@@ -564,6 +573,7 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/Support/BlockFrequency.cpp
     ${LLVM_DIR}/lib/Support/BranchProbability.cpp
     ${LLVM_DIR}/lib/Support/Chrono.cpp
+    ${LLVM_DIR}/lib/Support/circular_raw_ostream.cpp
     ${LLVM_DIR}/lib/Support/CodeGenCoverage.cpp
     ${LLVM_DIR}/lib/Support/CommandLine.cpp
     ${LLVM_DIR}/lib/Support/Compression.cpp
@@ -592,6 +602,7 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/Support/KnownBits.cpp
     ${LLVM_DIR}/lib/Support/LEB128.cpp
     ${LLVM_DIR}/lib/Support/LineIterator.cpp
+    ${LLVM_DIR}/lib/Support/Locale.cpp
     ${LLVM_DIR}/lib/Support/LowLevelType.cpp
     ${LLVM_DIR}/lib/Support/ManagedStatic.cpp
     ${LLVM_DIR}/lib/Support/MathExtras.cpp
@@ -682,6 +693,7 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/Transforms/Instrumentation/PGOInstrumentation.cpp
     ${LLVM_DIR}/lib/Transforms/Instrumentation/PGOMemOPSizeOpt.cpp
     ${LLVM_DIR}/lib/Transforms/Instrumentation/ValueProfileCollector.cpp
+    ${LLVM_DIR}/lib/Transforms/Instrumentation/MemorySanitizer.cpp
     ${LLVM_DIR}/lib/Transforms/IPO/ArgumentPromotion.cpp
     ${LLVM_DIR}/lib/Transforms/IPO/Attributor.cpp
     ${LLVM_DIR}/lib/Transforms/IPO/BarrierNoopPass.cpp
@@ -725,6 +737,7 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/Transforms/Scalar/InstSimplifyPass.cpp
     ${LLVM_DIR}/lib/Transforms/Scalar/JumpThreading.cpp
     ${LLVM_DIR}/lib/Transforms/Scalar/LICM.cpp
+    ${LLVM_DIR}/lib/Transforms/Scalar/LoopDataPrefetch.cpp
     ${LLVM_DIR}/lib/Transforms/Scalar/LoopDeletion.cpp
     ${LLVM_DIR}/lib/Transforms/Scalar/LoopDistribute.cpp
     ${LLVM_DIR}/lib/Transforms/Scalar/LoopIdiomRecognize.cpp
@@ -750,6 +763,7 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/Transforms/Scalar/PartiallyInlineLibCalls.cpp
     ${LLVM_DIR}/lib/Transforms/Scalar/Reassociate.cpp
     ${LLVM_DIR}/lib/Transforms/Scalar/SCCP.cpp
+    ${LLVM_DIR}/lib/Transforms/Scalar/SeparateConstOffsetFromGEP.cpp
     ${LLVM_DIR}/lib/Transforms/Scalar/SimpleLoopUnswitch.cpp
     ${LLVM_DIR}/lib/Transforms/Scalar/SimplifyCFGPass.cpp
     ${LLVM_DIR}/lib/Transforms/Scalar/SpeculativeExecution.cpp
@@ -809,18 +823,6 @@ set(LLVM_LIST
     ${LLVM_DIR}/lib/Transforms/Vectorize/VPlanTransforms.cpp
     ${LLVM_DIR}/lib/Transforms/Vectorize/VPlanVerifier.cpp
 )
-
-if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
-    list(APPEND LLVM_LIST
-        ${LLVM_DIR}/lib/Analysis/RegionInfo.cpp
-        ${LLVM_DIR}/lib/Analysis/RegionPrinter.cpp
-        ${LLVM_DIR}/lib/Analysis/VFABIDemangling.cpp
-        ${LLVM_DIR}/lib/MC/MCAsmMacro.cpp
-        ${LLVM_DIR}/lib/Support/circular_raw_ostream.cpp
-        ${LLVM_DIR}/lib/Support/Debug.cpp
-        ${LLVM_DIR}/lib/Support/Locale.cpp
-    )
-endif()
 
 if(ARCH STREQUAL "x86" OR ARCH STREQUAL "x86_64")
     list(APPEND LLVM_LIST
@@ -948,6 +950,7 @@ elseif(ARCH STREQUAL "mipsel" OR ARCH STREQUAL "mips64el")
     )
 elseif(ARCH STREQUAL "aarch64")
     list(APPEND LLVM_LIST
+        ${LLVM_DIR}/lib/Support/AArch64TargetParser.cpp
         ${LLVM_DIR}/lib/Target/AArch64/AArch64A53Fix835769.cpp
         ${LLVM_DIR}/lib/Target/AArch64/AArch64A57FPLoadBalancing.cpp
         ${LLVM_DIR}/lib/Target/AArch64/AArch64AdvSIMDScalarPass.cpp
@@ -1205,7 +1208,6 @@ add_library(llvm STATIC EXCLUDE_FROM_ALL ${LLVM_LIST})
 
 set_target_properties(llvm PROPERTIES
     POSITION_INDEPENDENT_CODE 1
-    FOLDER "LLVM"
 )
 
 target_include_directories(llvm

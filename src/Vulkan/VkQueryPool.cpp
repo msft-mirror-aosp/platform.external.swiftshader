@@ -153,7 +153,7 @@ VkResult QueryPool::getResults(uint32_t firstQuery, uint32_t queryCount, size_t 
 		const auto current = query.getData();
 
 		bool writeResult = true;
-		if(current.state == Query::ACTIVE)
+		if(current.state == Query::ACTIVE || (current.state == Query::UNAVAILABLE && !(flags & VK_QUERY_RESULT_WAIT_BIT)))
 		{
 			result = VK_NOT_READY;
 			writeResult = (flags & VK_QUERY_RESULT_PARTIAL_BIT);  // Allow writing partial results
@@ -192,7 +192,8 @@ void QueryPool::begin(uint32_t query, VkQueryControlFlags flags)
 {
 	ASSERT(query < count);
 
-	if(flags != 0)
+	// Only accept flags with valid bits set.
+	if(flags & ~(VK_QUERY_CONTROL_PRECISE_BIT))
 	{
 		UNSUPPORTED("vkCmdBeginQuery::flags %d", int(flags));
 	}

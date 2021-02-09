@@ -17,6 +17,8 @@
 #include "VkBuffer.hpp"
 #include "VkDevice.hpp"
 #include "VkDeviceMemory.hpp"
+#include "VkImageView.hpp"
+#include "VkStringify.hpp"
 #include "Device/ASTC_Decoder.hpp"
 #include "Device/BC_Decoder.hpp"
 #include "Device/Blitter.hpp"
@@ -24,6 +26,7 @@
 
 #ifdef __ANDROID__
 #	include "System/GrallocAndroid.hpp"
+#	include "VkDeviceMemoryExternalAndroid.hpp"
 #endif
 
 #include <cstring>
@@ -121,6 +124,41 @@ bool GetNoAlphaOrUnsigned(const vk::Format &format)
 	}
 }
 
+VkFormat GetImageFormat(const VkImageCreateInfo *pCreateInfo)
+{
+	auto nextInfo = reinterpret_cast<VkBaseInStructure const *>(pCreateInfo->pNext);
+	while(nextInfo)
+	{
+		switch(nextInfo->sType)
+		{
+#ifdef __ANDROID__
+			case VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID:
+			{
+				const VkExternalFormatANDROID *externalFormatAndroid = reinterpret_cast<const VkExternalFormatANDROID *>(nextInfo);
+
+				// VkExternalFormatANDROID: "If externalFormat is zero, the effect is as if the VkExternalFormatANDROID structure was not present."
+				if(externalFormatAndroid->externalFormat == 0)
+				{
+					break;
+				}
+
+				const VkFormat correspondingVkFormat = AHardwareBufferExternalMemory::GetVkFormatFromAHBFormat(externalFormatAndroid->externalFormat);
+				ASSERT(pCreateInfo->format == VK_FORMAT_UNDEFINED || pCreateInfo->format == correspondingVkFormat);
+				return correspondingVkFormat;
+			}
+			break;
+#endif
+			default:
+				LOG_TRAP("pCreateInfo->pNext->sType = %s", vk::Stringify(nextInfo->sType).c_str());
+				break;
+		}
+
+		nextInfo = nextInfo->pNext;
+	}
+
+	return pCreateInfo->format;
+}
+
 }  // anonymous namespace
 
 namespace vk {
@@ -129,7 +167,7 @@ Image::Image(const VkImageCreateInfo *pCreateInfo, void *mem, Device *device)
     : device(device)
     , flags(pCreateInfo->flags)
     , imageType(pCreateInfo->imageType)
-    , format(pCreateInfo->format)
+    , format(GetImageFormat(pCreateInfo))
     , extent(pCreateInfo->extent)
     , mipLevels(pCreateInfo->mipLevels)
     , arrayLayers(pCreateInfo->arrayLayers)
@@ -497,6 +535,12 @@ void Image::copy(Buffer *buffer, const VkBufferImageCopy &region, bool bufferIsS
 	Format copyFormat = getFormat(aspect);
 
 	VkExtent3D imageExtent = imageExtentInBlocks(region.imageExtent, aspect);
+
+	if(imageExtent.width == 0 || imageExtent.height == 0 || imageExtent.depth == 0)
+	{
+		return;
+	}
+
 	VkExtent2D bufferExtent = bufferExtentInBlocks({ imageExtent.width, imageExtent.height }, region);
 	int bytesPerBlock = copyFormat.bytesPerBlock();
 	int bufferRowPitchBytes = bufferExtent.width * bytesPerBlock;
@@ -524,36 +568,30 @@ void Image::copy(Buffer *buffer, const VkBufferImageCopy &region, bool bufferIsS
 	                     (imageSlicePitchBytes == bufferSlicePitchBytes);
 
 	VkDeviceSize copySize = 0;
-	VkDeviceSize bufferLayerSize = 0;
 	if(isSingleRow)
 	{
 		copySize = imageExtent.width * bytesPerBlock;
-		bufferLayerSize = copySize;
 	}
 	else if(isEntireRow && isSingleSlice)
 	{
-		copySize = imageExtent.height * imageRowPitchBytes;
-		bufferLayerSize = copySize;
+		copySize = (imageExtent.height - 1) * imageRowPitchBytes + imageExtent.width * bytesPerBlock;
 	}
 	else if(isEntireSlice)
 	{
-		copySize = imageExtent.depth * imageSlicePitchBytes;  // Copy multiple slices
-		bufferLayerSize = copySize;
+		copySize = (imageExtent.depth - 1) * imageSlicePitchBytes + (imageExtent.height - 1) * imageRowPitchBytes + imageExtent.width * bytesPerBlock;  // Copy multiple slices
 	}
 	else if(isEntireRow)  // Copy slice by slice
 	{
-		copySize = imageExtent.height * imageRowPitchBytes;
-		bufferLayerSize = copySize * imageExtent.depth;
+		copySize = (imageExtent.height - 1) * imageRowPitchBytes + imageExtent.width * bytesPerBlock;
 	}
 	else  // Copy row by row
 	{
 		copySize = imageExtent.width * bytesPerBlock;
-		bufferLayerSize = copySize * imageExtent.depth * imageExtent.height;
 	}
 
 	VkDeviceSize imageLayerSize = getLayerSize(aspect);
-	VkDeviceSize srcLayerSize = bufferIsSource ? bufferLayerSize : imageLayerSize;
-	VkDeviceSize dstLayerSize = bufferIsSource ? imageLayerSize : bufferLayerSize;
+	VkDeviceSize srcLayerSize = bufferIsSource ? bufferSlicePitchBytes : imageLayerSize;
+	VkDeviceSize dstLayerSize = bufferIsSource ? imageLayerSize : bufferSlicePitchBytes;
 
 	for(uint32_t i = 0; i < region.imageSubresource.layerCount; i++)
 	{
@@ -749,6 +787,11 @@ VkExtent3D Image::getMipLevelExtent(VkImageAspectFlagBits aspect, uint32_t mipLe
 
 int Image::rowPitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel) const
 {
+	if(deviceMemory && deviceMemory->hasExternalImageProperties())
+	{
+		return deviceMemory->externalImageRowPitchBytes(aspect);
+	}
+
 	// Depth and Stencil pitch should be computed separately
 	ASSERT((aspect & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) !=
 	       (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT));
@@ -798,6 +841,11 @@ uint8_t *Image::end() const
 
 VkDeviceSize Image::getMemoryOffset(VkImageAspectFlagBits aspect) const
 {
+	if(deviceMemory && deviceMemory->hasExternalImageProperties())
+	{
+		return deviceMemory->externalImageMemoryOffset(aspect);
+	}
+
 	switch(format)
 	{
 		case VK_FORMAT_D16_UNORM_S8_UINT:
@@ -942,22 +990,12 @@ void Image::copyTo(uint8_t *dst, unsigned int dstPitch) const
 
 void Image::resolveTo(Image *dstImage, const VkImageResolve &region) const
 {
-	VkImageBlit blitRegion;
+	device->getBlitter()->resolve(this, dstImage, region);
+}
 
-	blitRegion.srcOffsets[0] = blitRegion.srcOffsets[1] = region.srcOffset;
-	blitRegion.srcOffsets[1].x += region.extent.width;
-	blitRegion.srcOffsets[1].y += region.extent.height;
-	blitRegion.srcOffsets[1].z += region.extent.depth;
-
-	blitRegion.dstOffsets[0] = blitRegion.dstOffsets[1] = region.dstOffset;
-	blitRegion.dstOffsets[1].x += region.extent.width;
-	blitRegion.dstOffsets[1].y += region.extent.height;
-	blitRegion.dstOffsets[1].z += region.extent.depth;
-
-	blitRegion.srcSubresource = region.srcSubresource;
-	blitRegion.dstSubresource = region.dstSubresource;
-
-	device->getBlitter()->blit(this, dstImage, blitRegion, VK_FILTER_NEAREST);
+void Image::resolveDepthStencilTo(const ImageView *src, ImageView *dst, const VkSubpassDescriptionDepthStencilResolve &dsResolve) const
+{
+	device->getBlitter()->resolveDepthStencil(src, dst, dsResolve);
 }
 
 VkFormat Image::getClearFormat() const

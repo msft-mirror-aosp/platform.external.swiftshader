@@ -77,6 +77,10 @@ LLVM_TRIPLES = {
         ('__mips__', 'mipsel-pc-win32'),
         ('__mips64', 'mips64el-pc-win32'),
     ],
+    'fuchsia': [
+        ('__x86_64__', 'x86_64-unknown-fuchsia'),
+        ('__aarch64__', 'aarch64-unknown-fuchsia'),
+    ]
 }
 
 # Mapping of target platform to the host it must be built on
@@ -85,6 +89,7 @@ LLVM_PLATFORM_TO_HOST_SYSTEM = {
     'darwin': 'Darwin',
     'linux': 'Linux',
     'windows': 'Windows',
+    'fuchsia': 'Linux'
 }
 
 # LLVM configurations to be undefined.
@@ -113,6 +118,8 @@ LLVM_CMAKE_OPTIONS = [
     '-DLLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN=ON'
 ]
 
+# Used when building LLVM for darwin. Affects values set in the generated config files.
+MIN_MACOS_VERSION = '10.10'
 
 @contextlib.contextmanager
 def pushd(new_dir):
@@ -141,7 +148,7 @@ def run_subprocess(*popenargs, log_level=1, cwd=None):
 def _parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('name', help='destination name',
-                        choices=['android', 'linux', 'darwin', 'windows'])
+                        choices=['android', 'linux', 'darwin', 'windows', 'fuchsia'])
     parser.add_argument('-j', '--jobs', help='parallel compilation', type=int)
     return parser.parse_args()
 
@@ -204,6 +211,9 @@ def build_llvm(name, num_jobs):
 
     cmake_options = LLVM_CMAKE_OPTIONS + ['-DLLVM_TARGETS_TO_BUILD=' +
                                           ';'.join(t for t in get_cmake_targets_to_build(name))]
+
+    if name == 'darwin':
+        cmake_options.append('-DCMAKE_OSX_DEPLOYMENT_TARGET={}'.format(MIN_MACOS_VERSION))
 
     os.makedirs(LLVM_OBJS, exist_ok=True)
     run_subprocess(['cmake', host, LLVM_DIR] +

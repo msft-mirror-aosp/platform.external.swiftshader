@@ -12,12 +12,14 @@ SET LESS_DEBUG_INFO=1
 
 cd %SRC%\build || goto :error
 
-REM Update CMake
-choco upgrade cmake -y --limit-output --no-progress
+REM The currently used OS image comes with CMake 3.17.3. If a newer version is
+REM required one can update the image (go/radial/kokoro_windows_image), or
+REM uncomment the line below.
+REM choco upgrade cmake -y --limit-output --no-progress
 cmake --version
 
 cmake .. ^
-    -G "Visual Studio 15 2017 Win64" ^
+    -G "%CMAKE_GENERATOR_TYPE%" ^
     -Thost=x64 ^
     "-DCMAKE_BUILD_TYPE=%BUILD_TYPE%" ^
     "-DREACTOR_BACKEND=%REACTOR_BACKEND%" ^
@@ -40,20 +42,27 @@ REM Incrementally build and run rr::Print unit tests
 cd %SRC%\build || goto :error
 cmake "-DREACTOR_ENABLE_PRINT=1" .. || goto :error
 cmake --build . --target ReactorUnitTests || goto :error
-cd %SRC% || goto :error
-build\Debug\ReactorUnitTests.exe --gtest_filter=ReactorUnitTests.Print* || goto :error
+Debug\ReactorUnitTests.exe --gtest_filter=ReactorUnitTests.Print* || goto :error
+cmake "-DREACTOR_ENABLE_PRINT=0" .. || goto :error
 
-IF NOT "%LLVM_VERSION%"=="10.0" (
-  REM Incrementally build with REACTOR_EMIT_DEBUG_INFO to ensure it builds
-  cd %SRC%\build || goto :error
-  cmake "-DREACTOR_EMIT_DEBUG_INFO=1" .. || goto :error
-  cmake --build . --target ReactorUnitTests || goto :error
+REM Incrementally build with REACTOR_EMIT_ASM_FILE and run unit test
+cd %SRC%\build || goto :error
+cmake "-DREACTOR_EMIT_ASM_FILE=1" .. || goto :error
+cmake --build . --target ReactorUnitTests || goto :error
+Debug\ReactorUnitTests.exe --gtest_filter=ReactorUnitTests.EmitAsm || goto :error
+cmake "-DREACTOR_EMIT_ASM_FILE=0" .. || goto :error
 
-  REM Incrementally build with REACTOR_EMIT_PRINT_LOCATION to ensure it builds
-  cd %SRC%\build || goto :error
-  cmake "-REACTOR_EMIT_PRINT_LOCATION=1" .. || goto :error
-  cmake --build . --target ReactorUnitTests || goto :error
-)
+REM Incrementally build with REACTOR_EMIT_DEBUG_INFO to ensure it builds
+cd %SRC%\build || goto :error
+cmake "-DREACTOR_EMIT_DEBUG_INFO=1" .. || goto :error
+cmake --build . --target ReactorUnitTests || goto :error
+cmake "-DREACTOR_EMIT_DEBUG_INFO=0" .. || goto :error
+
+REM Incrementally build with REACTOR_EMIT_PRINT_LOCATION to ensure it builds
+cd %SRC%\build || goto :error
+cmake "-DREACTOR_EMIT_PRINT_LOCATION=1" .. || goto :error
+cmake --build . --target ReactorUnitTests || goto :error
+cmake "-DREACTOR_EMIT_PRINT_LOCATION=0" .. || goto :error
 
 exit /b 0
 

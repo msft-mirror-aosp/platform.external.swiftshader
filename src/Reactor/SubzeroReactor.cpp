@@ -13,7 +13,8 @@
 // limitations under the License.
 
 #include "Debug.hpp"
-#include "EmulatedReactor.hpp"
+#include "EmulatedIntrinsics.hpp"
+#include "OptimalIntrinsics.hpp"
 #include "Print.hpp"
 #include "Reactor.hpp"
 #include "ReactorDebugInfo.hpp"
@@ -31,6 +32,7 @@
 
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/raw_os_ostream.h"
 
 #include "marl/event.h"
@@ -62,7 +64,9 @@ namespace sz {
 Ice::Cfg *createFunction(Ice::GlobalContext *context, Ice::Type returnType, const std::vector<Ice::Type> &paramTypes)
 {
 	uint32_t sequenceNumber = 0;
-	auto function = Ice::Cfg::create(context, sequenceNumber).release();
+	auto *function = Ice::Cfg::create(context, sequenceNumber).release();
+
+	function->setStackSizeLimit(512 * 1024);  // 512 KiB
 
 	Ice::CfgLocalAllocatorScope allocScope{ function };
 
@@ -213,6 +217,9 @@ class CoroutineGenerator;
 }  // namespace rr
 
 namespace {
+
+// Used to automatically invoke llvm_shutdown() when driver is unloaded
+llvm::llvm_shutdown_obj llvmShutdownObj;
 
 // Default configuration settings. Must be accessed under mutex lock.
 std::mutex defaultConfigLock;
@@ -828,6 +835,25 @@ public:
 
 	const void *addConstantData(const void *data, size_t size, size_t alignment = 1)
 	{
+		// Check if we already have a suitable constant.
+		for(const auto &c : constantsPool)
+		{
+			void *ptr = c.data.get();
+			size_t space = c.space;
+
+			void *alignedPtr = std::align(alignment, size, ptr, space);
+
+			if(space < size)
+			{
+				continue;
+			}
+
+			if(memcmp(data, alignedPtr, size) == 0)
+			{
+				return alignedPtr;
+			}
+		}
+
 		// TODO(b/148086935): Replace with a buffer allocator.
 		size_t space = size + alignment;
 		auto buf = std::unique_ptr<uint8_t[]>(new uint8_t[space]);
@@ -835,15 +861,27 @@ public:
 		void *alignedPtr = std::align(alignment, size, ptr, space);
 		ASSERT(alignedPtr);
 		memcpy(alignedPtr, data, size);
-		constantData.emplace_back(std::move(buf));
+		constantsPool.emplace_back(std::move(buf), space);
+
 		return alignedPtr;
 	}
 
 private:
+	struct Constant
+	{
+		Constant(std::unique_ptr<uint8_t[]> data, size_t space)
+		    : data(std::move(data))
+		    , space(space)
+		{}
+
+		std::unique_ptr<uint8_t[]> data;
+		size_t space;
+	};
+
 	std::array<const void *, Nucleus::CoroutineEntryCount> funcs = {};
 	std::vector<uint8_t, ExecutableAllocator<uint8_t>> buffer;
 	std::size_t position;
-	std::vector<std::unique_ptr<uint8_t[]>> constantData;
+	std::vector<Constant> constantsPool;
 };
 
 #ifdef ENABLE_RR_PRINT
@@ -902,10 +940,13 @@ Nucleus::Nucleus()
 		::routine = elfMemory;
 	}
 
-#if defined(_WIN32)  // TODO(b/157525646): Initialization of thread_local variables in shared libraries may not be supported on all platforms.
+#if !__has_feature(memory_sanitizer)
+	// thread_local variables in shared libraries are initialized at load-time,
+	// but this is not observed by MemorySanitizer if the loader itself was not
+	// instrumented, leading to false-positive unitialized variable errors.
 	ASSERT(Variable::unmaterializedVariables == nullptr);
 #endif
-	Variable::unmaterializedVariables = new std::unordered_set<const Variable *>();
+	Variable::unmaterializedVariables = new Variable::UnmaterializedVariables{};
 }
 
 Nucleus::~Nucleus()
@@ -1000,6 +1041,11 @@ static std::shared_ptr<Routine> acquireRoutine(Ice::Cfg *const (&functions)[Coun
 		}
 
 		currFunc->emitIAS();
+
+		if(currFunc->hasError())
+		{
+			return nullptr;
+		}
 	}
 
 	// Emit items
@@ -3585,6 +3631,33 @@ RValue<Int4> RoundInt(RValue<Float4> cast)
 	}
 }
 
+RValue<Int4> RoundIntClamped(RValue<Float4> cast)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+
+	// cvtps2dq produces 0x80000000, a negative value, for input larger than
+	// 2147483520.0, so clamp to 2147483520. Values less than -2147483520.0
+	// saturate to 0x80000000.
+	RValue<Float4> clamped = Min(cast, Float4(0x7FFFFF80));
+
+	if(emulateIntrinsics || CPUID::ARM)
+	{
+		// Push the fractional part off the mantissa. Accurate up to +/-2^22.
+		return Int4((clamped + Float4(0x00C00000)) - Float4(0x00C00000));
+	}
+	else
+	{
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4i32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = { Ice::Intrinsics::Nearbyint, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F };
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto nearbyint = Ice::InstIntrinsicCall::create(::function, 1, result, target, intrinsic);
+		nearbyint->addArg(clamped.value());
+		::basicBlock->appendInst(nearbyint);
+
+		return RValue<Int4>(V(result));
+	}
+}
+
 RValue<Short8> PackSigned(RValue<Int4> x, RValue<Int4> y)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
@@ -3928,6 +4001,45 @@ RValue<Float4> RcpSqrt_pp(RValue<Float4> x)
 	return Rcp_pp(Sqrt(x));
 }
 
+bool HasRcpApprox()
+{
+	// TODO(b/175612820): Update once we implement x86 SSE rcp_ss and rsqrt_ss intrinsics in Subzero
+	return false;
+}
+
+RValue<Float4> RcpApprox(RValue<Float4> x, bool exactAtPow2)
+{
+	// TODO(b/175612820): Update once we implement x86 SSE rcp_ss and rsqrt_ss intrinsics in Subzero
+	UNREACHABLE("RValue<Float4> RcpApprox()");
+	return { 0.0f };
+}
+
+RValue<Float> RcpApprox(RValue<Float> x, bool exactAtPow2)
+{
+	// TODO(b/175612820): Update once we implement x86 SSE rcp_ss and rsqrt_ss intrinsics in Subzero
+	UNREACHABLE("RValue<Float> RcpApprox()");
+	return { 0.0f };
+}
+
+bool HasRcpSqrtApprox()
+{
+	return false;
+}
+
+RValue<Float4> RcpSqrtApprox(RValue<Float4> x)
+{
+	// TODO(b/175612820): Update once we implement x86 SSE rcp_ss and rsqrt_ss intrinsics in Subzero
+	UNREACHABLE("RValue<Float4> RcpSqrtApprox()");
+	return { 0.0f };
+}
+
+RValue<Float> RcpSqrtApprox(RValue<Float> x)
+{
+	// TODO(b/175612820): Update once we implement x86 SSE rcp_ss and rsqrt_ss intrinsics in Subzero
+	UNREACHABLE("RValue<Float> RcpSqrtApprox()");
+	return { 0.0f };
+}
+
 RValue<Float4> Sqrt(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
@@ -4258,109 +4370,115 @@ RValue<Float> Log2(RValue<Float> x)
 RValue<Float4> Sin(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Sin(x);
+	return optimal::Sin(x);
 }
 
 RValue<Float4> Cos(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Cos(x);
+	return optimal::Cos(x);
 }
 
 RValue<Float4> Tan(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Tan(x);
+	return optimal::Tan(x);
 }
 
-RValue<Float4> Asin(RValue<Float4> x)
+RValue<Float4> Asin(RValue<Float4> x, Precision p)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Asin(x);
+	if(p == Precision::Full)
+	{
+		return emulated::Asin(x);
+	}
+	return optimal::Asin_8_terms(x);
 }
 
-RValue<Float4> Acos(RValue<Float4> x)
+RValue<Float4> Acos(RValue<Float4> x, Precision p)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Acos(x);
+	// Surprisingly, deqp-vk's precision.acos.highp/mediump tests pass when using the 4-term polynomial approximation
+	// version of acos, unlike for Asin, which requires higher precision algorithms.
+	return optimal::Acos_4_terms(x);
 }
 
 RValue<Float4> Atan(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Atan(x);
+	return optimal::Atan(x);
 }
 
 RValue<Float4> Sinh(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Sinh(x);
+	return optimal::Sinh(x);
 }
 
 RValue<Float4> Cosh(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Cosh(x);
+	return optimal::Cosh(x);
 }
 
 RValue<Float4> Tanh(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Tanh(x);
+	return optimal::Tanh(x);
 }
 
 RValue<Float4> Asinh(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Asinh(x);
+	return optimal::Asinh(x);
 }
 
 RValue<Float4> Acosh(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Acosh(x);
+	return optimal::Acosh(x);
 }
 
 RValue<Float4> Atanh(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Atanh(x);
+	return optimal::Atanh(x);
 }
 
 RValue<Float4> Atan2(RValue<Float4> x, RValue<Float4> y)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Atan2(x, y);
+	return optimal::Atan2(x, y);
 }
 
 RValue<Float4> Pow(RValue<Float4> x, RValue<Float4> y)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Pow(x, y);
+	return optimal::Pow(x, y);
 }
 
 RValue<Float4> Exp(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Exp(x);
+	return optimal::Exp(x);
 }
 
 RValue<Float4> Log(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Log(x);
+	return optimal::Log(x);
 }
 
 RValue<Float4> Exp2(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Exp2(x);
+	return optimal::Exp2(x);
 }
 
 RValue<Float4> Log2(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return emulated::Log2(x);
+	return optimal::Log2(x);
 }
 
 RValue<UInt> Ctlz(RValue<UInt> x, bool isZeroUndef)

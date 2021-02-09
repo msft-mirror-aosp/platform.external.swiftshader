@@ -79,6 +79,7 @@ public:
 	void resolve(ImageView *resolveAttachment);
 	void resolve(ImageView *resolveAttachment, int layer);
 	void resolveWithLayerMask(ImageView *resolveAttachment, uint32_t layerMask);
+	void resolveDepthStencil(ImageView *resolveAttachment, const VkSubpassDescriptionDepthStencilResolve &dsResolve);
 
 	VkImageViewType getType() const { return viewType; }
 	Format getFormat(Usage usage = RAW) const;
@@ -87,7 +88,9 @@ public:
 	int slicePitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel, Usage usage = RAW) const;
 	int getMipLevelSize(VkImageAspectFlagBits aspect, uint32_t mipLevel, Usage usage = RAW) const;
 	int layerPitchBytes(VkImageAspectFlagBits aspect, Usage usage = RAW) const;
-	VkExtent3D getMipLevelExtent(uint32_t mipLevel) const;
+	VkExtent2D getMipLevelExtent(uint32_t mipLevel) const;
+	VkExtent2D getMipLevelExtent(uint32_t mipLevel, VkImageAspectFlagBits aspect) const;
+	int getDepthOrLayerCount(uint32_t mipLevel) const;
 
 	int getSampleCount() const
 	{
@@ -131,16 +134,9 @@ public:
 	const Identifier id;
 };
 
-// TODO(b/132437008): Also used by SamplerYcbcrConversion. Move somewhere centrally?
-inline VkComponentMapping ResolveIdentityMapping(VkComponentMapping m)
-{
-	return {
-		(m.r == VK_COMPONENT_SWIZZLE_IDENTITY) ? VK_COMPONENT_SWIZZLE_R : m.r,
-		(m.g == VK_COMPONENT_SWIZZLE_IDENTITY) ? VK_COMPONENT_SWIZZLE_G : m.g,
-		(m.b == VK_COMPONENT_SWIZZLE_IDENTITY) ? VK_COMPONENT_SWIZZLE_B : m.b,
-		(m.a == VK_COMPONENT_SWIZZLE_IDENTITY) ? VK_COMPONENT_SWIZZLE_A : m.a,
-	};
-}
+VkComponentMapping ResolveIdentityMapping(VkComponentMapping mapping);
+VkComponentMapping ResolveComponentMapping(VkComponentMapping mapping, vk::Format format);
+VkImageSubresourceRange ResolveRemainingLevelsLayers(VkImageSubresourceRange range, const vk::Image *image);
 
 static inline ImageView *Cast(VkImageView object)
 {

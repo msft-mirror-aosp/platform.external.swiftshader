@@ -31,6 +31,7 @@ namespace vk {
 class Buffer;
 class Device;
 class DeviceMemory;
+class ImageView;
 
 #ifdef __ANDROID__
 struct BackingMemory
@@ -65,6 +66,7 @@ public:
 	void blitTo(Image *dstImage, const VkImageBlit &region, VkFilter filter) const;
 	void copyTo(uint8_t *dst, unsigned int dstPitch) const;
 	void resolveTo(Image *dstImage, const VkImageResolve &region) const;
+	void resolveDepthStencilTo(const ImageView *src, ImageView *dst, const VkSubpassDescriptionDepthStencilResolve &depthStencilResolve) const;
 	void clear(const VkClearValue &clearValue, const vk::Format &viewFormat, const VkRect2D &renderArea, const VkImageSubresourceRange &subresourceRange);
 	void clear(const VkClearColorValue &color, const VkImageSubresourceRange &subresourceRange);
 	void clear(const VkClearDepthStencilValue &color, const VkImageSubresourceRange &subresourceRange);
@@ -81,7 +83,9 @@ public:
 	uint32_t getArrayLayers() const { return arrayLayers; }
 	uint32_t getMipLevels() const { return mipLevels; }
 	VkImageUsageFlags getUsage() const { return usage; }
+	VkImageCreateFlags getFlags() const { return flags; }
 	VkSampleCountFlagBits getSampleCountFlagBits() const { return samples; }
+	const VkExtent3D &getExtent() const { return extent; }
 	VkExtent3D getMipLevelExtent(VkImageAspectFlagBits aspect, uint32_t mipLevel) const;
 	int rowPitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel) const;
 	int slicePitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel) const;
@@ -109,7 +113,10 @@ public:
 	}
 	bool hasExternalMemory() const { return backingMemory.externalMemory; }
 	VkDeviceMemory getExternalMemory() const;
+	VkExternalMemoryHandleTypeFlags getSupportedExternalMemoryHandleTypes() const { return supportedExternalMemoryHandleTypes; }
 #endif
+
+	DeviceMemory *deviceMemory = nullptr;
 
 private:
 	void copy(Buffer *buffer, const VkBufferImageCopy &region, bool bufferIsSource);
@@ -134,7 +141,6 @@ private:
 	void decodeASTC(const VkImageSubresource &subresource);
 
 	const Device *const device = nullptr;
-	DeviceMemory *deviceMemory = nullptr;
 	VkDeviceSize memoryOffset = 0;
 	VkImageCreateFlags flags = 0;
 	VkImageType imageType = VK_IMAGE_TYPE_2D;
@@ -192,5 +198,29 @@ static inline Image *Cast(VkImage object)
 }
 
 }  // namespace vk
+
+inline bool operator==(const VkExtent3D &lhs, const VkExtent3D &rhs)
+{
+	return lhs.width == rhs.width &&
+	       lhs.height == rhs.height &&
+	       lhs.depth == rhs.depth;
+}
+
+inline bool operator!=(const VkExtent3D &lhs, const VkExtent3D &rhs)
+{
+	return !(lhs == rhs);
+}
+
+inline bool operator==(const VkOffset3D &lhs, const VkOffset3D &rhs)
+{
+	return lhs.x == rhs.x &&
+	       lhs.y == rhs.y &&
+	       lhs.z == rhs.z;
+}
+
+inline bool operator!=(const VkOffset3D &lhs, const VkOffset3D &rhs)
+{
+	return !(lhs == rhs);
+}
 
 #endif  // VK_IMAGE_HPP_

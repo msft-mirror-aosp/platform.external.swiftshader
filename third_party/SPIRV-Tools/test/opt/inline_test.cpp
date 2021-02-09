@@ -1503,11 +1503,11 @@ OpSource OpenCL_C 120
 %bool = OpTypeBool
 %true = OpConstantTrue %bool
 %void = OpTypeVoid
+%5 = OpTypeFunction %void
 )";
 
   const std::string nonEntryFuncs =
-      R"(%5 = OpTypeFunction %void
-%6 = OpFunction %void None %5
+      R"(%6 = OpFunction %void None %5
 %7 = OpLabel
 OpBranch %8
 %8 = OpLabel
@@ -1635,7 +1635,7 @@ TEST_F(InlineTest, SingleBlockLoopCallsMultiBlockCalleeHavingSelectionMerge) {
   // the OpSelectionMerge, so inlining must create a new block to contain
   // the callee contents.
   //
-  // Additionally, we have two dummy OpCopyObject instructions to prove that
+  // Additionally, we have two extra OpCopyObject instructions to prove that
   // the OpLoopMerge is moved to the right location.
   //
   // Also ensure that OpPhis within the cloned callee code are valid.
@@ -1707,7 +1707,6 @@ OpBranchConditional %true %13 %16
 OpReturn
 OpFunctionEnd
 )";
-
   SinglePassRunAndCheck<InlineExhaustivePass>(predefs + nonEntryFuncs + before,
                                               predefs + nonEntryFuncs + after,
                                               false, true);
@@ -2399,6 +2398,38 @@ OpFunctionEnd
   SinglePassRunAndCheck<InlineExhaustivePass>(test, test, false, true);
 }
 
+TEST_F(InlineTest, DontInlineFuncWithDontInline) {
+  // Check that the function with DontInline flag is not inlined.
+  const std::string text = R"(
+; CHECK: %foo = OpFunction %int DontInline
+; CHECK: OpReturnValue %int_0
+
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+OpSource HLSL 600
+OpName %main "main"
+OpName %foo "foo"
+%int = OpTypeInt 32 1
+%int_0 = OpConstant %int 0
+%void = OpTypeVoid
+%6 = OpTypeFunction %void
+%7 = OpTypeFunction %int
+%main = OpFunction %void None %6
+%8 = OpLabel
+%9 = OpFunctionCall %int %foo
+OpReturn
+OpFunctionEnd
+%foo = OpFunction %int DontInline %7
+%10 = OpLabel
+OpReturnValue %int_0
+OpFunctionEnd
+)";
+
+  SinglePassRunAndMatch<InlineExhaustivePass>(text, true);
+}
+
 TEST_F(InlineTest, InlineFuncWithOpKillNotInContinue) {
   const std::string before =
       R"(OpCapability Shader
@@ -2451,6 +2482,160 @@ OpFunctionEnd
 
   SetAssembleOptions(SPV_TEXT_TO_BINARY_OPTION_PRESERVE_NUMERIC_IDS);
   SinglePassRunAndCheck<InlineExhaustivePass>(before, after, false, true);
+}
+
+TEST_F(InlineTest, DontInlineFuncWithOpTerminateInvocationInContinue) {
+  const std::string test =
+      R"(OpCapability Shader
+OpExtension "SPV_KHR_terminate_invocation"
+%1 = OpExtInstImport "GLSL.std.450"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+OpSource GLSL 330
+OpName %main "main"
+OpName %kill_ "kill("
+%void = OpTypeVoid
+%3 = OpTypeFunction %void
+%bool = OpTypeBool
+%true = OpConstantTrue %bool
+%main = OpFunction %void None %3
+%5 = OpLabel
+OpBranch %9
+%9 = OpLabel
+OpLoopMerge %11 %12 None
+OpBranch %13
+%13 = OpLabel
+OpBranchConditional %true %10 %11
+%10 = OpLabel
+OpBranch %12
+%12 = OpLabel
+%16 = OpFunctionCall %void %kill_
+OpBranch %9
+%11 = OpLabel
+OpReturn
+OpFunctionEnd
+%kill_ = OpFunction %void None %3
+%7 = OpLabel
+OpTerminateInvocation
+OpFunctionEnd
+)";
+
+  SetAssembleOptions(SPV_TEXT_TO_BINARY_OPTION_PRESERVE_NUMERIC_IDS);
+  SinglePassRunAndCheck<InlineExhaustivePass>(test, test, false, true);
+}
+
+TEST_F(InlineTest, InlineFuncWithOpTerminateInvocationNotInContinue) {
+  const std::string before =
+      R"(OpCapability Shader
+OpExtension "SPV_KHR_terminate_invocation"
+%1 = OpExtInstImport "GLSL.std.450"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+OpSource GLSL 330
+OpName %main "main"
+OpName %kill_ "kill("
+%void = OpTypeVoid
+%3 = OpTypeFunction %void
+%bool = OpTypeBool
+%true = OpConstantTrue %bool
+%main = OpFunction %void None %3
+%5 = OpLabel
+%16 = OpFunctionCall %void %kill_
+OpReturn
+OpFunctionEnd
+%kill_ = OpFunction %void None %3
+%7 = OpLabel
+OpTerminateInvocation
+OpFunctionEnd
+)";
+
+  const std::string after =
+      R"(OpCapability Shader
+OpExtension "SPV_KHR_terminate_invocation"
+%1 = OpExtInstImport "GLSL.std.450"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+OpSource GLSL 330
+OpName %main "main"
+OpName %kill_ "kill("
+%void = OpTypeVoid
+%3 = OpTypeFunction %void
+%bool = OpTypeBool
+%true = OpConstantTrue %bool
+%main = OpFunction %void None %3
+%5 = OpLabel
+OpTerminateInvocation
+%18 = OpLabel
+OpReturn
+OpFunctionEnd
+%kill_ = OpFunction %void None %3
+%7 = OpLabel
+OpTerminateInvocation
+OpFunctionEnd
+)";
+
+  SetAssembleOptions(SPV_TEXT_TO_BINARY_OPTION_PRESERVE_NUMERIC_IDS);
+  SinglePassRunAndCheck<InlineExhaustivePass>(before, after, false, true);
+}
+
+TEST_F(InlineTest, InlineFuncWithOpTerminateRayNotInContinue) {
+  const std::string text =
+      R"(
+               OpCapability RayTracingKHR
+               OpExtension "SPV_KHR_ray_tracing"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint AnyHitKHR %MyAHitMain2 "MyAHitMain2" %a
+               OpSource HLSL 630
+               OpName %a "a"
+               OpName %MyAHitMain2 "MyAHitMain2"
+               OpName %param_var_a "param.var.a"
+               OpName %src_MyAHitMain2 "src.MyAHitMain2"
+               OpName %a_0 "a"
+               OpName %bb_entry "bb.entry"
+        %int = OpTypeInt 32 1
+%_ptr_IncomingRayPayloadKHR_int = OpTypePointer IncomingRayPayloadKHR %int
+       %void = OpTypeVoid
+          %6 = OpTypeFunction %void
+%_ptr_Function_int = OpTypePointer Function %int
+         %14 = OpTypeFunction %void %_ptr_Function_int
+          %a = OpVariable %_ptr_IncomingRayPayloadKHR_int IncomingRayPayloadKHR
+%MyAHitMain2 = OpFunction %void None %6
+          %7 = OpLabel
+%param_var_a = OpVariable %_ptr_Function_int Function
+         %10 = OpLoad %int %a
+               OpStore %param_var_a %10
+         %11 = OpFunctionCall %void %src_MyAHitMain2 %param_var_a
+         %13 = OpLoad %int %param_var_a
+               OpStore %a %13
+               OpReturn
+               OpFunctionEnd
+%src_MyAHitMain2 = OpFunction %void None %14
+        %a_0 = OpFunctionParameter %_ptr_Function_int
+   %bb_entry = OpLabel
+         %17 = OpLoad %int %a_0
+               OpStore %a %17
+               OpTerminateRayKHR
+               OpFunctionEnd
+
+; CHECK:      %MyAHitMain2 = OpFunction %void None
+; CHECK-NEXT: OpLabel
+; CHECK-NEXT:   %param_var_a = OpVariable %_ptr_Function_int Function
+; CHECK-NEXT:   OpLoad %int %a
+; CHECK-NEXT:   OpStore %param_var_a {{%\d+}}
+; CHECK-NEXT:   OpLoad %int %param_var_a
+; CHECK-NEXT:   OpStore %a {{%\d+}}
+; CHECK-NEXT:   OpTerminateRayKHR
+; CHECK-NEXT: OpLabel
+; CHECK-NEXT:   OpLoad %int %param_var_a
+; CHECK-NEXT:   OpStore %a %16
+; CHECK-NEXT:   OpReturn
+; CHECK-NEXT: OpFunctionEnd
+)";
+
+  SinglePassRunAndMatch<InlineExhaustivePass>(text, false);
 }
 
 TEST_F(InlineTest, EarlyReturnFunctionInlined) {

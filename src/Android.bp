@@ -190,10 +190,11 @@ cc_defaults {
     srcs: [
         "Reactor/CPUID.cpp",
         "Reactor/Debug.cpp",
-        "Reactor/EmulatedReactor.cpp",
+        "Reactor/EmulatedIntrinsics.cpp",
         "Reactor/ExecutableMemory.cpp",
         "Reactor/LLVMJIT.cpp",
         "Reactor/LLVMReactor.cpp",
+        "Reactor/OptimalIntrinsics.cpp",
         "Reactor/Reactor.cpp",
     ],
 
@@ -221,10 +222,11 @@ cc_defaults {
     srcs: [
         "Reactor/CPUID.cpp",
         "Reactor/Debug.cpp",
-        "Reactor/EmulatedReactor.cpp",
+        "Reactor/EmulatedIntrinsics.cpp",
         "Reactor/ExecutableMemory.cpp",
         "Reactor/LLVMJIT.cpp",
         "Reactor/LLVMReactor.cpp",
+        "Reactor/OptimalIntrinsics.cpp",
         "Reactor/Reactor.cpp",
     ],
 
@@ -362,7 +364,7 @@ cc_defaults {
     defaults: [ "libswiftshader_debug" ],
     static_libs: [
         "libswiftshader_llvm_debug",
-        "libLLVM10_swiftshader",
+        "libLLVM10_swiftshader_debug",
     ],
 }
 
@@ -628,6 +630,7 @@ cc_defaults {
         "-DLOG_TAG=\"swiftshader\"",
         //"-DSWIFTSHADER_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER",
         "-DSWIFTSHADER_ENABLE_ASTC",  // TODO(b/150130101)
+        //"-DSWIFTSHADER_DEVICE_MEMORY_REPORT",
     ],
 
     srcs: [
@@ -644,6 +647,8 @@ cc_defaults {
         "Device/*.cpp",
         "Pipeline/*.cpp",
         "Vulkan/*.cpp",
+        "WSI/HeadlessSurfaceKHR.cpp",
+        "WSI/VkSurfaceKHR.cpp",
     ],
 
     static_libs: [
@@ -655,7 +660,7 @@ cc_defaults {
 
     include_dirs: [
         "external/swiftshader/third_party/SPIRV-Headers/include",
-        "external/swiftshader/include"
+        "external/swiftshader/include",
     ],
 }
 
@@ -678,7 +683,7 @@ cc_library_shared {
 
     static_libs: [
         "libswiftshadervk_llvm_debug",
-        "libLLVM10_swiftshader",
+        "libLLVM10_swiftshader_debug",
     ],
 
     cflags: [

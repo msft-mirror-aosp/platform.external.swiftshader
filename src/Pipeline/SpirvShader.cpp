@@ -111,6 +111,9 @@ SpirvShader::SpirvShader(
 					case spv::DecorationInputAttachmentIndex:
 						descriptorDecorations[targetId].InputAttachmentIndex = value;
 						break;
+					case spv::DecorationSample:
+						modes.ContainsSampleQualifier = true;
+						break;
 					default:
 						// Only handling descriptor decorations here.
 						break;
@@ -136,6 +139,25 @@ SpirvShader::SpirvShader(
 
 				if(decoration == spv::DecorationCentroid)
 					modes.NeedsCentroid = true;
+				break;
+			}
+
+			case spv::OpDecorateId:
+			{
+				auto decoration = static_cast<spv::Decoration>(insn.word(2));
+
+				// Currently OpDecorateId only supports UniformId, which provides information for
+				// potential optimizations that we don't perform, and CounterBuffer, which is used
+				// by HLSL to build the graphics pipeline with shader reflection. At the driver level,
+				// the CounterBuffer decoration does nothing, so we can safely ignore both decorations.
+				ASSERT(decoration == spv::DecorationUniformId || decoration == spv::DecorationCounterBuffer);
+				break;
+			}
+
+			case spv::OpDecorateString:
+			case spv::OpMemberDecorateString:
+			{
+				// We assume these are for HLSL semantics, ignore them.
 				break;
 			}
 
@@ -361,18 +383,21 @@ SpirvShader::SpirvShader(
 				{
 					case spv::CapabilityMatrix: capabilities.Matrix = true; break;
 					case spv::CapabilityShader: capabilities.Shader = true; break;
+					case spv::CapabilityStorageImageMultisample: capabilities.StorageImageMultisample = true; break;
 					case spv::CapabilityClipDistance: capabilities.ClipDistance = true; break;
 					case spv::CapabilityCullDistance: capabilities.CullDistance = true; break;
+					case spv::CapabilityImageCubeArray: capabilities.ImageCubeArray = true; break;
 					case spv::CapabilityInputAttachment: capabilities.InputAttachment = true; break;
 					case spv::CapabilitySampled1D: capabilities.Sampled1D = true; break;
 					case spv::CapabilityImage1D: capabilities.Image1D = true; break;
-					case spv::CapabilityImageCubeArray: capabilities.ImageCubeArray = true; break;
 					case spv::CapabilitySampledBuffer: capabilities.SampledBuffer = true; break;
 					case spv::CapabilitySampledCubeArray: capabilities.SampledCubeArray = true; break;
 					case spv::CapabilityImageBuffer: capabilities.ImageBuffer = true; break;
+					case spv::CapabilityImageMSArray: capabilities.ImageMSArray = true; break;
 					case spv::CapabilityStorageImageExtendedFormats: capabilities.StorageImageExtendedFormats = true; break;
 					case spv::CapabilityImageQuery: capabilities.ImageQuery = true; break;
 					case spv::CapabilityDerivativeControl: capabilities.DerivativeControl = true; break;
+					case spv::CapabilityInterpolationFunction: capabilities.InterpolationFunction = true; break;
 					case spv::CapabilityGroupNonUniform: capabilities.GroupNonUniform = true; break;
 					case spv::CapabilityGroupNonUniformVote: capabilities.GroupNonUniformVote = true; break;
 					case spv::CapabilityGroupNonUniformArithmetic: capabilities.GroupNonUniformArithmetic = true; break;
@@ -462,7 +487,7 @@ SpirvShader::SpirvShader(
 			case spv::OpFunctionParameter:
 				// These should have all been removed by preprocessing passes. If we see them here,
 				// our assumptions are wrong and we will probably generate wrong code.
-				UNREACHABLE("%s should have already been lowered.", OpcodeName(opcode).c_str());
+				UNREACHABLE("%s should have already been lowered.", OpcodeName(opcode));
 				break;
 
 			case spv::OpFunctionCall:
@@ -671,6 +696,7 @@ SpirvShader::SpirvShader(
 			case spv::OpGroupNonUniformLogicalOr:
 			case spv::OpGroupNonUniformLogicalXor:
 			case spv::OpCopyObject:
+			case spv::OpCopyLogical:
 			case spv::OpArrayLength:
 				// Instructions that yield an intermediate value or divergent pointer
 				DefineResult(insn);
@@ -715,12 +741,13 @@ SpirvShader::SpirvShader(
 				if(!strcmp(ext, "SPV_KHR_device_group")) break;
 				if(!strcmp(ext, "SPV_KHR_multiview")) break;
 				if(!strcmp(ext, "SPV_EXT_shader_stencil_export")) break;
+				if(!strcmp(ext, "SPV_KHR_float_controls")) break;
 				UNSUPPORTED("SPIR-V Extension: %s", ext);
 				break;
 			}
 
 			default:
-				UNSUPPORTED("%s", OpcodeName(opcode).c_str());
+				UNSUPPORTED("%s", OpcodeName(opcode));
 		}
 	}
 
@@ -872,6 +899,25 @@ void SpirvShader::ProcessInterfaceVariable(Object &object)
 	}
 }
 
+uint32_t SpirvShader::GetNumInputComponents(int32_t location) const
+{
+	ASSERT(location >= 0);
+
+	// Verify how many component(s) per input
+	// 1 to 4, for float, vec2, vec3, vec4.
+	// Note that matrices are divided over multiple inputs
+	uint32_t num_components_per_input = 0;
+	for(; num_components_per_input < 4; ++num_components_per_input)
+	{
+		if(inputs[(location << 2) | num_components_per_input].Type == ATTRIBTYPE_UNUSED)
+		{
+			break;
+		}
+	}
+
+	return num_components_per_input;
+}
+
 void SpirvShader::ProcessExecutionMode(InsnIterator insn)
 {
 	Function::ID function = insn.word(1);
@@ -890,12 +936,15 @@ void SpirvShader::ProcessExecutionMode(InsnIterator insn)
 			modes.DepthReplacing = true;
 			break;
 		case spv::ExecutionModeDepthGreater:
+			// TODO(b/177915067): Can be used to optimize depth test, currently unused.
 			modes.DepthGreater = true;
 			break;
 		case spv::ExecutionModeDepthLess:
+			// TODO(b/177915067): Can be used to optimize depth test, currently unused.
 			modes.DepthLess = true;
 			break;
 		case spv::ExecutionModeDepthUnchanged:
+			// TODO(b/177915067): Can be used to optimize depth test, currently unused.
 			modes.DepthUnchanged = true;
 			break;
 		case spv::ExecutionModeLocalSize:
@@ -964,7 +1013,7 @@ uint32_t SpirvShader::ComputeTypeSize(InsnIterator insn)
 			return 1;
 
 		default:
-			UNREACHABLE("%s", OpcodeName(insn.opcode()).c_str());
+			UNREACHABLE("%s", OpcodeName(insn.opcode()));
 			return 0;
 	}
 }
@@ -1018,8 +1067,9 @@ int SpirvShader::VisitInterfaceInner(Type::ID id, Decorations d, const Interface
 			// iterate over members, which may themselves have Location/Component decorations
 			for(auto i = 0u; i < obj.definition.wordCount() - 2; i++)
 			{
-				ApplyDecorationsForIdMember(&d, id, i);
-				d.Location = VisitInterfaceInner(obj.definition.word(i + 2), d, f);
+				Decorations dMember = d;
+				ApplyDecorationsForIdMember(&dMember, id, i);
+				d.Location = VisitInterfaceInner(obj.definition.word(i + 2), dMember, f);
 				d.Component = 0;  // Implicit locations always have component=0
 			}
 			return d.Location;
@@ -1086,7 +1136,7 @@ void SpirvShader::ApplyDecorationsForAccessChain(Decorations *d, DescriptorDecor
 				d->InsideMatrix = true;
 				break;
 			default:
-				UNREACHABLE("%s", OpcodeName(type.definition.opcode()).c_str());
+				UNREACHABLE("%s", OpcodeName(type.definition.opcode()));
 		}
 	}
 }
@@ -1195,7 +1245,7 @@ SIMD::Pointer SpirvShader::WalkExplicitLayoutAccessChain(Object::ID baseId, uint
 				break;
 			}
 			default:
-				UNREACHABLE("%s", OpcodeName(type.definition.opcode()).c_str());
+				UNREACHABLE("%s", OpcodeName(type.definition.opcode()));
 		}
 	}
 
@@ -1276,7 +1326,7 @@ SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, uint32_t numIndexe
 			}
 
 			default:
-				UNREACHABLE("%s", OpcodeName(type.opcode()).c_str());
+				UNREACHABLE("%s", OpcodeName(type.opcode()));
 		}
 	}
 
@@ -1322,7 +1372,7 @@ uint32_t SpirvShader::WalkLiteralAccessChain(Type::ID typeId, uint32_t numIndexe
 			}
 
 			default:
-				UNREACHABLE("%s", OpcodeName(type.opcode()).c_str());
+				UNREACHABLE("%s", OpcodeName(type.opcode()));
 		}
 	}
 
@@ -1510,7 +1560,9 @@ OutOfBoundsBehavior SpirvShader::EmitState::getOutOfBoundsBehavior(spv::StorageC
 			                          : OutOfBoundsBehavior::UndefinedBehavior;
 
 		case spv::StorageClassImage:
-			return OutOfBoundsBehavior::UndefinedValue;  // "The value returned by a read of an invalid texel is undefined"
+			// VK_EXT_image_robustness requires nullifying out-of-bounds accesses.
+			// TODO(b/162327166): Only perform bounds checks when VK_EXT_image_robustness is enabled.
+			return OutOfBoundsBehavior::Nullify;
 
 		case spv::StorageClassInput:
 			if(executionModel == spv::ExecutionModelVertex)
@@ -1627,7 +1679,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 #if SPIRV_SHADER_ENABLE_DBG
 	{
 		auto text = spvtools::spvInstructionBinaryToText(
-		    SPV_ENV_VULKAN_1_1,
+		    vk::SPIRV_VERSION,
 		    insn.wordPointer(0),
 		    insn.wordCount(),
 		    insns.data(),
@@ -1677,6 +1729,9 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 		case spv::OpGroupDecorate:
 		case spv::OpGroupMemberDecorate:
 		case spv::OpDecorationGroup:
+		case spv::OpDecorateId:
+		case spv::OpDecorateString:
+		case spv::OpMemberDecorateString:
 		case spv::OpName:
 		case spv::OpMemberName:
 		case spv::OpSource:
@@ -1949,6 +2004,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 			return EmitSampledImageCombineOrSplit(insn, state);
 
 		case spv::OpCopyObject:
+		case spv::OpCopyLogical:
 			return EmitCopyObject(insn, state);
 
 		case spv::OpCopyMemory:
@@ -1998,7 +2054,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 			return EmitArrayLength(insn, state);
 
 		default:
-			UNREACHABLE("%s", OpcodeName(opcode).c_str());
+			UNREACHABLE("%s", OpcodeName(opcode));
 			break;
 	}
 
@@ -2238,17 +2294,24 @@ SpirvShader::EmitResult SpirvShader::EmitAtomicOp(InsnIterator insn, EmitState *
 {
 	auto &resultType = getType(Type::ID(insn.word(1)));
 	Object::ID resultId = insn.word(2);
+	Object::ID pointerId = insn.word(3);
 	Object::ID semanticsId = insn.word(5);
 	auto memorySemantics = static_cast<spv::MemorySemanticsMask>(getObject(semanticsId).constantValue[0]);
 	auto memoryOrder = MemoryOrder(memorySemantics);
 	// Where no value is provided (increment/decrement) use an implicit value of 1.
 	auto value = (insn.wordCount() == 7) ? Operand(this, state, insn.word(6)).UInt(0) : RValue<SIMD::UInt>(1);
 	auto &dst = state->createIntermediate(resultId, resultType.componentCount);
-	auto ptr = state->getPointer(insn.word(3));
+	auto ptr = state->getPointer(pointerId);
 	auto ptrOffsets = ptr.offsets();
 
-	SIMD::UInt x(0);
-	auto mask = state->activeLaneMask() & state->storesAndAtomicsMask();
+	SIMD::Int mask = state->activeLaneMask() & state->storesAndAtomicsMask();
+
+	if(getObject(pointerId).opcode() == spv::OpImageTexelPointer)
+	{
+		mask &= ptr.isInBounds(sizeof(int32_t), OutOfBoundsBehavior::Nullify);
+	}
+
+	SIMD::UInt result(0);
 	for(int j = 0; j < SIMD::Width; j++)
 	{
 		If(Extract(mask, j) != 0)
@@ -2291,14 +2354,14 @@ SpirvShader::EmitResult SpirvShader::EmitAtomicOp(InsnIterator insn, EmitState *
 					v = ExchangeAtomic(Pointer<UInt>(&ptr.base[offset]), laneValue, memoryOrder);
 					break;
 				default:
-					UNREACHABLE("%s", OpcodeName(insn.opcode()).c_str());
+					UNREACHABLE("%s", OpcodeName(insn.opcode()));
 					break;
 			}
-			x = Insert(x, v, j);
+			result = Insert(result, v, j);
 		}
 	}
 
-	dst.move(0, x);
+	dst.move(0, result);
 	return EmitResult::Continue;
 }
 
@@ -2431,7 +2494,10 @@ void SpirvShader::emitEpilog(SpirvRoutine *routine) const
 				break;
 		}
 	}
+}
 
+void SpirvShader::clearPhis(SpirvRoutine *routine) const
+{
 	// Clear phis that are no longer used. This serves two purposes:
 	// (1) The phi rr::Variables are destructed, preventing pointless
 	//     materialization.
@@ -2469,11 +2535,11 @@ SpirvShader::Operand::Operand(const SpirvShader *shader, const EmitState *state,
 {}
 
 SpirvShader::Operand::Operand(const EmitState *state, const Object &object)
-    : constant(object.constantValue.data())
+    : constant(object.kind == SpirvShader::Object::Kind::Constant ? object.constantValue.data() : nullptr)
     , intermediate(object.kind == SpirvShader::Object::Kind::Intermediate ? &state->getIntermediate(object.id()) : nullptr)
     , componentCount(intermediate ? intermediate->componentCount : object.constantValue.size())
 {
-	ASSERT(intermediate || (object.kind == SpirvShader::Object::Kind::Constant));
+	ASSERT(intermediate || constant);
 }
 
 SpirvShader::Operand::Operand(const Intermediate &value)
@@ -2481,6 +2547,24 @@ SpirvShader::Operand::Operand(const Intermediate &value)
     , intermediate(&value)
     , componentCount(value.componentCount)
 {
+}
+
+bool SpirvShader::Operand::isConstantZero() const
+{
+	if(!constant)
+	{
+		return false;
+	}
+
+	for(uint32_t i = 0; i < componentCount; i++)
+	{
+		if(constant[i] != 0)
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
 SpirvRoutine::SpirvRoutine(vk::PipelineLayout const *pipelineLayout)

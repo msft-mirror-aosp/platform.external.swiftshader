@@ -69,6 +69,8 @@ enum OperandClass {
     OperandImageOperands,
     OperandFPFastMath,
     OperandFPRoundingMode,
+    OperandFPDenormMode,
+    OperandFPOperationMode,
     OperandLinkageType,
     OperandAccessQualifier,
     OperandFuncParamAttr,
@@ -80,7 +82,7 @@ enum OperandClass {
     OperandMemorySemantics,
     OperandMemoryOperands,
     OperandScope,
-	OperandGroupOperation,
+    OperandGroupOperation,
     OperandKernelEnqueueFlags,
     OperandKernelProfilingInfo,
     OperandCapability,
@@ -88,6 +90,7 @@ enum OperandClass {
     OperandRayQueryIntersection,
     OperandRayQueryCommittedIntersectionType,
     OperandRayQueryCandidateIntersectionType,
+    OperandFragmentShadingRate,
 
     OperandOpcode,
 

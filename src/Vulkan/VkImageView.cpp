@@ -13,16 +13,42 @@
 // limitations under the License.
 
 #include "VkImageView.hpp"
+
 #include "VkImage.hpp"
 #include "System/Math.hpp"
 
 #include <climits>
 
+namespace vk {
 namespace {
 
-VkComponentMapping ResolveComponentMapping(VkComponentMapping m, vk::Format format)
+Format GetImageViewFormat(const VkImageViewCreateInfo *pCreateInfo)
 {
-	m = vk::ResolveIdentityMapping(m);
+	// VkImageViewCreateInfo: "If image has an external format, format must be VK_FORMAT_UNDEFINED"
+	// In that case, obtain the format from the underlying image.
+	if(pCreateInfo->format != VK_FORMAT_UNDEFINED)
+	{
+		return Format(pCreateInfo->format);
+	}
+
+	return vk::Cast(pCreateInfo->image)->getFormat();
+}
+
+}  // anonymous namespace
+
+VkComponentMapping ResolveIdentityMapping(VkComponentMapping mapping)
+{
+	return {
+		(mapping.r == VK_COMPONENT_SWIZZLE_IDENTITY) ? VK_COMPONENT_SWIZZLE_R : mapping.r,
+		(mapping.g == VK_COMPONENT_SWIZZLE_IDENTITY) ? VK_COMPONENT_SWIZZLE_G : mapping.g,
+		(mapping.b == VK_COMPONENT_SWIZZLE_IDENTITY) ? VK_COMPONENT_SWIZZLE_B : mapping.b,
+		(mapping.a == VK_COMPONENT_SWIZZLE_IDENTITY) ? VK_COMPONENT_SWIZZLE_A : mapping.a,
+	};
+}
+
+VkComponentMapping ResolveComponentMapping(VkComponentMapping mapping, vk::Format format)
+{
+	mapping = vk::ResolveIdentityMapping(mapping);
 
 	// Replace non-present components with zero/one swizzles so that the sampler
 	// will give us correct interactions between channel replacement and texel replacement,
@@ -38,7 +64,7 @@ VkComponentMapping ResolveComponentMapping(VkComponentMapping m, vk::Format form
 		format.componentCount() < 4 ? VK_COMPONENT_SWIZZLE_ONE : VK_COMPONENT_SWIZZLE_A,
 	};
 
-	return { table[m.r], table[m.g], table[m.b], table[m.a] };
+	return { table[mapping.r], table[mapping.g], table[mapping.b], table[mapping.a] };
 }
 
 VkImageSubresourceRange ResolveRemainingLevelsLayers(VkImageSubresourceRange range, const vk::Image *image)
@@ -51,10 +77,6 @@ VkImageSubresourceRange ResolveRemainingLevelsLayers(VkImageSubresourceRange ran
 		(range.layerCount == VK_REMAINING_ARRAY_LAYERS) ? (image->getArrayLayers() - range.baseArrayLayer) : range.layerCount,
 	};
 }
-
-}  // anonymous namespace
-
-namespace vk {
 
 Identifier::Identifier(const Image *image, VkImageViewType type, VkFormat fmt, VkComponentMapping mapping)
 {
@@ -76,7 +98,7 @@ Identifier::Identifier(VkFormat fmt)
 ImageView::ImageView(const VkImageViewCreateInfo *pCreateInfo, void *mem, const vk::SamplerYcbcrConversion *ycbcrConversion)
     : image(vk::Cast(pCreateInfo->image))
     , viewType(pCreateInfo->viewType)
-    , format(pCreateInfo->format)
+    , format(GetImageViewFormat(pCreateInfo))
     , components(ResolveComponentMapping(pCreateInfo->components, format))
     , subresourceRange(ResolveRemainingLevelsLayers(pCreateInfo->subresourceRange, image))
     , ycbcrConversion(ycbcrConversion)
@@ -240,6 +262,17 @@ void ImageView::resolveWithLayerMask(ImageView *resolveAttachment, uint32_t laye
 	}
 }
 
+void ImageView::resolveDepthStencil(ImageView *resolveAttachment, const VkSubpassDescriptionDepthStencilResolve &dsResolve)
+{
+	ASSERT(subresourceRange.levelCount == 1 && resolveAttachment->subresourceRange.levelCount == 1);
+	if((subresourceRange.layerCount != 1) || (resolveAttachment->subresourceRange.layerCount != 1))
+	{
+		UNIMPLEMENTED("b/148242443: layerCount != 1");  // FIXME(b/148242443)
+	}
+
+	image->resolveDepthStencilTo(this, resolveAttachment, dsResolve);
+}
+
 const Image *ImageView::getImage(Usage usage) const
 {
 	switch(usage)
@@ -280,10 +313,36 @@ int ImageView::layerPitchBytes(VkImageAspectFlagBits aspect, Usage usage) const
 	return static_cast<int>(getImage(usage)->getLayerSize(aspect));
 }
 
-VkExtent3D ImageView::getMipLevelExtent(uint32_t mipLevel) const
+VkExtent2D ImageView::getMipLevelExtent(uint32_t mipLevel) const
 {
-	return image->getMipLevelExtent(static_cast<VkImageAspectFlagBits>(subresourceRange.aspectMask),
-	                                subresourceRange.baseMipLevel + mipLevel);
+	VkExtent3D extent = image->getMipLevelExtent(static_cast<VkImageAspectFlagBits>(subresourceRange.aspectMask),
+	                                             subresourceRange.baseMipLevel + mipLevel);
+
+	return { extent.width, extent.height };
+}
+
+VkExtent2D ImageView::getMipLevelExtent(uint32_t mipLevel, VkImageAspectFlagBits aspect) const
+{
+	VkExtent3D extent = image->getMipLevelExtent(aspect, subresourceRange.baseMipLevel + mipLevel);
+
+	return { extent.width, extent.height };
+}
+
+int ImageView::getDepthOrLayerCount(uint32_t mipLevel) const
+{
+	VkExtent3D extent = image->getMipLevelExtent(static_cast<VkImageAspectFlagBits>(subresourceRange.aspectMask),
+	                                             subresourceRange.baseMipLevel + mipLevel);
+	int layers = subresourceRange.layerCount;
+	int depthOrLayers = layers > 1 ? layers : extent.depth;
+
+	// For cube images the number of whole cubes is returned
+	if(viewType == VK_IMAGE_VIEW_TYPE_CUBE ||
+	   viewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY)
+	{
+		depthOrLayers /= 6;
+	}
+
+	return depthOrLayers;
 }
 
 void *ImageView::getOffsetPointer(const VkOffset3D &offset, VkImageAspectFlagBits aspect, uint32_t mipLevel, uint32_t layer, Usage usage) const

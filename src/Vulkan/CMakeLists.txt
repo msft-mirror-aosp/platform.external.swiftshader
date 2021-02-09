@@ -31,6 +31,8 @@ set(VULKAN_SRC_FILES
     VkCommandPool.cpp
     VkCommandPool.hpp
     VkConfig.hpp
+    VkDebugUtilsMessenger.cpp
+    VkDebugUtilsMessenger.hpp
     VkDescriptorPool.cpp
     VkDescriptorPool.hpp
     VkDescriptorSet.cpp
@@ -44,7 +46,6 @@ set(VULKAN_SRC_FILES
     VkDevice.hpp
     VkDeviceMemory.cpp
     VkDeviceMemory.hpp
-    VkDeviceMemoryExternalAndroid.hpp
     VkDeviceMemoryExternalLinux.hpp
     VkEvent.hpp
     VkFence.hpp
@@ -104,6 +105,7 @@ if(SWIFTSHADER_ENABLE_VULKAN_DEBUGGER)
         Debug/Context.cpp
         Debug/Context.hpp
         Debug/Debug.cpp
+        Debug/EventListener.cpp
         Debug/EventListener.hpp
         Debug/File.cpp
         Debug/File.hpp
@@ -113,10 +115,11 @@ if(SWIFTSHADER_ENABLE_VULKAN_DEBUGGER)
         Debug/Server.hpp
         Debug/Thread.cpp
         Debug/Thread.hpp
-        Debug/Type.cpp
-        Debug/Type.hpp
+        Debug/TypeOf.cpp
+        Debug/TypeOf.hpp
         Debug/Value.cpp
         Debug/Value.hpp
+        Debug/Variable.cpp
         Debug/Variable.hpp
         Debug/WeakMap.hpp
     )
