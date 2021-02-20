@@ -111,6 +111,9 @@ SpirvShader::SpirvShader(
 					case spv::DecorationInputAttachmentIndex:
 						descriptorDecorations[targetId].InputAttachmentIndex = value;
 						break;
+					case spv::DecorationSample:
+						modes.ContainsSampleQualifier = true;
+						break;
 					default:
 						// Only handling descriptor decorations here.
 						break;
@@ -394,6 +397,7 @@ SpirvShader::SpirvShader(
 					case spv::CapabilityStorageImageExtendedFormats: capabilities.StorageImageExtendedFormats = true; break;
 					case spv::CapabilityImageQuery: capabilities.ImageQuery = true; break;
 					case spv::CapabilityDerivativeControl: capabilities.DerivativeControl = true; break;
+					case spv::CapabilityInterpolationFunction: capabilities.InterpolationFunction = true; break;
 					case spv::CapabilityGroupNonUniform: capabilities.GroupNonUniform = true; break;
 					case spv::CapabilityGroupNonUniformVote: capabilities.GroupNonUniformVote = true; break;
 					case spv::CapabilityGroupNonUniformArithmetic: capabilities.GroupNonUniformArithmetic = true; break;
@@ -895,6 +899,25 @@ void SpirvShader::ProcessInterfaceVariable(Object &object)
 	}
 }
 
+uint32_t SpirvShader::GetNumInputComponents(int32_t location) const
+{
+	ASSERT(location >= 0);
+
+	// Verify how many component(s) per input
+	// 1 to 4, for float, vec2, vec3, vec4.
+	// Note that matrices are divided over multiple inputs
+	uint32_t num_components_per_input = 0;
+	for(; num_components_per_input < 4; ++num_components_per_input)
+	{
+		if(inputs[(location << 2) | num_components_per_input].Type == ATTRIBTYPE_UNUSED)
+		{
+			break;
+		}
+	}
+
+	return num_components_per_input;
+}
+
 void SpirvShader::ProcessExecutionMode(InsnIterator insn)
 {
 	Function::ID function = insn.word(1);
@@ -913,12 +936,15 @@ void SpirvShader::ProcessExecutionMode(InsnIterator insn)
 			modes.DepthReplacing = true;
 			break;
 		case spv::ExecutionModeDepthGreater:
+			// TODO(b/177915067): Can be used to optimize depth test, currently unused.
 			modes.DepthGreater = true;
 			break;
 		case spv::ExecutionModeDepthLess:
+			// TODO(b/177915067): Can be used to optimize depth test, currently unused.
 			modes.DepthLess = true;
 			break;
 		case spv::ExecutionModeDepthUnchanged:
+			// TODO(b/177915067): Can be used to optimize depth test, currently unused.
 			modes.DepthUnchanged = true;
 			break;
 		case spv::ExecutionModeLocalSize:
@@ -2468,7 +2494,10 @@ void SpirvShader::emitEpilog(SpirvRoutine *routine) const
 				break;
 		}
 	}
+}
 
+void SpirvShader::clearPhis(SpirvRoutine *routine) const
+{
 	// Clear phis that are no longer used. This serves two purposes:
 	// (1) The phi rr::Variables are destructed, preventing pointless
 	//     materialization.

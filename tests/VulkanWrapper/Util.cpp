@@ -106,7 +106,7 @@ void transitionImageLayout(vk::Device device, vk::CommandPool commandPool, vk::Q
 	}
 	else
 	{
-		assert(!"unsupported layout transition!");
+		assert(false && "unsupported layout transition!");
 	}
 
 	commandBuffer.pipelineBarrier(sourceStage, destinationStage, vk::DependencyFlags{}, 0, nullptr, 0, nullptr, 1, &barrier);
@@ -157,7 +157,7 @@ std::vector<uint32_t> compileGLSLtoSPIRV(const char *glslSource, EShLanguage gls
 	{
 		std::string debugLog = glslangShader->getInfoDebugLog();
 		std::string infoLog = glslangShader->getInfoLog();
-		assert(false);
+		assert(false && "Failed to parse shader");
 	}
 
 	glslang::TIntermediate *intermediateRepresentation = glslangShader->getIntermediate();

@@ -22,8 +22,9 @@ set(ROOT_PROJECT_LINK_LIBRARIES
 )
 
 set(VULKAN_BENCHMARKS_SRC_FILES
+    ClearImageBenchmarks.cpp
     main.cpp
-    VulkanBenchmarks.cpp
+    TriangleBenchmarks.cpp
 )
 
 add_executable(VulkanBenchmarks
@@ -43,7 +44,7 @@ add_dependencies(VulkanBenchmarks
 )
 
 set_target_properties(VulkanBenchmarks PROPERTIES
-    FOLDER "Benchmarks"
+    FOLDER "Tests/Benchmarks"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
 
