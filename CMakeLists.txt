@@ -68,6 +68,22 @@ else()
     endif()
 endif()
 
+# Cross compiling on macOS. The cross compiling architecture should override
+# auto-detected system architecture settings.
+if(CMAKE_OSX_ARCHITECTURES)
+    if(CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
+        set(ARCH "aarch64")
+    elseif(CMAKE_OSX_ARCHITECTURES MATCHES "x86_64")
+        set(ARCH "x86_64")
+    elseif(CMAKE_OSX_ARCHITECTURES MATCHES "i386")
+        set(ARCH "x86")
+    else()
+        message(FATAL_ERROR "Architecture ${CMAKE_OSX_ARCHITECTURES} is not "
+                            "supported. Only one architecture (arm64, x86_64 "
+                            "or i386) could be specified at build time.")
+    endif()
+endif()
+
 set(CMAKE_MACOSX_RPATH TRUE)
 
 if ((CMAKE_GENERATOR MATCHES "Visual Studio") AND (CMAKE_GENERATOR_TOOLSET STREQUAL ""))
@@ -227,13 +243,20 @@ function(InitSubmodule target submodule_dir)
     endif()
 endfunction()
 
+if (SWIFTSHADER_BUILD_TESTS OR SWIFTSHADER_BUILD_BENCHMARKS)
+    set(BUILD_VULKAN_WRAPPER TRUE)
+endif()
+
+if (BUILD_VULKAN_WRAPPER)
+    InitSubmodule(glslang ${THIRD_PARTY_DIR}/glslang)
+endif()
+
 if (SWIFTSHADER_BUILD_TESTS)
     InitSubmodule(gtest ${THIRD_PARTY_DIR}/googletest)
 endif()
 
 if(SWIFTSHADER_BUILD_BENCHMARKS)
     InitSubmodule(benchmark::benchmark ${THIRD_PARTY_DIR}/benchmark)
-    InitSubmodule(glslang ${THIRD_PARTY_DIR}/glslang)
 endif()
 
 if(REACTOR_EMIT_DEBUG_INFO)
@@ -976,6 +999,13 @@ if(HAVE_PVR_SUBMODULE AND SWIFTSHADER_BUILD_PVR)
     endif()
 endif()
 
+if(BUILD_VULKAN_WRAPPER)
+    if (NOT TARGET glslang)
+        add_subdirectory(${THIRD_PARTY_DIR}/glslang)
+    endif()
+    add_subdirectory(${TESTS_DIR}/VulkanWrapper) # Add VulkanWrapper target
+endif()
+
 if(SWIFTSHADER_BUILD_TESTS)
     add_subdirectory(${TESTS_DIR}/ReactorUnitTests) # Add ReactorUnitTests target
     add_subdirectory(${TESTS_DIR}/GLESUnitTests) # Add gles-unittests target
@@ -984,11 +1014,6 @@ if(SWIFTSHADER_BUILD_TESTS)
 endif()
 
 if(SWIFTSHADER_BUILD_BENCHMARKS)
-    if (NOT TARGET glslang)
-        add_subdirectory(${THIRD_PARTY_DIR}/glslang)
-    endif()
-    add_subdirectory(${TESTS_DIR}/VulkanWrapper) # Add VulkanWrapper target
-
     if (NOT TARGET benchmark::benchmark)
         set(BENCHMARK_ENABLE_TESTING FALSE CACHE BOOL FALSE FORCE)
         add_subdirectory(${THIRD_PARTY_DIR}/benchmark)
