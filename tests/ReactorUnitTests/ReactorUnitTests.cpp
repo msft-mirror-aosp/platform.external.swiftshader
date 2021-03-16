@@ -266,6 +266,8 @@ TEST(ReactorUnitTests, FunctionMembers)
 	EXPECT_EQ(result, 9);
 }
 
+// This test excercises modifying the value of a local variable through a
+// pointer to it.
 TEST(ReactorUnitTests, VariableAddress)
 {
 	FunctionT<int(int)> function;
@@ -282,6 +284,385 @@ TEST(ReactorUnitTests, VariableAddress)
 
 	int result = routine(16);
 	EXPECT_EQ(result, 20);
+}
+
+// This test exercises taking the address of a local varible at the end of a
+// loop and modifying its value through the pointer in the second iteration.
+TEST(ReactorUnitTests, LateVariableAddress)
+{
+	FunctionT<int(void)> function;
+	{
+		Pointer<Int> p = nullptr;
+		Int a = 0;
+
+		While(a == 0)
+		{
+			If(p != Pointer<Int>(nullptr))
+			{
+				*p = 1;
+			}
+
+			p = &a;
+		}
+
+		Return(a);
+	}
+
+	auto routine = function(testName().c_str());
+
+	int result = routine();
+	EXPECT_EQ(result, 1);
+}
+
+// This test checks that the value of a local variable which has been modified
+// though a pointer is correct at the point before its address is (statically)
+// obtained.
+TEST(ReactorUnitTests, LoadAfterIndirectStore)
+{
+	FunctionT<int(void)> function;
+	{
+		Pointer<Int> p = nullptr;
+		Int a = 0;
+		Int b = 0;
+
+		While(a == 0)
+		{
+			If(p != Pointer<Int>(nullptr))
+			{
+				*p = 1;
+			}
+
+			// `a` must be loaded from memory here, despite not statically knowing
+			// yet that its address will be taken below.
+			b = a + 5;
+
+			p = &a;
+		}
+
+		Return(b);
+	}
+
+	auto routine = function(testName().c_str());
+
+	int result = routine();
+	EXPECT_EQ(result, 6);
+}
+
+// This test checks that variables statically accessed after a Return statement
+// are still loaded, modified, and stored correctly.
+TEST(ReactorUnitTests, LoopAfterReturn)
+{
+	FunctionT<int(void)> function;
+	{
+		Int min = 100;
+		Int max = 200;
+
+		If(min > max)
+		{
+			Return(5);
+		}
+
+		While(min < max)
+		{
+			min++;
+		}
+
+		Return(7);
+	}
+
+	auto routine = function(testName().c_str());
+
+	int result = routine();
+	EXPECT_EQ(result, 7);
+}
+
+TEST(ReactorUnitTests, ConstantPointer)
+{
+	int c = 44;
+
+	FunctionT<int()> function;
+	{
+		Int x = *Pointer<Int>(ConstantPointer(&c));
+
+		Return(x);
+	}
+
+	auto routine = function(testName().c_str());
+
+	int result = routine();
+	EXPECT_EQ(result, 44);
+}
+
+// This test excercises the Optimizer::eliminateLoadsFollowingSingleStore() optimization pass.
+// The three load operations for `y` should get eliminated.
+TEST(ReactorUnitTests, EliminateLoadsFollowingSingleStore)
+{
+	FunctionT<int(int)> function;
+	{
+		Int x = function.Arg<0>();
+
+		Int y;
+		Int z;
+
+		// This branch materializes the variables.
+		If(x != 0)  // TODO(b/179922668): Support If(x)
+		{
+			y = x;
+			z = y + y + y;
+		}
+
+		Return(z);
+	}
+
+	Nucleus::setOptimizerCallback([](const Nucleus::OptimizerReport *report) {
+		EXPECT_EQ(report->allocas, 2);
+		EXPECT_EQ(report->loads, 2);
+		EXPECT_EQ(report->stores, 2);
+	});
+
+	auto routine = function(testName().c_str());
+
+	int result = routine(11);
+	EXPECT_EQ(result, 33);
+}
+
+// This test excercises the Optimizer::propagateAlloca() optimization pass.
+// The pointer variable should not get stored to / loaded from memory.
+TEST(ReactorUnitTests, PropagateAlloca)
+{
+	FunctionT<int(int)> function;
+	{
+		Int b = function.Arg<0>();
+
+		Int a = 22;
+		Pointer<Int> p;
+
+		// This branch materializes both `a` and `p`, and ensures single basic block
+		// optimizations don't also eliminate the pointer store and load.
+		If(b != 0)  // TODO(b/179922668): Support If(b)
+		{
+			p = &a;
+		}
+
+		Return(Int(*p));  // TODO(b/179694472): Support Return(*p)
+	}
+
+	Nucleus::setOptimizerCallback([](const Nucleus::OptimizerReport *report) {
+		EXPECT_EQ(report->allocas, 1);
+		EXPECT_EQ(report->loads, 1);
+		EXPECT_EQ(report->stores, 1);
+	});
+
+	auto routine = function(testName().c_str());
+
+	int result = routine(true);
+	EXPECT_EQ(result, 22);
+}
+
+// Corner case for Optimizer::propagateAlloca(). It should not replace loading of `p`
+// with the addres of `a`, since it also got the address of `b` assigned.
+TEST(ReactorUnitTests, PointerToPointer)
+{
+	FunctionT<int()> function;
+	{
+		Int a = 444;
+		Int b = 555;
+
+		Pointer<Int> p = &a;
+		Pointer<Pointer<Int>> pp = &p;
+		p = &b;
+
+		Return(Int(*Pointer<Int>(*pp)));  // TODO(b/179694472): Support **pp
+	}
+
+	auto routine = function(testName().c_str());
+
+	int result = routine();
+	EXPECT_EQ(result, 555);
+}
+
+// Corner case for Optimizer::propagateAlloca(). It should not replace loading of `p[i]`
+// with any of the addresses of the `a`, `b`, or `c`.
+TEST(ReactorUnitTests, ArrayOfPointersToLocals)
+{
+	FunctionT<int(int)> function;
+	{
+		Int i = function.Arg<0>();
+
+		Int a = 111;
+		Int b = 222;
+		Int c = 333;
+
+		Array<Pointer<Int>, 3> p;
+		p[0] = &a;
+		p[1] = &b;
+		p[2] = &c;
+
+		Return(Int(*Pointer<Int>(p[i])));  // TODO(b/179694472): Support *p[i]
+	}
+
+	auto routine = function(testName().c_str());
+
+	int result = routine(1);
+	EXPECT_EQ(result, 222);
+}
+
+TEST(ReactorUnitTests, ModifyLocalThroughPointer)
+{
+	FunctionT<int(void)> function;
+	{
+		Int a = 1;
+
+		Pointer<Int> p = &a;
+		Pointer<Pointer<Int>> pp = &p;
+
+		Pointer<Int> q = *pp;
+		*q = 3;
+
+		Return(a);
+	}
+
+	auto routine = function(testName().c_str());
+
+	int result = routine();
+	EXPECT_EQ(result, 3);
+}
+
+TEST(ReactorUnitTests, ScalarReplacementOfArray)
+{
+	FunctionT<int(void)> function;
+	{
+		Array<Int, 2> a;
+		a[0] = 1;
+		a[1] = 2;
+
+		Return(a[0] + a[1]);
+	}
+
+	auto routine = function(testName().c_str());
+
+	int result = routine();
+	EXPECT_EQ(result, 3);
+}
+
+TEST(ReactorUnitTests, CArray)
+{
+	FunctionT<int(void)> function;
+	{
+		Int a[2];
+		a[0] = 1;
+		a[1] = 2;
+
+		auto x = a[0];
+		a[0] = a[1];
+		a[1] = x;
+
+		Return(a[0] + a[1]);
+	}
+
+	auto routine = function(testName().c_str());
+
+	int result = routine();
+	EXPECT_EQ(result, 3);
+}
+
+// SRoA should replace the array elements with scalars, which in turn enables
+// eliminating all loads and stores.
+TEST(ReactorUnitTests, ReactorArray)
+{
+	FunctionT<int(void)> function;
+	{
+		Array<Int, 2> a;
+		a[0] = 1;
+		a[1] = 2;
+
+		Int x = a[0];
+		a[0] = a[1];
+		a[1] = x;
+
+		Return(a[0] + a[1]);
+	}
+
+	Nucleus::setOptimizerCallback([](const Nucleus::OptimizerReport *report) {
+		EXPECT_EQ(report->allocas, 0);
+		EXPECT_EQ(report->loads, 0);
+		EXPECT_EQ(report->stores, 0);
+	});
+
+	auto routine = function(testName().c_str());
+
+	int result = routine();
+	EXPECT_EQ(result, 3);
+}
+
+// Excercises the optimizeSingleBasicBlockLoadsStores optimization pass.
+TEST(ReactorUnitTests, StoresInMultipleBlocks)
+{
+	FunctionT<int(int)> function;
+	{
+		Int b = function.Arg<0>();
+
+		Int a = 13;
+
+		If(b != 0)  // TODO(b/179922668): Support If(b)
+		{
+			a = 4;
+			a = a + 3;
+		}
+		Else
+		{
+			a = 6;
+			a = a + 5;
+		}
+
+		Return(a);
+	}
+
+	Nucleus::setOptimizerCallback([](const Nucleus::OptimizerReport *report) {
+		EXPECT_EQ(report->allocas, 1);
+		EXPECT_EQ(report->loads, 1);
+		EXPECT_EQ(report->stores, 3);
+	});
+
+	auto routine = function(testName().c_str());
+
+	int result = routine(true);
+	EXPECT_EQ(result, 7);
+}
+
+// This is similar to the LoadAfterIndirectStore test except that the indirect
+// store is preceded by a direct store. The subsequent load should not be replaced
+// by the value written by the direct store.
+TEST(ReactorUnitTests, StoreBeforeIndirectStore)
+{
+	FunctionT<int(int)> function;
+	{
+		//Int b = function.Arg<0>();
+
+		Int b;
+		Pointer<Int> p = &b;
+		Int a = 13;
+
+		For(Int i = 0, i < 2, i++)
+		{
+			a = 10;
+
+			*p = 4;
+
+			// This load of `a` should not be replaced by the 10 written above, since
+			// in the second iteration `p` points to `a` and writes 4.
+			b = a;
+
+			p = &a;
+		}
+
+		Return(b);
+	}
+
+	auto routine = function(testName().c_str());
+
+	int result = routine(true);
+	EXPECT_EQ(result, 4);
 }
 
 TEST(ReactorUnitTests, SubVectorLoadStore)
