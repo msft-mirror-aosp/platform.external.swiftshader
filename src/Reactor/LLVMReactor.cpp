@@ -665,9 +665,7 @@ BasicBlock *Nucleus::getInsertBlock()
 
 void Nucleus::setInsertBlock(BasicBlock *basicBlock)
 {
-	//	assert(jit->builder->GetInsertBlock()->back().isTerminator());
-
-	Variable::materializeAll();
+	// assert(jit->builder->GetInsertBlock()->back().isTerminator());
 
 	jit->builder->SetInsertPoint(B(basicBlock));
 }
@@ -903,13 +901,13 @@ Value *Nucleus::createLoad(Value *ptr, Type *type, bool isVolatile, unsigned int
 
 			if(!atomic)
 			{
-				return V(jit->builder->CreateAlignedLoad(V(ptr), alignment, isVolatile));
+				return V(jit->builder->CreateAlignedLoad(V(ptr), llvm::MaybeAlign(alignment), isVolatile));
 			}
 			else if(elTy->isIntegerTy() || elTy->isPointerTy())
 			{
 				// Integers and pointers can be atomically loaded by setting
 				// the ordering constraint on the load instruction.
-				auto load = jit->builder->CreateAlignedLoad(V(ptr), alignment, isVolatile);
+				auto load = jit->builder->CreateAlignedLoad(V(ptr), llvm::MaybeAlign(alignment), isVolatile);
 				load->setAtomic(atomicOrdering(atomic, memoryOrder));
 				return V(load);
 			}
@@ -921,7 +919,7 @@ Value *Nucleus::createLoad(Value *ptr, Type *type, bool isVolatile, unsigned int
 				auto size = jit->module->getDataLayout().getTypeStoreSize(elTy);
 				auto elAsIntTy = llvm::IntegerType::get(*jit->context, size * 8);
 				auto ptrCast = jit->builder->CreatePointerCast(V(ptr), elAsIntTy->getPointerTo());
-				auto load = jit->builder->CreateAlignedLoad(ptrCast, alignment, isVolatile);
+				auto load = jit->builder->CreateAlignedLoad(ptrCast, llvm::MaybeAlign(alignment), isVolatile);
 				load->setAtomic(atomicOrdering(atomic, memoryOrder));
 				auto loadCast = jit->builder->CreateBitCast(load, elTy);
 				return V(loadCast);
@@ -985,7 +983,7 @@ Value *Nucleus::createStore(Value *value, Value *ptr, Type *type, bool isVolatil
 			auto elTy = T(type);
 			ASSERT(V(ptr)->getType()->getContainedType(0) == elTy);
 
-			if(__has_feature(memory_sanitizer))
+			if(__has_feature(memory_sanitizer) && !REACTOR_ENABLE_MEMORY_SANITIZER_INSTRUMENTATION)
 			{
 				// Mark all memory writes as initialized by calling __msan_unpoison
 				// void __msan_unpoison(const volatile void *a, size_t size)
@@ -1003,13 +1001,13 @@ Value *Nucleus::createStore(Value *value, Value *ptr, Type *type, bool isVolatil
 
 			if(!atomic)
 			{
-				jit->builder->CreateAlignedStore(V(value), V(ptr), alignment, isVolatile);
+				jit->builder->CreateAlignedStore(V(value), V(ptr), llvm::MaybeAlign(alignment), isVolatile);
 			}
 			else if(elTy->isIntegerTy() || elTy->isPointerTy())
 			{
 				// Integers and pointers can be atomically stored by setting
 				// the ordering constraint on the store instruction.
-				auto store = jit->builder->CreateAlignedStore(V(value), V(ptr), alignment, isVolatile);
+				auto store = jit->builder->CreateAlignedStore(V(value), V(ptr), llvm::MaybeAlign(alignment), isVolatile);
 				store->setAtomic(atomicOrdering(atomic, memoryOrder));
 			}
 			else if(elTy->isFloatTy() || elTy->isDoubleTy())
@@ -1021,7 +1019,7 @@ Value *Nucleus::createStore(Value *value, Value *ptr, Type *type, bool isVolatil
 				auto elAsIntTy = llvm::IntegerType::get(*jit->context, size * 8);
 				auto valCast = jit->builder->CreateBitCast(V(value), elAsIntTy);
 				auto ptrCast = jit->builder->CreatePointerCast(V(ptr), elAsIntTy->getPointerTo());
-				auto store = jit->builder->CreateAlignedStore(valCast, ptrCast, alignment, isVolatile);
+				auto store = jit->builder->CreateAlignedStore(valCast, ptrCast, llvm::MaybeAlign(alignment), isVolatile);
 				store->setAtomic(atomicOrdering(atomic, memoryOrder));
 			}
 			else
@@ -1091,7 +1089,7 @@ void Nucleus::createMaskedStore(Value *ptr, Value *val, Value *mask, unsigned in
 	auto func = llvm::Intrinsic::getDeclaration(jit->module.get(), llvm::Intrinsic::masked_store, { elVecTy, elVecPtrTy });
 	jit->builder->CreateCall(func, { V(val), V(ptr), align, i1Mask });
 
-	if(__has_feature(memory_sanitizer))
+	if(__has_feature(memory_sanitizer) && !REACTOR_ENABLE_MEMORY_SANITIZER_INSTRUMENTATION)
 	{
 		// Mark memory writes as initialized by calling __msan_unpoison
 		// void __msan_unpoison(const volatile void *a, size_t size)
@@ -1299,61 +1297,101 @@ Value *Nucleus::createGEP(Value *ptr, Type *type, Value *index, bool unsignedInd
 Value *Nucleus::createAtomicAdd(Value *ptr, Value *value, std::memory_order memoryOrder)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Add, V(ptr), V(value), atomicOrdering(true, memoryOrder)));
+	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Add, V(ptr), V(value),
+#if LLVM_VERSION_MAJOR >= 11
+	                                       llvm::MaybeAlign(),
+#endif
+	                                       atomicOrdering(true, memoryOrder)));
 }
 
 Value *Nucleus::createAtomicSub(Value *ptr, Value *value, std::memory_order memoryOrder)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Sub, V(ptr), V(value), atomicOrdering(true, memoryOrder)));
+	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Sub, V(ptr), V(value),
+#if LLVM_VERSION_MAJOR >= 11
+	                                       llvm::MaybeAlign(),
+#endif
+	                                       atomicOrdering(true, memoryOrder)));
 }
 
 Value *Nucleus::createAtomicAnd(Value *ptr, Value *value, std::memory_order memoryOrder)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::And, V(ptr), V(value), atomicOrdering(true, memoryOrder)));
+	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::And, V(ptr), V(value),
+#if LLVM_VERSION_MAJOR >= 11
+	                                       llvm::MaybeAlign(),
+#endif
+	                                       atomicOrdering(true, memoryOrder)));
 }
 
 Value *Nucleus::createAtomicOr(Value *ptr, Value *value, std::memory_order memoryOrder)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Or, V(ptr), V(value), atomicOrdering(true, memoryOrder)));
+	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Or, V(ptr), V(value),
+#if LLVM_VERSION_MAJOR >= 11
+	                                       llvm::MaybeAlign(),
+#endif
+	                                       atomicOrdering(true, memoryOrder)));
 }
 
 Value *Nucleus::createAtomicXor(Value *ptr, Value *value, std::memory_order memoryOrder)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Xor, V(ptr), V(value), atomicOrdering(true, memoryOrder)));
+	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Xor, V(ptr), V(value),
+#if LLVM_VERSION_MAJOR >= 11
+	                                       llvm::MaybeAlign(),
+#endif
+	                                       atomicOrdering(true, memoryOrder)));
 }
 
 Value *Nucleus::createAtomicMin(Value *ptr, Value *value, std::memory_order memoryOrder)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Min, V(ptr), V(value), atomicOrdering(true, memoryOrder)));
+	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Min, V(ptr), V(value),
+#if LLVM_VERSION_MAJOR >= 11
+	                                       llvm::MaybeAlign(),
+#endif
+	                                       atomicOrdering(true, memoryOrder)));
 }
 
 Value *Nucleus::createAtomicMax(Value *ptr, Value *value, std::memory_order memoryOrder)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Max, V(ptr), V(value), atomicOrdering(true, memoryOrder)));
+	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Max, V(ptr), V(value),
+#if LLVM_VERSION_MAJOR >= 11
+	                                       llvm::MaybeAlign(),
+#endif
+	                                       atomicOrdering(true, memoryOrder)));
 }
 
 Value *Nucleus::createAtomicUMin(Value *ptr, Value *value, std::memory_order memoryOrder)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::UMin, V(ptr), V(value), atomicOrdering(true, memoryOrder)));
+	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::UMin, V(ptr), V(value),
+#if LLVM_VERSION_MAJOR >= 11
+	                                       llvm::MaybeAlign(),
+#endif
+	                                       atomicOrdering(true, memoryOrder)));
 }
 
 Value *Nucleus::createAtomicUMax(Value *ptr, Value *value, std::memory_order memoryOrder)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::UMax, V(ptr), V(value), atomicOrdering(true, memoryOrder)));
+	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::UMax, V(ptr), V(value),
+#if LLVM_VERSION_MAJOR >= 11
+	                                       llvm::MaybeAlign(),
+#endif
+	                                       atomicOrdering(true, memoryOrder)));
 }
 
 Value *Nucleus::createAtomicExchange(Value *ptr, Value *value, std::memory_order memoryOrder)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Xchg, V(ptr), V(value), atomicOrdering(true, memoryOrder)));
+	return V(jit->builder->CreateAtomicRMW(llvm::AtomicRMWInst::Xchg, V(ptr), V(value),
+#if LLVM_VERSION_MAJOR >= 11
+	                                       llvm::MaybeAlign(),
+#endif
+	                                       atomicOrdering(true, memoryOrder)));
 }
 
 Value *Nucleus::createAtomicCompareExchange(Value *ptr, Value *value, Value *compare, std::memory_order memoryOrderEqual, std::memory_order memoryOrderUnequal)
@@ -1361,7 +1399,12 @@ Value *Nucleus::createAtomicCompareExchange(Value *ptr, Value *value, Value *com
 	RR_DEBUG_INFO_UPDATE_LOC();
 	// Note: AtomicCmpXchgInstruction returns a 2-member struct containing {result, success-flag}, not the result directly.
 	return V(jit->builder->CreateExtractValue(
-	    jit->builder->CreateAtomicCmpXchg(V(ptr), V(compare), V(value), atomicOrdering(true, memoryOrderEqual), atomicOrdering(true, memoryOrderUnequal)),
+	    jit->builder->CreateAtomicCmpXchg(V(ptr), V(compare), V(value),
+#if LLVM_VERSION_MAJOR >= 11
+	                                      llvm::MaybeAlign(),
+#endif
+	                                      atomicOrdering(true, memoryOrderEqual),
+	                                      atomicOrdering(true, memoryOrderUnequal)),
 	    llvm::ArrayRef<unsigned>(0u)));
 }
 
@@ -1435,12 +1478,6 @@ Value *Nucleus::createBitCast(Value *v, Type *destType)
 	}
 
 	return V(jit->builder->CreateBitCast(V(v), T(destType)));
-}
-
-Value *Nucleus::createPtrEQ(Value *lhs, Value *rhs)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return V(jit->builder->CreateICmpEQ(V(lhs), V(rhs)));
 }
 
 Value *Nucleus::createICmpEQ(Value *lhs, Value *rhs)
@@ -1785,6 +1822,12 @@ Value *Nucleus::createConstantString(const char *v)
 	// NOTE: Do not call RR_DEBUG_INFO_UPDATE_LOC() here to avoid recursion when called from rr::Printv
 	auto ptr = jit->builder->CreateGlobalStringPtr(v);
 	return V(ptr);
+}
+
+void Nucleus::setOptimizerCallback(OptimizerCallback *callback)
+{
+	// The LLVM backend does not produce optimizer reports.
+	(void)callback;
 }
 
 Type *Void::type()
