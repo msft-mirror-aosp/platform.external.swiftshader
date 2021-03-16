@@ -2504,7 +2504,13 @@ RValue<Pointer<Byte>> operator-=(Pointer<Byte> &lhs, RValue<UInt> offset);
 template<typename T>
 RValue<Bool> operator==(const Pointer<T> &lhs, const Pointer<T> &rhs)
 {
-	return RValue<Bool>(Nucleus::createPtrEQ(lhs.loadValue(), rhs.loadValue()));
+	return RValue<Bool>(Nucleus::createICmpEQ(lhs.loadValue(), rhs.loadValue()));
+}
+
+template<typename T>
+RValue<Bool> operator!=(const Pointer<T> &lhs, const Pointer<T> &rhs)
+{
+	return RValue<Bool>(Nucleus::createICmpNE(lhs.loadValue(), rhs.loadValue()));
 }
 
 template<typename T>
@@ -3504,25 +3510,18 @@ class IfElseData
 {
 public:
 	IfElseData(RValue<Bool> cmp)
-	    : iteration(0)
 	{
-		condition = cmp.value();
-
-		beginBB = Nucleus::getInsertBlock();
 		trueBB = Nucleus::createBasicBlock();
-		falseBB = nullptr;
-		endBB = Nucleus::createBasicBlock();
+		falseBB = Nucleus::createBasicBlock();
+		endBB = falseBB;  // Until we encounter an Else statement, these are the same.
 
+		Nucleus::createCondBr(cmp.value(), trueBB, falseBB);
 		Nucleus::setInsertBlock(trueBB);
 	}
 
 	~IfElseData()
 	{
 		Nucleus::createBr(endBB);
-
-		Nucleus::setInsertBlock(beginBB);
-		Nucleus::createCondBr(condition, trueBB, falseBB ? falseBB : endBB);
-
 		Nucleus::setInsertBlock(endBB);
 	}
 
@@ -3540,19 +3539,17 @@ public:
 
 	void elseClause()
 	{
+		endBB = Nucleus::createBasicBlock();
 		Nucleus::createBr(endBB);
 
-		falseBB = Nucleus::createBasicBlock();
 		Nucleus::setInsertBlock(falseBB);
 	}
 
 private:
-	Value *condition;
-	BasicBlock *beginBB;
-	BasicBlock *trueBB;
-	BasicBlock *falseBB;
-	BasicBlock *endBB;
-	int iteration;
+	BasicBlock *trueBB = nullptr;
+	BasicBlock *falseBB = nullptr;
+	BasicBlock *endBB = nullptr;
+	int iteration = 0;
 };
 
 #define For(init, cond, inc)                        \
