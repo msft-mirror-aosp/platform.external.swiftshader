@@ -482,11 +482,11 @@ const VkPhysicalDeviceLimits &PhysicalDevice::getLimits()
 		sw::MAX_INTERFACE_COMPONENTS,                     // maxFragmentInputComponents
 		sw::RENDERTARGETS,                                // maxFragmentOutputAttachments
 		1,                                                // maxFragmentDualSrcAttachments
-		4,                                                // maxFragmentCombinedOutputResources
+		28,                                               // maxFragmentCombinedOutputResources
 		16384,                                            // maxComputeSharedMemorySize
 		{ 65535, 65535, 65535 },                          // maxComputeWorkGroupCount[3]
-		128,                                              // maxComputeWorkGroupInvocations
-		{ 128, 128, 64 },                                 // maxComputeWorkGroupSize[3]
+		256,                                              // maxComputeWorkGroupInvocations
+		{ 256, 256, 64 },                                 // maxComputeWorkGroupSize[3]
 		vk::SUBPIXEL_PRECISION_BITS,                      // subPixelPrecisionBits
 		4,                                                // subTexelPrecisionBits
 		4,                                                // mipmapPrecisionBits
