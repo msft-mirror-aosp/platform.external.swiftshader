@@ -17,7 +17,7 @@
 #include "IceDefs.h"
 #include "IceTargetLoweringX8664Traits.h"
 
-#if defined(SUBZERO_USE_MICROSOFT_ABI)
+#if defined(_WIN64)
 extern "C" void __chkstk();
 #endif
 
@@ -708,14 +708,7 @@ Inst *TargetX8664::emitCallToTarget(Operand *CallTarget, Variable *ReturnReg,
 
     Context.insert(ReturnAddress);
   } else {
-    if (CallTargetR != nullptr && CallTarget->getType() == IceType_i32) {
-      // x86-64 in PNaCl is ILP32. Therefore, CallTarget is i32, but the
-      // emitted call needs an i64 register (for textual asm.)
-      Variable *T = makeReg(IceType_i64);
-      _movzx(T, CallTargetR);
-      CallTarget = T;
-
-    } else if (CallTarget->getType() == IceType_i64) {
+    if (CallTarget->getType() == IceType_i64) {
       // x86-64 does not support 64-bit direct calls, so write the value to a
       // register and make an indirect call for Constant call targets.
       RegNumT TargetReg = {};
@@ -723,7 +716,7 @@ Inst *TargetX8664::emitCallToTarget(Operand *CallTarget, Variable *ReturnReg,
       // System V: force r11 when calling a variadic function so that rax isn't
       // used, since rax stores the number of FP args (see NumVariadicFpArgs
       // usage below).
-#if !defined(SUBZERO_USE_MICROSOFT_ABI)
+#if !defined(_WIN64)
       if (NumVariadicFpArgs > 0)
         TargetReg = Traits::RegisterSet::Reg_r11;
 #endif
@@ -739,7 +732,7 @@ Inst *TargetX8664::emitCallToTarget(Operand *CallTarget, Variable *ReturnReg,
     }
 
     // System V: store number of FP args in RAX for variadic calls
-#if !defined(SUBZERO_USE_MICROSOFT_ABI)
+#if !defined(_WIN64)
     if (NumVariadicFpArgs > 0) {
       // Store number of FP args (stored in XMM registers) in RAX for variadic
       // calls
@@ -790,7 +783,7 @@ void TargetX8664::emitSandboxedReturn() {
 }
 
 void TargetX8664::emitStackProbe(size_t StackSizeBytes) {
-#if defined(SUBZERO_USE_MICROSOFT_ABI)
+#if defined(_WIN64)
   // Mirroring the behavior of MSVC here, which emits a _chkstk when locals are
   // >= 4KB, rather than the 8KB claimed by the docs.
   if (StackSizeBytes >= 4096) {
