@@ -424,10 +424,15 @@ else()
         "-Wreorder"
         "-Wsign-compare"
         "-Wmissing-braces"
-        "-Wdeprecated-copy"  # implicit copy constructor for 'X' is deprecated because of user-declared copy assignment operator.
     )
 
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 9)
+            list(APPEND SWIFTSHADER_COMPILE_OPTIONS
+                "-Wdeprecated-copy"  # implicit copy constructor for 'X' is deprecated because of user-declared copy assignment operator.
+            )  
+        endif()
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         list(APPEND SWIFTSHADER_COMPILE_OPTIONS
             "-Wextra"
             "-Wunreachable-code-loop-increment"
@@ -435,6 +440,7 @@ else()
             "-Wstring-conversion"
             "-Wextra-semi"
             "-Wignored-qualifiers"
+            "-Wdeprecated-copy"  # implicit copy constructor for 'X' is deprecated because of user-declared copy assignment operator.
         )
     endif()
 
@@ -468,7 +474,6 @@ else()
             "-Wno-unneeded-internal-declaration"  # function 'X' is not needed and will not be emitted
             "-Wno-unused-private-field"           # private field 'offset' is not used - TODO: Consider enabling this once Vulkan is further implemented.
             "-Wno-comment"                        # multi-line comment
-            "-Wno-undefined-var-template"         # instantiation of variable 'X' required here, but no definition is available
             "-Wno-extra-semi"                     # extra ';' after member function definition
             "-Wno-unused-parameter"               # unused parameter 'X'
 
