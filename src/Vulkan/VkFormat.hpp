@@ -55,8 +55,8 @@ public:
 	bool isUnsignedComponent(int component) const;
 
 	int bytes() const;
-	int pitchB(int width, int border, bool target) const;
-	int sliceB(int width, int height, int border, bool target) const;
+	int pitchB(int width, int border, bool external) const;
+	int sliceB(int width, int height, int border, bool external) const;
 
 	sw::float4 getScale() const;
 
@@ -70,10 +70,11 @@ public:
 	bool isRGBComponent(int component) const;
 
 	static uint8_t mapTo8bit(VkFormat format);
+	static VkFormat mapFrom8bit(uint8_t format);
 
 private:
 	VkFormat compatibleFormat() const;
-	int sliceBUnpadded(int width, int height, int border, bool target) const;
+	int sliceBUnpadded(int width, int height, int border, bool external) const;
 
 	VkFormat format = VK_FORMAT_UNDEFINED;
 };

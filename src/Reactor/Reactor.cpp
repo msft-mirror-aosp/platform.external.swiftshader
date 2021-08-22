@@ -36,12 +36,8 @@
 
 namespace rr {
 
-const Config::Edit Config::Edit::None = {};
-
 Config Config::Edit::apply(const Config &cfg) const
 {
-	if(this == &None) { return cfg; }
-
 	auto level = optLevelChanged ? optLevel : cfg.optimization.getLevel();
 	auto passes = cfg.optimization.getPasses();
 	apply(optPassEdits, passes);
@@ -55,18 +51,18 @@ void rr::Config::Edit::apply(const std::vector<std::pair<ListEdit, T>> &edits, s
 	{
 		switch(edit.first)
 		{
-			case ListEdit::Add:
-				list.push_back(edit.second);
-				break;
-			case ListEdit::Remove:
-				list.erase(std::remove_if(list.begin(), list.end(), [&](T item) {
-					           return item == edit.second;
-				           }),
-				           list.end());
-				break;
-			case ListEdit::Clear:
-				list.clear();
-				break;
+		case ListEdit::Add:
+			list.push_back(edit.second);
+			break;
+		case ListEdit::Remove:
+			list.erase(std::remove_if(list.begin(), list.end(), [&](T item) {
+				           return item == edit.second;
+			           }),
+			           list.end());
+			break;
+		case ListEdit::Clear:
+			list.clear();
+			break;
 		}
 	}
 }
