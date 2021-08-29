@@ -44,7 +44,11 @@
 #include "VkStringify.hpp"
 #include "VkTimelineSemaphore.hpp"
 
+#include "Reactor/Nucleus.hpp"
+#include "System/CPUID.hpp"
 #include "System/Debug.hpp"
+#include "WSI/HeadlessSurfaceKHR.hpp"
+#include "WSI/VkSwapchainKHR.hpp"
 
 #if defined(VK_USE_PLATFORM_METAL_EXT) || defined(VK_USE_PLATFORM_MACOS_MVK)
 #	include "WSI/MetalSurface.hpp"
@@ -74,7 +78,10 @@
 #	include "WSI/Win32SurfaceKHR.hpp"
 #endif
 
-#include "WSI/HeadlessSurfaceKHR.hpp"
+#include "marl/mutex.h"
+#include "marl/scheduler.h"
+#include "marl/thread.h"
+#include "marl/tsa.h"
 
 #ifdef __ANDROID__
 #	include "commit.h"
@@ -86,17 +93,6 @@
 #		include "VkDeviceMemoryExternalAndroid.hpp"
 #	endif
 #endif
-
-#include "WSI/VkSwapchainKHR.hpp"
-
-#include "Reactor/Nucleus.hpp"
-
-#include "marl/mutex.h"
-#include "marl/scheduler.h"
-#include "marl/thread.h"
-#include "marl/tsa.h"
-
-#include "System/CPUID.hpp"
 
 #include <algorithm>
 #include <cinttypes>
@@ -130,15 +126,6 @@ void setReactorDefaultConfig()
 	               .add(rr::Optimization::Pass::InstructionCombining);
 
 	rr::Nucleus::adjustDefaultConfig(cfg);
-}
-
-void setCPUDefaults()
-{
-	sw::CPUID::setEnableSSE4_1(true);
-	sw::CPUID::setEnableSSSE3(true);
-	sw::CPUID::setEnableSSE3(true);
-	sw::CPUID::setEnableSSE2(true);
-	sw::CPUID::setEnableSSE(true);
 }
 
 std::shared_ptr<marl::Scheduler> getOrCreateScheduler()
@@ -176,7 +163,6 @@ void initializeLibrary()
 		logBuildVersionInformation();
 #endif  // __ANDROID__ && ENABLE_BUILD_VERSION_OUTPUT
 		setReactorDefaultConfig();
-		setCPUDefaults();
 		return true;
 	}();
 	(void)doOnce;
@@ -367,6 +353,7 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_SEPARATE_DEPTH_STENCIL_LAYOUTS_EXTENSION_NAME, VK_KHR_SEPARATE_DEPTH_STENCIL_LAYOUTS_SPEC_VERSION } },
 	{ { VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME, VK_EXT_DEPTH_CLIP_ENABLE_SPEC_VERSION } },
 	{ { VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME, VK_EXT_CUSTOM_BORDER_COLOR_SPEC_VERSION } },
+	{ { VK_EXT_LOAD_STORE_OP_NONE_EXTENSION_NAME, VK_EXT_LOAD_STORE_OP_NONE_SPEC_VERSION } },
 	// Only 1.1 core version of this is supported. The extension has additional requirements
 	//{{ VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME, VK_KHR_SHADER_DRAW_PARAMETERS_SPEC_VERSION }},
 	{ { VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_EXTENSION_NAME, VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_SPEC_VERSION } },
