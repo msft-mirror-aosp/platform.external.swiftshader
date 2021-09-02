@@ -44,7 +44,11 @@
 #include "VkStringify.hpp"
 #include "VkTimelineSemaphore.hpp"
 
+#include "Reactor/Nucleus.hpp"
+#include "System/CPUID.hpp"
 #include "System/Debug.hpp"
+#include "WSI/HeadlessSurfaceKHR.hpp"
+#include "WSI/VkSwapchainKHR.hpp"
 
 #if defined(VK_USE_PLATFORM_METAL_EXT) || defined(VK_USE_PLATFORM_MACOS_MVK)
 #	include "WSI/MetalSurface.hpp"
@@ -74,7 +78,10 @@
 #	include "WSI/Win32SurfaceKHR.hpp"
 #endif
 
-#include "WSI/HeadlessSurfaceKHR.hpp"
+#include "marl/mutex.h"
+#include "marl/scheduler.h"
+#include "marl/thread.h"
+#include "marl/tsa.h"
 
 #ifdef __ANDROID__
 #	include "commit.h"
@@ -86,17 +93,6 @@
 #		include "VkDeviceMemoryExternalAndroid.hpp"
 #	endif
 #endif
-
-#include "WSI/VkSwapchainKHR.hpp"
-
-#include "Reactor/Nucleus.hpp"
-
-#include "marl/mutex.h"
-#include "marl/scheduler.h"
-#include "marl/thread.h"
-#include "marl/tsa.h"
-
-#include "System/CPUID.hpp"
 
 #include <algorithm>
 #include <cinttypes>
@@ -357,6 +353,7 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_SEPARATE_DEPTH_STENCIL_LAYOUTS_EXTENSION_NAME, VK_KHR_SEPARATE_DEPTH_STENCIL_LAYOUTS_SPEC_VERSION } },
 	{ { VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME, VK_EXT_DEPTH_CLIP_ENABLE_SPEC_VERSION } },
 	{ { VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME, VK_EXT_CUSTOM_BORDER_COLOR_SPEC_VERSION } },
+	{ { VK_EXT_LOAD_STORE_OP_NONE_EXTENSION_NAME, VK_EXT_LOAD_STORE_OP_NONE_SPEC_VERSION } },
 	// Only 1.1 core version of this is supported. The extension has additional requirements
 	//{{ VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME, VK_KHR_SHADER_DRAW_PARAMETERS_SPEC_VERSION }},
 	{ { VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_EXTENSION_NAME, VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_SPEC_VERSION } },
@@ -3295,8 +3292,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties2(VkPhysi
 		{
 		case VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO_KHR:
 			{
-				// Explicitly ignored, since VK_KHR_image_format_list is not supported
-				ASSERT(!hasDeviceExtension(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME));
+				// Per the Vulkan spec on VkImageFormatListcreateInfo:
+				//     "If the pNext chain of VkImageCreateInfo includes a
+				//      VkImageFormatListCreateInfo structure, then that
+				//      structure contains a list of all formats that can be
+				//      used when creating views of this image"
+				// This limitation does not affect SwiftShader's behavior and
+				// the Vulkan Validation Layers can detect Views created with a
+				// format which is not included in that list.
 			}
 			break;
 		case VK_STRUCTURE_TYPE_IMAGE_STENCIL_USAGE_CREATE_INFO:
