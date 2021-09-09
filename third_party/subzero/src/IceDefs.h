@@ -302,7 +302,6 @@ enum { MaxCacheLineSize = 64 };
   __attribute__((aligned(MaxCacheLineSize + 0))) int : 0
 #endif // !defined(_MSC_VER)
 
-/// PNaCl is ILP32, so theoretically we should only need 32-bit offsets.
 using RelocOffsetT = int32_t;
 enum { RelocAddrSize = 4 };
 
@@ -345,11 +344,10 @@ enum VerboseItem {
   IceV_LinearScan = 1 << 7,
   IceV_Frame = 1 << 8,
   IceV_AddrOpt = 1 << 9,
-  IceV_Random = 1 << 10,
-  IceV_Folding = 1 << 11,
-  IceV_RMW = 1 << 12,
-  IceV_Loop = 1 << 13,
-  IceV_Mem = 1 << 14,
+  IceV_Folding = 1 << 10,
+  IceV_RMW = 1 << 11,
+  IceV_Loop = 1 << 12,
+  IceV_Mem = 1 << 13,
   // Leave some extra space to make it easier to add new per-pass items.
   IceV_NO_PER_PASS_DUMP_BEYOND = 1 << 19,
   // Items greater than IceV_NO_PER_PASS_DUMP_BEYOND don't by themselves trigger
@@ -370,11 +368,6 @@ enum FileType {
   FT_Elf, /// ELF .o file
   FT_Asm, /// Assembly .s file
   FT_Iasm /// "Integrated assembler" .byte-style .s file
-};
-
-enum ABI {
-  ABI_PNaCl,   /// x32 for unsandboxed 64-bit x86
-  ABI_Platform /// Native executable ABI
 };
 
 using Ostream = llvm::raw_ostream;
@@ -445,21 +438,6 @@ template <typename T>
 llvm::iterator_range<typename T::reverse_iterator> reverse_range(T &Container) {
   return llvm::make_range(Container.rbegin(), Container.rend());
 }
-
-/// Options for pooling and randomization of immediates.
-enum RandomizeAndPoolImmediatesEnum { RPI_None, RPI_Randomize, RPI_Pool };
-
-/// Salts for Random number generator for different randomization passes.
-enum RandomizationPassesEnum {
-  RPE_BasicBlockReordering,
-  RPE_ConstantBlinding,
-  RPE_FunctionReordering,
-  RPE_GlobalVariableReordering,
-  RPE_NopInsertion,
-  RPE_PooledConstantReordering,
-  RPE_RegAllocRandomization,
-  RPE_num
-};
 
 using RelocOffsetArray = llvm::SmallVector<class RelocOffset *, 4>;
 

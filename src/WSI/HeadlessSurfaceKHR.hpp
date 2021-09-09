@@ -27,11 +27,11 @@ public:
 	static size_t ComputeRequiredAllocationSize(const VkHeadlessSurfaceCreateInfoEXT *pCreateInfo);
 
 	void destroySurface(const VkAllocationCallbacks *pAllocator) override;
-	void getSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities) const override;
+	VkResult getSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities) const override;
 	void attachImage(PresentImage *image) override;
 	void detachImage(PresentImage *image) override;
 	VkResult present(PresentImage *image) override;
 };
 
 }  // namespace vk
-#endif  //SWIFTSHADER_HEADLESSSURFACEKHR_HPP
+#endif  // SWIFTSHADER_HEADLESSSURFACEKHR_HPP

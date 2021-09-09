@@ -105,6 +105,12 @@ endif()
 # Host libraries
 ###########################################################
 
+include(CheckSymbolExists)
+if(LINUX)
+    check_symbol_exists(mallinfo malloc.h HAVE_MALLINFO)
+    check_symbol_exists(mallinfo2 malloc.h HAVE_MALLINFO2)
+endif()
+
 find_library(X11 X11)
 find_library(XCB xcb)
 if(SWIFTSHADER_BUILD_WSI_WAYLAND)
@@ -142,7 +148,6 @@ endfunction()
 
 option_if_not_defined(SWIFTSHADER_BUILD_EGL "Build the EGL library" TRUE)
 option_if_not_defined(SWIFTSHADER_BUILD_GLESv2 "Build the OpenGL ES 2 library" TRUE)
-option_if_not_defined(SWIFTSHADER_BUILD_GLES_CM "Build the OpenGL ES 1.1 library" TRUE)
 option_if_not_defined(SWIFTSHADER_BUILD_VULKAN "Build the Vulkan library" TRUE)
 option_if_not_defined(SWIFTSHADER_BUILD_WSI_WAYLAND "Build the Wayland WSI support" FALSE)
 option_if_not_defined(SWIFTSHADER_BUILD_WSI_DIRECTFB "Build the DirectFB WSI support" FALSE)
@@ -168,6 +173,8 @@ option_if_not_defined(REACTOR_EMIT_PRINT_LOCATION "Emit printing of location inf
 option_if_not_defined(REACTOR_EMIT_ASM_FILE "Emit asm files for JIT functions" FALSE)
 option_if_not_defined(REACTOR_ENABLE_PRINT "Enable RR_PRINT macros" FALSE)
 option_if_not_defined(REACTOR_VERIFY_LLVM_IR "Check reactor-generated LLVM IR is valid even in release builds" FALSE)
+# TODO(b/155148722): Remove when unconditionally instrumenting for all build systems.
+option_if_not_defined(REACTOR_ENABLE_MEMORY_SANITIZER_INSTRUMENTATION "Include JIT in MSAN instrumentation (LLVM backend)" TRUE)
 option_if_not_defined(SWIFTSHADER_LESS_DEBUG_INFO "Generate less debug info to reduce file size" FALSE)
 option_if_not_defined(SWIFTSHADER_ENABLE_VULKAN_DEBUGGER "Enable Vulkan debugger support" FALSE)
 option_if_not_defined(SWIFTSHADER_ENABLE_ASTC "Enable ASTC compressed textures support" TRUE)  # TODO(b/150130101)
@@ -192,10 +199,6 @@ set_property(CACHE SWIFTSHADER_LLVM_VERSION PROPERTY STRINGS "10.0")
 # Set to one of the rr::Optimization::Level enum values.
 set(REACTOR_DEFAULT_OPT_LEVEL "" CACHE STRING "Reactor default optimization level")
 set_property(CACHE REACTOR_DEFAULT_OPT_LEVEL PROPERTY STRINGS "None" "Less" "Default" "Aggressive")
-
-# Enable instrumentation of Reactor routines for MemorySanitizer builds (LLVM backend).
-# TODO(b/155148722): Remove when unconditionally instrumenting for all build systems.
-set(REACTOR_ENABLE_MEMORY_SANITIZER_INSTRUMENTATION TRUE)
 
 if(NOT DEFINED SWIFTSHADER_LOGGING_LEVEL)
     set(SWIFTSHADER_LOGGING_LEVEL "Info" CACHE STRING "SwiftShader logging level")
@@ -429,7 +432,13 @@ else()
         "-Wmissing-braces"
     )
 
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 9)
+            list(APPEND SWIFTSHADER_COMPILE_OPTIONS
+                "-Wdeprecated-copy"  # implicit copy constructor for 'X' is deprecated because of user-declared copy assignment operator.
+            )  
+        endif()
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         list(APPEND SWIFTSHADER_COMPILE_OPTIONS
             "-Wextra"
             "-Wunreachable-code-loop-increment"
@@ -437,6 +446,7 @@ else()
             "-Wstring-conversion"
             "-Wextra-semi"
             "-Wignored-qualifiers"
+            "-Wdeprecated-copy"  # implicit copy constructor for 'X' is deprecated because of user-declared copy assignment operator.
         )
     endif()
 
@@ -452,7 +462,7 @@ else()
         endif()
     endif()
 
-    # Disable pedanitc warnings
+    # Disable pedantic warnings
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
         list(APPEND SWIFTSHADER_COMPILE_OPTIONS
             "-Wno-ignored-attributes"   # ignoring attributes on template argument 'X'
@@ -470,10 +480,8 @@ else()
             "-Wno-unneeded-internal-declaration"  # function 'X' is not needed and will not be emitted
             "-Wno-unused-private-field"           # private field 'offset' is not used - TODO: Consider enabling this once Vulkan is further implemented.
             "-Wno-comment"                        # multi-line comment
-            "-Wno-undefined-var-template"         # instantiation of variable 'X' required here, but no definition is available
             "-Wno-extra-semi"                     # extra ';' after member function definition
             "-Wno-unused-parameter"               # unused parameter 'X'
-            "-Wno-deprecated-copy"                # implicit copy constructor for 'X' is deprecated because of user-declared copy assignment operator.
 
             # Silence errors caused by unknown warnings when building with older
             # versions of Clang. This demands checking that warnings added above
@@ -481,12 +489,6 @@ else()
             "-Wno-unknown-warning-option"
         )
     endif()
-
-    # Remove xor, and, or and friends from the list of keywords, they are used
-    # by Reactor
-    list(APPEND SWIFTSHADER_COMPILE_OPTIONS
-        "-fno-operator-names"
-    )
 
     if(ARCH STREQUAL "x86")
         set_cpp_flag("-m32")
@@ -786,10 +788,6 @@ endif()
 if(SWIFTSHADER_BUILD_GLESv2)
     add_subdirectory(src/OpenGL/libGLESv2) # Add libGLESv2 target
 endif()
-
-if(SWIFTSHADER_BUILD_GLES_CM)
-    add_subdirectory(src/OpenGL/libGLES_CM) # Add libGLES_CM target
-endif(SWIFTSHADER_BUILD_GLES_CM)
 
 if(SWIFTSHADER_BUILD_VULKAN)
     if (NOT TARGET SPIRV-Tools)

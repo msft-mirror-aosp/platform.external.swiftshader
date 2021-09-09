@@ -38,7 +38,6 @@ set(SUBZERO_SRC_FILES
     src/IceRangeSpec.cpp
     src/IceRegAlloc.cpp
     src/IceRevision.cpp
-    src/IceRNG.cpp
     src/IceSwitchLowering.cpp
     src/IceTargetLowering.cpp
     src/IceThreading.cpp
@@ -49,14 +48,14 @@ set(SUBZERO_SRC_FILES
 
 if(ARCH STREQUAL "x86_64")
     list(APPEND SUBZERO_SRC_FILES
-        src/IceTargetLoweringX86.cpp
+        src/IceAssemblerX8664.cpp
         src/IceInstX8664.cpp
         src/IceTargetLoweringX8664.cpp
     )
     set(SUBZERO_TARGET_CPU X8664)
 elseif(ARCH STREQUAL "x86")
     list(APPEND SUBZERO_SRC_FILES
-        src/IceTargetLoweringX86.cpp
+        src/IceAssemblerX8632.cpp
         src/IceInstX8632.cpp
         src/IceTargetLoweringX8632.cpp
     )
@@ -120,8 +119,6 @@ target_compile_definitions(subzero
         "ALLOW_MINIMAL_BUILD=0"
         "ALLOW_WASM=0"
         "ICE_THREAD_LOCAL_HACK=0"
-    PRIVATE
-        $<$<BOOL:${WIN32}>:"SUBZERO_USE_MICROSOFT_ABI">
 )
 
 target_link_libraries(subzero

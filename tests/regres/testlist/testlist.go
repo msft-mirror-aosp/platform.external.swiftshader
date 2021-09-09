@@ -50,13 +50,22 @@ type Group struct {
 
 // Load loads the test list file and appends all tests to the Group.
 func (g *Group) Load() error {
-	tests, err := ioutil.ReadFile(g.File)
+	return g.LoadFile(g.File)
+}
+
+func (g *Group) LoadFile(file string) error {
+	dir, _ := filepath.Split(file)
+	tests, err := ioutil.ReadFile(file)
 	if err != nil {
-		return cause.Wrap(err, "Couldn't read '%s'", tests)
+		return cause.Wrap(err, "Couldn't read '%s'", file)
 	}
 	for _, line := range strings.Split(string(tests), "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "#") {
+		// The test list file can contain references to other .txt files
+		// containing the individual tests.
+		if strings.HasSuffix(line, ".txt") {
+			g.LoadFile(filepath.Join(dir, line))
+		} else if line != "" && !strings.HasPrefix(line, "#") {
 			g.Tests = append(g.Tests, line)
 		}
 	}
@@ -198,6 +207,8 @@ const (
 	CompatibilityWarning = Status("COMPATIBILITY_WARNING")
 	// QualityWarning is the status passing test with a warning.
 	QualityWarning = Status("QUALITY_WARNING")
+	// InternalError is the status of a test that failed on an API usage error.
+	InternalError = Status("INTERNAL_ERROR")
 )
 
 // Statuses is the full list of status types
@@ -214,12 +225,13 @@ var Statuses = []Status{
 	NotSupported,
 	CompatibilityWarning,
 	QualityWarning,
+	InternalError,
 }
 
 // Failing returns true if the task status requires fixing.
 func (s Status) Failing() bool {
 	switch s {
-	case Fail, Timeout, Crash, Unimplemented, Unreachable, Assert, Abort:
+	case Fail, Timeout, Crash, Unimplemented, Unreachable, Assert, Abort, InternalError:
 		return true
 	case Unsupported:
 		// This may seem surprising that this should be a failure, however these

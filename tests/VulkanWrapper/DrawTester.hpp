@@ -88,7 +88,7 @@ public:
 	};
 
 	template<typename... Args>
-	Resource<Image> addImage(Args &&... args)
+	Resource<Image> addImage(Args &&...args)
 	{
 		images.emplace_back(std::make_unique<Image>(std::forward<Args>(args)...));
 		return { images.size() - 1, *images.back() };
@@ -148,7 +148,7 @@ private:
 		std::vector<vk::VertexInputAttributeDescription> inputAttributes;
 		vk::PipelineVertexInputStateCreateInfo inputState;
 
-		uint32_t numVertices;
+		uint32_t numVertices = 0;
 	} vertices;
 
 	vk::DescriptorSetLayout descriptorSetLayout;  // Owning handle
