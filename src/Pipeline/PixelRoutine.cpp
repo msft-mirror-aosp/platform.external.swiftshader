@@ -51,7 +51,7 @@ PixelRoutine::PixelRoutine(
 		}
 	}
 
-	for(int i = 0; i < RENDERTARGETS; i++)
+	for(int i = 0; i < MAX_COLOR_BUFFERS; i++)
 	{
 		outputMasks[i] = 0xF;
 	}
@@ -79,7 +79,7 @@ PixelRoutine::SampleSet PixelRoutine::getSampleSet(int invocation) const
 	return samples;
 }
 
-void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBuffer, Pointer<Byte> &sBuffer, Int cMask[4], Int &x, Int &y)
+void PixelRoutine::quad(Pointer<Byte> cBuffer[MAX_COLOR_BUFFERS], Pointer<Byte> &zBuffer, Pointer<Byte> &sBuffer, Int cMask[4], Int &x, Int &y)
 {
 	const bool earlyFragmentTests = !spirvShader || spirvShader->getExecutionModes().EarlyFragmentTests;
 
@@ -128,10 +128,6 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 				}
 
 				unclampedZ[q] = z[q];
-				if(state.depthClamp)
-				{
-					z[q] = Min(Max(z[q], Float4(state.minDepthClamp)), Float4(state.maxDepthClamp));
-				}
 			}
 		}
 
@@ -141,6 +137,7 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 		{
 			for(unsigned int q : samples)
 			{
+				z[q] = clampDepth(z[q]);
 				depthPass = depthPass || depthTest(zBuffer, q, x, z[q], sMask[q], zMask[q], cMask[q]);
 				depthBoundsTest(zBuffer, q, x, zMask[q], cMask[q]);
 			}
@@ -310,6 +307,7 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 				{
 					for(unsigned int q : samples)
 					{
+						z[q] = clampDepth(z[q]);
 						depthPass = depthPass || depthTest(zBuffer, q, x, z[q], sMask[q], zMask[q], cMask[q]);
 						depthBoundsTest(zBuffer, q, x, zMask[q], cMask[q]);
 					}
@@ -573,6 +571,16 @@ Bool PixelRoutine::depthTest16(const Pointer<Byte> &zBuffer, int q, const Int &x
 	return zMask != 0;
 }
 
+Float4 PixelRoutine::clampDepth(const Float4 &z)
+{
+	if(!state.depthClamp)
+	{
+		return z;
+	}
+
+	return Min(Max(z, Float4(state.minDepthClamp)), Float4(state.maxDepthClamp));
+}
+
 Bool PixelRoutine::depthTest(const Pointer<Byte> &zBuffer, int q, const Int &x, const Float4 &z, const Int &sMask, Int &zMask, const Int &cMask)
 {
 	if(!state.depthTestActive)
@@ -580,13 +588,16 @@ Bool PixelRoutine::depthTest(const Pointer<Byte> &zBuffer, int q, const Int &x, 
 		return true;
 	}
 
-	if(state.depthFormat == VK_FORMAT_D16_UNORM)
+	switch(state.depthFormat)
 	{
+	case VK_FORMAT_D16_UNORM:
 		return depthTest16(zBuffer, q, x, z, sMask, zMask, cMask);
-	}
-	else
-	{
+	case VK_FORMAT_D32_SFLOAT:
+	case VK_FORMAT_D32_SFLOAT_S8_UINT:
 		return depthTest32F(zBuffer, q, x, z, sMask, zMask, cMask);
+	default:
+		UNSUPPORTED("Depth format: %d", int(state.depthFormat));
+		return false;
 	}
 }
 
@@ -627,18 +638,33 @@ Int4 PixelRoutine::depthBoundsTest32F(const Pointer<Byte> &zBuffer, int q, const
 
 void PixelRoutine::depthBoundsTest(const Pointer<Byte> &zBuffer, int q, const Int &x, Int &zMask, Int &cMask)
 {
-	if(state.depthBoundsTestActive)
+	if(!state.depthBoundsTestActive)
 	{
-		Int4 zTest = (state.depthFormat == VK_FORMAT_D16_UNORM) ? depthBoundsTest16(zBuffer, q, x) : depthBoundsTest32F(zBuffer, q, x);
+		return;
+	}
 
-		if(!state.depthTestActive)
-		{
-			cMask &= zMask & SignMask(zTest);
-		}
-		else
-		{
-			zMask &= cMask & SignMask(zTest);
-		}
+	Int4 zTest;
+	switch(state.depthFormat)
+	{
+	case VK_FORMAT_D16_UNORM:
+		zTest = depthBoundsTest16(zBuffer, q, x);
+		break;
+	case VK_FORMAT_D32_SFLOAT:
+	case VK_FORMAT_D32_SFLOAT_S8_UINT:
+		zTest = depthBoundsTest32F(zBuffer, q, x);
+		break;
+	default:
+		UNSUPPORTED("Depth format: %d", int(state.depthFormat));
+		break;
+	}
+
+	if(!state.depthTestActive)
+	{
+		cMask &= zMask & SignMask(zTest);
+	}
+	else
+	{
+		zMask &= cMask & SignMask(zTest);
 	}
 }
 
@@ -723,17 +749,19 @@ void PixelRoutine::writeDepth(Pointer<Byte> &zBuffer, const Int &x, const Int zM
 
 	for(unsigned int q : samples)
 	{
-		if(state.depthFormat == VK_FORMAT_D16_UNORM)
+		switch(state.depthFormat)
 		{
+		case VK_FORMAT_D16_UNORM:
 			writeDepth16(zBuffer, q, x, z[q], zMask[q]);
-		}
-		else if(state.depthFormat == VK_FORMAT_D32_SFLOAT ||
-		        state.depthFormat == VK_FORMAT_D32_SFLOAT_S8_UINT)
-		{
+			break;
+		case VK_FORMAT_D32_SFLOAT:
+		case VK_FORMAT_D32_SFLOAT_S8_UINT:
 			writeDepth32F(zBuffer, q, x, z[q], zMask[q]);
-		}
-		else
+			break;
+		default:
 			UNSUPPORTED("Depth format: %d", int(state.depthFormat));
+			break;
+		}
 	}
 }
 
@@ -1040,7 +1068,7 @@ void PixelRoutine::blendFactorAlpha(Vector4s &blendFactor, const Vector4s &curre
 
 bool PixelRoutine::isSRGB(int index) const
 {
-	return vk::Format(state.targetFormat[index]).isSRGBformat();
+	return vk::Format(state.colorFormat[index]).isSRGBformat();
 }
 
 void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int &x, Vector4s &pixel)
@@ -1052,7 +1080,7 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 
 	Int pitchB = *Pointer<Int>(data + OFFSET(DrawData, colorPitchB[index]));
 
-	switch(state.targetFormat[index])
+	switch(state.colorFormat[index])
 	{
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 		buffer += 2 * x;
@@ -1199,7 +1227,7 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 		}
 		break;
 	default:
-		UNSUPPORTED("VkFormat %d", int(state.targetFormat[index]));
+		UNSUPPORTED("VkFormat %d", int(state.colorFormat[index]));
 	}
 
 	if(isSRGB(index))
@@ -1215,7 +1243,7 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4s 
 		return;
 	}
 
-	ASSERT(state.targetFormat[index].supportsColorAttachmentBlend());
+	ASSERT(state.colorFormat[index].supportsColorAttachmentBlend());
 
 	Vector4s pixel;
 	readPixel(index, cBuffer, x, pixel);
@@ -1336,7 +1364,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		linearToSRGB16_12_16(current);
 	}
 
-	switch(state.targetFormat[index])
+	switch(state.colorFormat[index])
 	{
 	case VK_FORMAT_B8G8R8A8_UNORM:
 	case VK_FORMAT_B8G8R8A8_SRGB:
@@ -1376,7 +1404,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 	int rgbaWriteMask = state.colorWriteActive(index) & outputMasks[index];
 	int bgraWriteMask = (rgbaWriteMask & 0x0000000A) | (rgbaWriteMask & 0x00000001) << 2 | (rgbaWriteMask & 0x00000004) >> 2;
 
-	switch(state.targetFormat[index])
+	switch(state.colorFormat[index])
 	{
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 		{
@@ -1518,7 +1546,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		}
 		break;
 	default:
-		UNSUPPORTED("VkFormat: %d", int(state.targetFormat[index]));
+		UNSUPPORTED("VkFormat: %d", int(state.colorFormat[index]));
 	}
 
 	Short4 c01 = current.z;
@@ -1543,7 +1571,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 	Pointer<Byte> buffer = cBuffer;
 	Int pitchB = *Pointer<Int>(data + OFFSET(DrawData, colorPitchB[index]));
 
-	switch(state.targetFormat[index])
+	switch(state.colorFormat[index])
 	{
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 		{
@@ -1830,7 +1858,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		}
 		break;
 	default:
-		UNSUPPORTED("VkFormat: %d", int(state.targetFormat[index]));
+		UNSUPPORTED("VkFormat: %d", int(state.colorFormat[index]));
 	}
 }
 
@@ -1977,7 +2005,7 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4f 
 		return;
 	}
 
-	vk::Format format = state.targetFormat[index];
+	vk::Format format = state.colorFormat[index];
 	ASSERT(format.supportsColorAttachmentBlend());
 
 	Pointer<Byte> buffer = cBuffer;
@@ -2003,7 +2031,7 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4f 
 		one = As<Float4>(format.isUnsignedComponent(0) ? Int4(0xFFFFFFFF) : Int4(0x7FFFFFFF));
 	}
 
-	switch(state.targetFormat[index])
+	switch(state.colorFormat[index])
 	{
 	case VK_FORMAT_R32_SINT:
 	case VK_FORMAT_R32_UINT:
@@ -2095,7 +2123,7 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4f 
 		pixel.w = one;
 		break;
 	default:
-		UNSUPPORTED("VkFormat: %d", int(state.targetFormat[index]));
+		UNSUPPORTED("VkFormat: %d", int(state.colorFormat[index]));
 	}
 
 	// Final Color = ObjectColor * SourceBlendFactor + PixelColor * DestinationBlendFactor
@@ -2202,7 +2230,7 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4f 
 
 void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int &x, Vector4f &oC, const Int &sMask, const Int &zMask, const Int &cMask)
 {
-	switch(state.targetFormat[index])
+	switch(state.colorFormat[index])
 	{
 	case VK_FORMAT_R16_SFLOAT:
 	case VK_FORMAT_R32_SFLOAT:
@@ -2242,7 +2270,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		transpose4x4(oC.x, oC.y, oC.z, oC.w);
 		break;
 	default:
-		UNSUPPORTED("VkFormat: %d", int(state.targetFormat[index]));
+		UNSUPPORTED("VkFormat: %d", int(state.colorFormat[index]));
 	}
 
 	int rgbaWriteMask = state.colorWriteActive(index) & outputMasks[index];
@@ -2264,13 +2292,13 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		xMask &= sMask;
 	}
 
-	auto targetFormat = state.targetFormat[index];
+	auto colorFormat = state.colorFormat[index];
 
 	Pointer<Byte> buffer = cBuffer;
 	Int pitchB = *Pointer<Int>(data + OFFSET(DrawData, colorPitchB[index]));
 	Float4 value;
 
-	switch(targetFormat)
+	switch(colorFormat)
 	{
 	case VK_FORMAT_R32_SFLOAT:
 	case VK_FORMAT_R32_SINT:
@@ -2348,7 +2376,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			value = As<Float4>(As<Int4>(value) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X) + xMask * 16, 16));
 			oC.x = As<Float4>(As<Int4>(oC.x) | As<Int4>(value));
 
-			if(targetFormat == VK_FORMAT_R16_SINT)
+			if(colorFormat == VK_FORMAT_R16_SINT)
 			{
 				Float component = oC.x.z;
 				*Pointer<Short>(buffer + 0) = Short(As<Int>(component));
@@ -2391,7 +2419,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			xyzw |= UInt(*Pointer<UShort>(buffer)) << 16;
 
 			Short4 tmpCol = Short4(As<Int4>(oC.x));
-			if(targetFormat == VK_FORMAT_R8_SINT)
+			if(colorFormat == VK_FORMAT_R8_SINT)
 			{
 				tmpCol = As<Short4>(PackSigned(tmpCol, tmpCol));
 			}
@@ -2523,7 +2551,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			buffer += pitchB;
 			xyzw = Insert(xyzw, *Pointer<Int>(buffer), 1);
 
-			if(targetFormat == VK_FORMAT_R8G8_SINT)
+			if(colorFormat == VK_FORMAT_R8G8_SINT)
 			{
 				packedCol = As<Int2>(PackSigned(Short4(As<Int4>(oC.x)), Short4(As<Int4>(oC.y))));
 			}
@@ -2730,7 +2758,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 
 			buffer += 4 * x;
 
-			bool isSigned = targetFormat == VK_FORMAT_R8G8B8A8_SINT || targetFormat == VK_FORMAT_A8B8G8R8_SINT_PACK32;
+			bool isSigned = colorFormat == VK_FORMAT_R8G8B8A8_SINT || colorFormat == VK_FORMAT_A8B8G8R8_SINT_PACK32;
 
 			if(isSigned)
 			{
@@ -2826,7 +2854,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		}
 		break;
 	default:
-		UNSUPPORTED("VkFormat: %d", int(targetFormat));
+		UNSUPPORTED("VkFormat: %d", int(colorFormat));
 	}
 }
 
