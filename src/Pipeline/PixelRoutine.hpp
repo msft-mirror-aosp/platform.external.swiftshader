@@ -41,7 +41,7 @@ protected:
 	Float4 w;     // Used as is
 	Float4 rhw;   // Reciprocal w
 
-	uint32_t outputMasks[RENDERTARGETS];  // TODO(b/162348737): Determine whether unwritten output should be left untouched
+	uint32_t outputMasks[MAX_COLOR_BUFFERS];  // TODO(b/162348737): Determine whether unwritten output should be left untouched
 
 	SpirvRoutine routine;
 	const vk::DescriptorSet::Bindings &descriptorSets;
@@ -73,6 +73,7 @@ private:
 	void stencilTest(Byte8 &value, VkCompareOp stencilCompareMode, bool isBack);
 	void stencilOperation(Byte8 &newValue, const Byte8 &bufferValue, const PixelProcessor::States::StencilOpState &ops, bool isBack, const Int &zMask, const Int &sMask);
 	void stencilOperation(Byte8 &output, const Byte8 &bufferValue, VkStencilOp operation, bool isBack);
+	Float4 clampDepth(const Float4 &z);
 	Bool depthTest(const Pointer<Byte> &zBuffer, int q, const Int &x, const Float4 &z, const Int &sMask, Int &zMask, const Int &cMask);
 	void depthBoundsTest(const Pointer<Byte> &zBuffer, int q, const Int &x, Int &zMask, Int &cMask);
 

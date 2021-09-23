@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "VkDeviceMemory.hpp"
+
 #include "System/Debug.hpp"
 #include "System/Linux/MemFd.hpp"
 
@@ -19,19 +21,20 @@
 #include <string.h>
 #include <sys/mman.h>
 
-class OpaqueFdExternalMemory : public vk::DeviceMemory::ExternalBase
+class OpaqueFdExternalMemory : public vk::DeviceMemory, public vk::ObjectBase<OpaqueFdExternalMemory, VkDeviceMemory>
 {
 public:
 	static const VkExternalMemoryHandleTypeFlagBits typeFlagBit = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
 
-	static bool SupportsAllocateInfo(const VkMemoryAllocateInfo *pAllocateInfo)
+	static bool SupportsAllocateInfo(const vk::DeviceMemory::ExtendedAllocationInfo &extendedAllocationInfo)
 	{
-		OpaqueFdAllocateInfo info(pAllocateInfo);
+		OpaqueFdAllocateInfo info(extendedAllocationInfo);
 		return info.importFd || info.exportFd;
 	}
 
-	explicit OpaqueFdExternalMemory(const VkMemoryAllocateInfo *pAllocateInfo)
-	    : allocateInfo(pAllocateInfo)
+	explicit OpaqueFdExternalMemory(const VkMemoryAllocateInfo *pCreateInfo, void *mem, const vk::DeviceMemory::ExtendedAllocationInfo &extendedAllocationInfo, vk::Device *pDevice)
+	    : vk::DeviceMemory(pCreateInfo, pDevice)
+	    , allocateInfo(extendedAllocationInfo)
 	{
 	}
 

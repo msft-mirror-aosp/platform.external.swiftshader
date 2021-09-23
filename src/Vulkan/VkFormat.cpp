@@ -226,6 +226,8 @@ Format Format::getAspectFormat(VkImageAspectFlags aspect) const
 		case VK_FORMAT_R8G8_UNORM:
 		case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
 			return VK_FORMAT_R8G8_UNORM;
+		case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+			return VK_FORMAT_R4G4B4A4_UNORM_PACK16;
 		default:
 			UNSUPPORTED("format %d", int(format));
 			break;
@@ -1703,7 +1705,7 @@ int Format::bytes() const
 	return 0;
 }
 
-int Format::pitchB(int width, int border, bool external) const
+int Format::pitchB(int width, int border) const
 {
 	// Render targets require 2x2 quads
 	width = sw::align<2>(width + 2 * border);
@@ -1779,7 +1781,7 @@ int Format::pitchB(int width, int border, bool external) const
 	}
 }
 
-int Format::sliceBUnpadded(int width, int height, int border, bool external) const
+int Format::sliceBUnpadded(int width, int height, int border) const
 {
 	// Render targets require 2x2 quads
 	height = sw::align<2>(height + 2 * border);
@@ -1812,7 +1814,7 @@ int Format::sliceBUnpadded(int width, int height, int border, bool external) con
 	case VK_FORMAT_ASTC_4x4_SRGB_BLOCK:
 	case VK_FORMAT_ASTC_5x4_UNORM_BLOCK:
 	case VK_FORMAT_ASTC_5x4_SRGB_BLOCK:
-		return pitchB(width, border, external) * ((height + 3) / 4);  // Pitch computed per 4 rows
+		return pitchB(width, border) * ((height + 3) / 4);  // Pitch computed per 4 rows
 	case VK_FORMAT_ASTC_5x5_UNORM_BLOCK:
 	case VK_FORMAT_ASTC_5x5_SRGB_BLOCK:
 	case VK_FORMAT_ASTC_6x5_UNORM_BLOCK:
@@ -1821,39 +1823,39 @@ int Format::sliceBUnpadded(int width, int height, int border, bool external) con
 	case VK_FORMAT_ASTC_8x5_SRGB_BLOCK:
 	case VK_FORMAT_ASTC_10x5_UNORM_BLOCK:
 	case VK_FORMAT_ASTC_10x5_SRGB_BLOCK:
-		return pitchB(width, border, external) * ((height + 4) / 5);  // Pitch computed per 5 rows
+		return pitchB(width, border) * ((height + 4) / 5);  // Pitch computed per 5 rows
 	case VK_FORMAT_ASTC_6x6_UNORM_BLOCK:
 	case VK_FORMAT_ASTC_6x6_SRGB_BLOCK:
 	case VK_FORMAT_ASTC_8x6_UNORM_BLOCK:
 	case VK_FORMAT_ASTC_8x6_SRGB_BLOCK:
 	case VK_FORMAT_ASTC_10x6_UNORM_BLOCK:
 	case VK_FORMAT_ASTC_10x6_SRGB_BLOCK:
-		return pitchB(width, border, external) * ((height + 5) / 6);  // Pitch computed per 6 rows
+		return pitchB(width, border) * ((height + 5) / 6);  // Pitch computed per 6 rows
 	case VK_FORMAT_ASTC_8x8_UNORM_BLOCK:
 	case VK_FORMAT_ASTC_8x8_SRGB_BLOCK:
 	case VK_FORMAT_ASTC_10x8_UNORM_BLOCK:
 	case VK_FORMAT_ASTC_10x8_SRGB_BLOCK:
-		return pitchB(width, border, external) * ((height + 7) / 8);  // Pitch computed per 8 rows
+		return pitchB(width, border) * ((height + 7) / 8);  // Pitch computed per 8 rows
 	case VK_FORMAT_ASTC_10x10_UNORM_BLOCK:
 	case VK_FORMAT_ASTC_10x10_SRGB_BLOCK:
 	case VK_FORMAT_ASTC_12x10_UNORM_BLOCK:
 	case VK_FORMAT_ASTC_12x10_SRGB_BLOCK:
-		return pitchB(width, border, external) * ((height + 9) / 10);  // Pitch computed per 10 rows
+		return pitchB(width, border) * ((height + 9) / 10);  // Pitch computed per 10 rows
 	case VK_FORMAT_ASTC_12x12_UNORM_BLOCK:
 	case VK_FORMAT_ASTC_12x12_SRGB_BLOCK:
-		return pitchB(width, border, external) * ((height + 11) / 12);  // Pitch computed per 12 rows
+		return pitchB(width, border) * ((height + 11) / 12);  // Pitch computed per 12 rows
 	case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
 	case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
 		// "Images in this format must be defined with a width and height that is a multiple of two."
-		return pitchB(width, border, external) * (height + height / 2);  // U and V planes are 1/4 size of Y plane.
+		return pitchB(width, border) * (height + height / 2);  // U and V planes are 1/4 size of Y plane.
 	default:
-		return pitchB(width, border, external) * height;  // Pitch computed per row
+		return pitchB(width, border) * height;  // Pitch computed per row
 	}
 }
 
-int Format::sliceB(int width, int height, int border, bool external) const
+int Format::sliceB(int width, int height, int border) const
 {
-	return sw::align<16>(sliceBUnpadded(width, height, border, external) + 15);
+	return sw::align<16>(sliceBUnpadded(width, height, border) + 15);
 }
 
 sw::float4 Format::getScale() const
@@ -2007,6 +2009,11 @@ bool Format::supportsColorAttachmentBlend() const
 	case VK_FORMAT_R32G32_SFLOAT:
 	case VK_FORMAT_R32G32B32A32_SFLOAT:
 	case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
 		return true;
 	default:
 		return false;
@@ -2022,8 +2029,12 @@ bool Format::has16bitPackedTextureFormat() const
 
 	switch(format)
 	{
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
 	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
 	case VK_FORMAT_R5G6B5_UNORM_PACK16:
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 		return true;
 	case VK_FORMAT_R8G8_SINT:
@@ -2079,6 +2090,10 @@ bool Format::has8bitTextureComponents() const
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
 	case VK_FORMAT_R5G6B5_UNORM_PACK16:
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
 	case VK_FORMAT_R32_SFLOAT:
 	case VK_FORMAT_R32G32_SFLOAT:
 	case VK_FORMAT_R32G32B32A32_SFLOAT:
@@ -2127,6 +2142,10 @@ bool Format::has16bitTextureComponents() const
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
 	case VK_FORMAT_R5G6B5_UNORM_PACK16:
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
 	case VK_FORMAT_R8_UNORM:
 	case VK_FORMAT_R8_SNORM:
 	case VK_FORMAT_R8_UINT:
@@ -2202,6 +2221,10 @@ bool Format::has32bitIntegerTextureComponents() const
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
 	case VK_FORMAT_R5G6B5_UNORM_PACK16:
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
 	case VK_FORMAT_R8_UNORM:
 	case VK_FORMAT_R8_SNORM:
 	case VK_FORMAT_R8_UINT:
@@ -2305,6 +2328,10 @@ bool Format::isRGBComponent(int component) const
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
 	case VK_FORMAT_R5G6B5_UNORM_PACK16:
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
 	case VK_FORMAT_R8G8B8A8_UNORM:
 	case VK_FORMAT_R8G8B8A8_SNORM:
 	case VK_FORMAT_R8G8B8A8_UINT:
