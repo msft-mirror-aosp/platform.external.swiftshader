@@ -170,6 +170,7 @@ template<typename T>
 static void getPhysicalDeviceProvokingVertexFeaturesEXT(T *features)
 {
 	features->provokingVertexLast = VK_TRUE;
+	features->transformFeedbackPreservesProvokingVertex = VK_FALSE;
 }
 
 template<typename T>
@@ -1105,8 +1106,12 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFor
 	switch(format)
 	{
 	// Formats which can be sampled *and* filtered
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
 	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
 	case VK_FORMAT_R5G6B5_UNORM_PACK16:
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 	case VK_FORMAT_R8_UNORM:
 	case VK_FORMAT_R8_SRGB:
@@ -1311,6 +1316,11 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFor
 	{
 	case VK_FORMAT_R5G6B5_UNORM_PACK16:
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
 	case VK_FORMAT_R8_UNORM:
 	case VK_FORMAT_R8G8_UNORM:
 	case VK_FORMAT_R8G8B8A8_UNORM:
