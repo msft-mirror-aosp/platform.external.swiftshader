@@ -212,10 +212,6 @@ void PixelProgram::executeShader(Int cMask[4], Int sMask[4], Int zMask[4], const
 		c[i].y = routine.outputs[i * 4 + 1];
 		c[i].z = routine.outputs[i * 4 + 2];
 		c[i].w = routine.outputs[i * 4 + 3];
-		outputMasks[i] = ((spirvShader->outputs[i * 4 + 0].Type != SpirvShader::ATTRIBTYPE_UNUSED) ? 0x1 : 0x0) |
-		                 ((spirvShader->outputs[i * 4 + 1].Type != SpirvShader::ATTRIBTYPE_UNUSED) ? 0x2 : 0x0) |
-		                 ((spirvShader->outputs[i * 4 + 2].Type != SpirvShader::ATTRIBTYPE_UNUSED) ? 0x4 : 0x0) |
-		                 ((spirvShader->outputs[i * 4 + 3].Type != SpirvShader::ATTRIBTYPE_UNUSED) ? 0x8 : 0x0);
 	}
 
 	clampColor(c);
@@ -267,7 +263,7 @@ Bool PixelProgram::alphaTest(Int cMask[4], const SampleSet &samples)
 	return pass != 0x0;
 }
 
-void PixelProgram::rasterOperation(Pointer<Byte> cBuffer[4], Int &x, Int sMask[4], Int zMask[4], Int cMask[4], const SampleSet &samples)
+void PixelProgram::blendColor(Pointer<Byte> cBuffer[4], Int &x, Int sMask[4], Int zMask[4], Int cMask[4], const SampleSet &samples)
 {
 	for(int index = 0; index < MAX_COLOR_BUFFERS; index++)
 	{
@@ -281,6 +277,8 @@ void PixelProgram::rasterOperation(Pointer<Byte> cBuffer[4], Int &x, Int sMask[4
 		{
 		case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
 		case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+		case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+		case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
 		case VK_FORMAT_B5G6R5_UNORM_PACK16:
 		case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
 		case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
@@ -371,6 +369,8 @@ void PixelProgram::clampColor(Vector4f oC[MAX_COLOR_BUFFERS])
 			break;
 		case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
 		case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+		case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+		case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
 		case VK_FORMAT_B5G6R5_UNORM_PACK16:
 		case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
 		case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
