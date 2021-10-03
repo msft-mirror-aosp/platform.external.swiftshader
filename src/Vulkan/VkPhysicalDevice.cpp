@@ -332,6 +332,12 @@ static void getPhysicalDevicCustomBorderColorFeaturesExt(VkPhysicalDeviceCustomB
 	features->customBorderColorWithoutFormat = VK_TRUE;
 }
 
+static void getPhysicalDevice4444FormatsFeaturesExt(VkPhysicalDevice4444FormatsFeaturesEXT *features)
+{
+	features->formatA4R4G4B4 = VK_TRUE;
+	features->formatA4B4G4R4 = VK_TRUE;
+}
+
 void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 {
 	features->features = getFeatures();
@@ -424,6 +430,9 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT:
 			getPhysicalDevicCustomBorderColorFeaturesExt(reinterpret_cast<VkPhysicalDeviceCustomBorderColorFeaturesEXT *>(curExtension));
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_4444_FORMATS_FEATURES_EXT:
+			getPhysicalDevice4444FormatsFeaturesExt(reinterpret_cast<struct VkPhysicalDevice4444FormatsFeaturesEXT *>(curExtension));
+			break;
 		default:
 			LOG_TRAP("curExtension->pNext->sType = %s", vk::Stringify(curExtension->sType).c_str());
 			break;
@@ -449,7 +458,7 @@ const VkPhysicalDeviceLimits &PhysicalDevice::getLimits()
 		vk::MAX_IMAGE_ARRAY_LAYERS,                  // maxImageArrayLayers
 		65536,                                       // maxTexelBufferElements
 		16384,                                       // maxUniformBufferRange
-		(1ul << 27),                                 // maxStorageBufferRange
+		vk::MAX_MEMORY_ALLOCATION_SIZE,              // maxStorageBufferRange
 		vk::MAX_PUSH_CONSTANT_SIZE,                  // maxPushConstantsSize
 		4096,                                        // maxMemoryAllocationCount
 		vk::MAX_SAMPLER_ALLOCATION_COUNT,            // maxSamplerAllocationCount
@@ -1108,6 +1117,8 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFor
 	// Formats which can be sampled *and* filtered
 	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
 	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
 	case VK_FORMAT_R5G6B5_UNORM_PACK16:
 	case VK_FORMAT_B5G6R5_UNORM_PACK16:
 	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
@@ -1318,6 +1329,8 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFor
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
 	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
 	case VK_FORMAT_B5G6R5_UNORM_PACK16:
 	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
 	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
@@ -1385,19 +1398,27 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFor
 	{
 	case VK_FORMAT_R8_UNORM:
 	case VK_FORMAT_R8_SNORM:
+	case VK_FORMAT_R8_USCALED:
+	case VK_FORMAT_R8_SSCALED:
 	case VK_FORMAT_R8_UINT:
 	case VK_FORMAT_R8_SINT:
 	case VK_FORMAT_R8G8_UNORM:
 	case VK_FORMAT_R8G8_SNORM:
+	case VK_FORMAT_R8G8_USCALED:
+	case VK_FORMAT_R8G8_SSCALED:
 	case VK_FORMAT_R8G8_UINT:
 	case VK_FORMAT_R8G8_SINT:
 	case VK_FORMAT_R8G8B8A8_UNORM:
 	case VK_FORMAT_R8G8B8A8_SNORM:
+	case VK_FORMAT_R8G8B8A8_USCALED:
+	case VK_FORMAT_R8G8B8A8_SSCALED:
 	case VK_FORMAT_R8G8B8A8_UINT:
 	case VK_FORMAT_R8G8B8A8_SINT:
 	case VK_FORMAT_B8G8R8A8_UNORM:
 	case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
 	case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
+	case VK_FORMAT_A8B8G8R8_USCALED_PACK32:
+	case VK_FORMAT_A8B8G8R8_SSCALED_PACK32:
 	case VK_FORMAT_A8B8G8R8_UINT_PACK32:
 	case VK_FORMAT_A8B8G8R8_SINT_PACK32:
 	case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
@@ -1410,16 +1431,22 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFor
 	case VK_FORMAT_A2B10G10R10_SINT_PACK32:
 	case VK_FORMAT_R16_UNORM:
 	case VK_FORMAT_R16_SNORM:
+	case VK_FORMAT_R16_USCALED:
+	case VK_FORMAT_R16_SSCALED:
 	case VK_FORMAT_R16_UINT:
 	case VK_FORMAT_R16_SINT:
 	case VK_FORMAT_R16_SFLOAT:
 	case VK_FORMAT_R16G16_UNORM:
 	case VK_FORMAT_R16G16_SNORM:
+	case VK_FORMAT_R16G16_USCALED:
+	case VK_FORMAT_R16G16_SSCALED:
 	case VK_FORMAT_R16G16_UINT:
 	case VK_FORMAT_R16G16_SINT:
 	case VK_FORMAT_R16G16_SFLOAT:
 	case VK_FORMAT_R16G16B16A16_UNORM:
 	case VK_FORMAT_R16G16B16A16_SNORM:
+	case VK_FORMAT_R16G16B16A16_USCALED:
+	case VK_FORMAT_R16G16B16A16_SSCALED:
 	case VK_FORMAT_R16G16B16A16_UINT:
 	case VK_FORMAT_R16G16B16A16_SINT:
 	case VK_FORMAT_R16G16B16A16_SFLOAT:
@@ -1636,7 +1663,7 @@ const VkPhysicalDeviceMemoryProperties &PhysicalDevice::GetMemoryProperties()
 		1,  // memoryHeapCount
 		{
 		    {
-		        1ull << 31,                      // size, FIXME(sugoi): This should be configurable based on available RAM
+		        vk::PHYSICAL_DEVICE_HEAP_SIZE,   // size
 		        VK_MEMORY_HEAP_DEVICE_LOCAL_BIT  // flags
 		    },
 		}
