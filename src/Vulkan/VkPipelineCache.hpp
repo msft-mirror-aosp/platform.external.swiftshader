@@ -44,6 +44,8 @@ class RenderPass;
 class PipelineCache : public Object<PipelineCache, VkPipelineCache>
 {
 public:
+	static constexpr VkSystemAllocationScope GetAllocationScope() { return VK_SYSTEM_ALLOCATION_SCOPE_CACHE; }
+
 	PipelineCache(const VkPipelineCacheCreateInfo *pCreateInfo, void *mem);
 	virtual ~PipelineCache();
 	void destroy(const VkAllocationCallbacks *pAllocator);
@@ -56,7 +58,7 @@ public:
 	struct SpirvBinaryKey
 	{
 		SpirvBinaryKey(const sw::SpirvBinary &insns,
-		               const vk::SpecializationInfo &specializationInfo,
+		               const VkSpecializationInfo *specializationInfo,
 		               bool optimize);
 
 		bool operator<(const SpirvBinaryKey &other) const;

@@ -19,7 +19,7 @@
 namespace vk {
 
 PipelineCache::SpirvBinaryKey::SpirvBinaryKey(const sw::SpirvBinary &insns,
-                                              const vk::SpecializationInfo &specializationInfo,
+                                              const VkSpecializationInfo *specializationInfo,
                                               bool optimize)
     : insns(insns)
     , specializationInfo(specializationInfo)
@@ -83,7 +83,7 @@ PipelineCache::~PipelineCache()
 
 void PipelineCache::destroy(const VkAllocationCallbacks *pAllocator)
 {
-	vk::deallocate(data, pAllocator);
+	vk::freeHostMemory(data, pAllocator);
 }
 
 size_t PipelineCache::ComputeRequiredAllocationSize(const VkPipelineCacheCreateInfo *pCreateInfo)
