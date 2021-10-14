@@ -53,6 +53,7 @@ config("swiftshader_libvulkan_private_config") {
 
   defines += [
      "SWIFTSHADER_ENABLE_ASTC",  # TODO(b/150130101)
+     "SWIFTSHADER_ZERO_INITIALIZE_DEVICE_MEMORY",  # TODO(b/140991626)
   ]
 }
 
@@ -72,6 +73,7 @@ swiftshader_source_set("swiftshader_libvulkan_headers") {
     "VkDestroy.hpp",
     "VkDevice.hpp",
     "VkDeviceMemory.hpp",
+    "VkDeviceMemoryExternalHost.hpp",
     "VkEvent.hpp",
     "VkFence.hpp",
     "VkFormat.hpp",
@@ -124,6 +126,7 @@ swiftshader_shared_library("swiftshader_libvulkan") {
     "VkDescriptorUpdateTemplate.cpp",
     "VkDevice.cpp",
     "VkDeviceMemory.cpp",
+    "VkDeviceMemoryExternalHost.cpp",
     "VkFormat.cpp",
     "VkFramebuffer.cpp",
     "VkGetProcAddress.cpp",

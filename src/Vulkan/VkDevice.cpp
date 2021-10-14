@@ -193,7 +193,7 @@ void Device::destroy(const VkAllocationCallbacks *pAllocator)
 		queues[i].~Queue();
 	}
 
-	vk::deallocate(queues, pAllocator);
+	vk::freeHostMemory(queues, pAllocator);
 }
 
 size_t Device::ComputeRequiredAllocationSize(const VkDeviceCreateInfo *pCreateInfo)
@@ -458,7 +458,7 @@ void Device::prepareForSampling(ImageView *imageView)
 	}
 }
 
-void Device::contentsChanged(ImageView *imageView)
+void Device::contentsChanged(ImageView *imageView, Image::ContentsChangedContext context)
 {
 	if(imageView != nullptr)
 	{
@@ -467,7 +467,7 @@ void Device::contentsChanged(ImageView *imageView)
 		auto it = imageViewSet.find(imageView);
 		if(it != imageViewSet.end())
 		{
-			imageView->contentsChanged();
+			imageView->contentsChanged(context);
 		}
 	}
 }
