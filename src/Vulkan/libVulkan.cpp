@@ -1478,7 +1478,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkImportSemaphoreZirconHandleFUCHSIA(
 	bool temporaryImport = (pImportSemaphoreZirconHandleInfo->flags & VK_SEMAPHORE_IMPORT_TEMPORARY_BIT) != 0;
 	auto *sem = vk::DynamicCast<vk::BinarySemaphore>(pImportSemaphoreZirconHandleInfo->semaphore);
 	ASSERT(sem != nullptr);
-	return sem->importHandle(pImportSemaphoreZirconHandleInfo->handle, temporaryImport);
+	return sem->importHandle(pImportSemaphoreZirconHandleInfo->zirconHandle, temporaryImport);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkGetSemaphoreZirconHandleFUCHSIA(
@@ -3211,6 +3211,8 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 				auto properties = reinterpret_cast<VkPhysicalDeviceCustomBorderColorPropertiesEXT *>(extensionProperties);
 				vk::Cast(physicalDevice)->getProperties(properties);
 			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES_KHR:
 			break;
 		default:
 			// "the [driver] must skip over, without processing (other than reading the sType and pNext members) any structures in the chain with sType values not defined by [supported extenions]"
