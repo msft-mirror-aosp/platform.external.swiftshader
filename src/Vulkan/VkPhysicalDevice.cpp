@@ -719,11 +719,11 @@ void PhysicalDevice::getProperties(const VkExternalMemoryHandleTypeFlagBits *han
 	}
 #endif
 #if VK_USE_PLATFORM_FUCHSIA
-	if(handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA)
+	if(*handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA)
 	{
-		properties->compatibleHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA;
-		properties->exportFromImportedHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA;
-		properties->externalMemoryFeatures = VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT;
+		extMemProperties->compatibleHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA;
+		extMemProperties->exportFromImportedHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA;
+		extMemProperties->externalMemoryFeatures = VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT;
 		return;
 	}
 #endif
@@ -754,11 +754,11 @@ void PhysicalDevice::getProperties(const VkExternalMemoryHandleTypeFlagBits *han
 	}
 #endif
 #if VK_USE_PLATFORM_FUCHSIA
-	if(handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA)
+	if(*handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA)
 	{
-		properties->compatibleHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA;
-		properties->exportFromImportedHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA;
-		properties->externalMemoryFeatures = VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT;
+		extMemProperties->compatibleHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA;
+		extMemProperties->exportFromImportedHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA;
+		extMemProperties->externalMemoryFeatures = VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT;
 		return;
 	}
 #endif
@@ -1369,10 +1369,13 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFor
 	case VK_FORMAT_A8B8G8R8_SINT_PACK32:
 	case VK_FORMAT_A2B10G10R10_UINT_PACK32:
 	case VK_FORMAT_A2R10G10B10_UINT_PACK32:
+	case VK_FORMAT_R16_UNORM:
 	case VK_FORMAT_R16_UINT:
 	case VK_FORMAT_R16_SINT:
+	case VK_FORMAT_R16G16_UNORM:
 	case VK_FORMAT_R16G16_UINT:
 	case VK_FORMAT_R16G16_SINT:
+	case VK_FORMAT_R16G16B16A16_UNORM:
 	case VK_FORMAT_R16G16B16A16_UINT:
 	case VK_FORMAT_R16G16B16A16_SINT:
 	case VK_FORMAT_R32_UINT:
