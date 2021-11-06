@@ -371,6 +371,8 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_EXT_IMAGE_ROBUSTNESS_EXTENSION_NAME, VK_EXT_IMAGE_ROBUSTNESS_SPEC_VERSION } },
 	// Useful for D3D emulation
 	{ { VK_EXT_4444_FORMATS_EXTENSION_NAME, VK_EXT_4444_FORMATS_SPEC_VERSION } },
+	// Used by ANGLE to support GL_KHR_blend_equation_advanced
+	{ { VK_EXT_BLEND_OPERATION_ADVANCED_EXTENSION_NAME, VK_EXT_BLEND_OPERATION_ADVANCED_SPEC_VERSION } },
 #ifndef __ANDROID__
 	// We fully support the KHR_swapchain v70 additions, so just track the spec version.
 	{ { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_SWAPCHAIN_SPEC_VERSION } },
@@ -418,6 +420,8 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_SPIRV_1_4_EXTENSION_NAME, VK_KHR_SPIRV_1_4_SPEC_VERSION } },
 	{ { VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME, VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_SPEC_VERSION } },
 	{ { VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME, VK_KHR_TIMELINE_SEMAPHORE_SPEC_VERSION } },
+	// Other extensions
+	{ { VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_SPEC_VERSION } },
 };
 
 static uint32_t numSupportedExtensions(const ExtensionProperties *extensionProperties, uint32_t extensionPropertiesCount)
@@ -860,6 +864,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 				(void)hostQueryResetFeatures->hostQueryReset;
 			}
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES_EXT:
+			{
+				const VkPhysicalDevicePipelineCreationCacheControlFeaturesEXT *pipelineCreationCacheControlFeatures = reinterpret_cast<const VkPhysicalDevicePipelineCreationCacheControlFeaturesEXT *>(extensionCreateInfo);
+
+				// VK_EXT_pipeline_creation_cache_control is always enabled.
+				(void)pipelineCreationCacheControlFeatures->pipelineCreationCacheControl;
+			}
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES:
 			{
 				const auto *tsFeatures = reinterpret_cast<const VkPhysicalDeviceTimelineSemaphoreFeatures *>(extensionCreateInfo);
@@ -901,6 +913,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 			{
 				const auto *depthClipFeatures = reinterpret_cast<const VkPhysicalDeviceDepthClipEnableFeaturesEXT *>(extensionCreateInfo);
 				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(depthClipFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_FEATURES_EXT:
+			{
+				const auto *blendOpFeatures = reinterpret_cast<const VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(blendOpFeatures);
 				if(!hasFeatures)
 				{
 					return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -1980,6 +2002,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(VkDevice device, VkPipe
 	TRACE("(VkDevice device = %p, VkPipelineCache pipelineCache = %p, uint32_t createInfoCount = %d, const VkGraphicsPipelineCreateInfo* pCreateInfos = %p, const VkAllocationCallbacks* pAllocator = %p, VkPipeline* pPipelines = %p)",
 	      device, static_cast<void *>(pipelineCache), int(createInfoCount), pCreateInfos, pAllocator, pPipelines);
 
+	memset(pPipelines, 0, sizeof(void *) * createInfoCount);
+
 	VkResult errorResult = VK_SUCCESS;
 	for(uint32_t i = 0; i < createInfoCount; i++)
 	{
@@ -1987,9 +2011,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(VkDevice device, VkPipe
 
 		if(result == VK_SUCCESS)
 		{
-			static_cast<vk::GraphicsPipeline *>(vk::Cast(pPipelines[i]))->compileShaders(pAllocator, &pCreateInfos[i], vk::Cast(pipelineCache));
+			result = static_cast<vk::GraphicsPipeline *>(vk::Cast(pPipelines[i]))->compileShaders(pAllocator, &pCreateInfos[i], vk::Cast(pipelineCache));
+			if(result != VK_SUCCESS)
+			{
+				vk::destroy(pPipelines[i], pAllocator);
+			}
 		}
-		else
+
+		if(result != VK_SUCCESS)
 		{
 			// According to the Vulkan spec, section 9.4. Multiple Pipeline Creation
 			// "When an application attempts to create many pipelines in a single command,
@@ -2001,6 +2030,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(VkDevice device, VkPipe
 			//  only return VK_NULL_HANDLE values for those that actually failed."
 			pPipelines[i] = VK_NULL_HANDLE;
 			errorResult = result;
+
+			// VK_PIPELINE_CREATE_EARLY_RETURN_ON_FAILURE_BIT_EXT specifies that control
+			// will be returned to the application on failure of the corresponding pipeline
+			// rather than continuing to create additional pipelines.
+			if(pCreateInfos[i].flags & VK_PIPELINE_CREATE_EARLY_RETURN_ON_FAILURE_BIT_EXT)
+			{
+				return errorResult;
+			}
 		}
 	}
 
@@ -2012,6 +2049,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateComputePipelines(VkDevice device, VkPipel
 	TRACE("(VkDevice device = %p, VkPipelineCache pipelineCache = %p, uint32_t createInfoCount = %d, const VkComputePipelineCreateInfo* pCreateInfos = %p, const VkAllocationCallbacks* pAllocator = %p, VkPipeline* pPipelines = %p)",
 	      device, static_cast<void *>(pipelineCache), int(createInfoCount), pCreateInfos, pAllocator, pPipelines);
 
+	memset(pPipelines, 0, sizeof(void *) * createInfoCount);
+
 	VkResult errorResult = VK_SUCCESS;
 	for(uint32_t i = 0; i < createInfoCount; i++)
 	{
@@ -2019,9 +2058,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateComputePipelines(VkDevice device, VkPipel
 
 		if(result == VK_SUCCESS)
 		{
-			static_cast<vk::ComputePipeline *>(vk::Cast(pPipelines[i]))->compileShaders(pAllocator, &pCreateInfos[i], vk::Cast(pipelineCache));
+			result = static_cast<vk::ComputePipeline *>(vk::Cast(pPipelines[i]))->compileShaders(pAllocator, &pCreateInfos[i], vk::Cast(pipelineCache));
+			if(result != VK_SUCCESS)
+			{
+				vk::destroy(pPipelines[i], pAllocator);
+			}
 		}
-		else
+
+		if(result != VK_SUCCESS)
 		{
 			// According to the Vulkan spec, section 9.4. Multiple Pipeline Creation
 			// "When an application attempts to create many pipelines in a single command,
@@ -2033,6 +2077,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateComputePipelines(VkDevice device, VkPipel
 			//  only return VK_NULL_HANDLE values for those that actually failed."
 			pPipelines[i] = VK_NULL_HANDLE;
 			errorResult = result;
+
+			// VK_PIPELINE_CREATE_EARLY_RETURN_ON_FAILURE_BIT_EXT specifies that control
+			// will be returned to the application on failure of the corresponding pipeline
+			// rather than continuing to create additional pipelines.
+			if(pCreateInfos[i].flags & VK_PIPELINE_CREATE_EARLY_RETURN_ON_FAILURE_BIT_EXT)
+			{
+				return errorResult;
+			}
 		}
 	}
 
@@ -3210,6 +3262,12 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_PROPERTIES_EXT:
 			{
 				auto properties = reinterpret_cast<VkPhysicalDeviceCustomBorderColorPropertiesEXT *>(extensionProperties);
+				vk::Cast(physicalDevice)->getProperties(properties);
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_PROPERTIES_EXT:
+			{
+				auto properties = reinterpret_cast<VkPhysicalDeviceBlendOperationAdvancedPropertiesEXT *>(extensionProperties);
 				vk::Cast(physicalDevice)->getProperties(properties);
 			}
 			break;
