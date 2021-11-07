@@ -256,6 +256,22 @@ Format Format::getAspectFormat(VkImageAspectFlags aspect) const
 	return format;
 }
 
+VkFormat Format::getClearFormat() const
+{
+	// Set the proper format for the clear value, as described here:
+	// https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html#clears-values
+	if(isSignedUnnormalizedInteger())
+	{
+		return VK_FORMAT_R32G32B32A32_SINT;
+	}
+	else if(isUnsignedUnnormalizedInteger())
+	{
+		return VK_FORMAT_R32G32B32A32_UINT;
+	}
+
+	return VK_FORMAT_R32G32B32A32_SFLOAT;
+}
+
 bool Format::isStencil() const
 {
 	switch(format)
@@ -1311,6 +1327,12 @@ int Format::componentCount() const
 	return 1;
 }
 
+bool Format::isUnsigned() const
+{
+	// TODO(b/203068380): create a proper check for signedness
+	return isUnsignedComponent(0);
+}
+
 bool Format::isUnsignedComponent(int component) const
 {
 	switch(format)
@@ -2018,18 +2040,21 @@ bool Format::supportsColorAttachmentBlend() const
 	case VK_FORMAT_R16G16_SFLOAT:
 	case VK_FORMAT_R16G16B16A16_SFLOAT:
 	// Optional
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
 	case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+	case VK_FORMAT_R16_UNORM:
+	case VK_FORMAT_R16G16_UNORM:
+	case VK_FORMAT_R16G16B16A16_UNORM:
 	case VK_FORMAT_R32_SFLOAT:
 	case VK_FORMAT_R32G32_SFLOAT:
 	case VK_FORMAT_R32G32B32A32_SFLOAT:
 	case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
-	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
-	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
 	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
 	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
-	case VK_FORMAT_B5G6R5_UNORM_PACK16:
-	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
-	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
 		return true;
 	default:
 		return false;
