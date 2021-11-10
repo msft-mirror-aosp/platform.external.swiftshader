@@ -207,7 +207,7 @@ SpirvShader::SpirvShader(
 
 		case spv::OpLabel:
 			{
-				ASSERT(currentBlock.value() == 0);
+				ASSERT(currentBlock == 0);
 				currentBlock = Block::ID(insn.word(1));
 				blockStart = insn;
 			}
@@ -224,8 +224,8 @@ SpirvShader::SpirvShader(
 		case spv::OpKill:
 		case spv::OpUnreachable:
 			{
-				ASSERT(currentBlock.value() != 0);
-				ASSERT(currentFunction.value() != 0);
+				ASSERT(currentBlock != 0);
+				ASSERT(currentFunction != 0);
 
 				auto blockEnd = insn;
 				blockEnd++;
@@ -1634,7 +1634,11 @@ void SpirvShader::emitProlog(SpirvRoutine *routine) const
 		case spv::OpImageSampleProjDrefImplicitLod:
 		case spv::OpImageSampleProjExplicitLod:
 		case spv::OpImageSampleProjImplicitLod:
-			routine->samplerCache.emplace(insn.resultId(), SpirvRoutine::SamplerCache{});
+			{
+				// The 'inline' sampler caches must be created in the prolog to initialize the tags.
+				uint32_t instructionPosition = insn.distanceFrom(this->begin());
+				routine->samplerCache.emplace(instructionPosition, SpirvRoutine::SamplerCache{});
+			}
 			break;
 
 		default:
@@ -1958,46 +1962,24 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 		return EmitKill(insn, state);
 
 	case spv::OpImageSampleImplicitLod:
-		return EmitImageSampleImplicitLod(None, insn, state);
-
 	case spv::OpImageSampleExplicitLod:
-		return EmitImageSampleExplicitLod(None, insn, state);
-
 	case spv::OpImageSampleDrefImplicitLod:
-		return EmitImageSampleImplicitLod(Dref, insn, state);
-
 	case spv::OpImageSampleDrefExplicitLod:
-		return EmitImageSampleExplicitLod(Dref, insn, state);
-
 	case spv::OpImageSampleProjImplicitLod:
-		return EmitImageSampleImplicitLod(Proj, insn, state);
-
 	case spv::OpImageSampleProjExplicitLod:
-		return EmitImageSampleExplicitLod(Proj, insn, state);
-
 	case spv::OpImageSampleProjDrefImplicitLod:
-		return EmitImageSampleImplicitLod(ProjDref, insn, state);
-
 	case spv::OpImageSampleProjDrefExplicitLod:
-		return EmitImageSampleExplicitLod(ProjDref, insn, state);
-
 	case spv::OpImageGather:
-		return EmitImageGather(None, insn, state);
-
 	case spv::OpImageDrefGather:
-		return EmitImageGather(Dref, insn, state);
-
 	case spv::OpImageFetch:
-		return EmitImageFetch(insn, state);
+	case spv::OpImageQueryLod:
+		return EmitImageSample(insn, state);
 
 	case spv::OpImageQuerySizeLod:
 		return EmitImageQuerySizeLod(insn, state);
 
 	case spv::OpImageQuerySize:
 		return EmitImageQuerySize(insn, state);
-
-	case spv::OpImageQueryLod:
-		return EmitImageQueryLod(insn, state);
 
 	case spv::OpImageQueryLevels:
 		return EmitImageQueryLevels(insn, state);
@@ -2180,7 +2162,7 @@ SpirvShader::EmitResult SpirvShader::EmitVectorShuffle(InsnIterator insn, EmitSt
 
 	// Note: number of components in result type, first half type, and second
 	// half type are all independent.
-	auto &firstHalfType = getType(getObject(insn.word(3)));
+	auto &firstHalfType = getObjectType(insn.word(3));
 
 	Operand firstHalfAccess(this, state, insn.word(3));
 	Operand secondHalfAccess(this, state, insn.word(4));
@@ -2211,7 +2193,7 @@ SpirvShader::EmitResult SpirvShader::EmitVectorExtractDynamic(InsnIterator insn,
 {
 	auto &type = getType(insn.resultTypeId());
 	auto &dst = state->createIntermediate(insn.resultId(), type.componentCount);
-	auto &srcType = getType(getObject(insn.word(3)));
+	auto &srcType = getObjectType(insn.word(3));
 
 	Operand src(this, state, insn.word(3));
 	Operand index(this, state, insn.word(4));
@@ -2272,7 +2254,7 @@ SpirvShader::EmitResult SpirvShader::EmitAny(InsnIterator insn, EmitState *state
 	auto &type = getType(insn.resultTypeId());
 	ASSERT(type.componentCount == 1);
 	auto &dst = state->createIntermediate(insn.resultId(), type.componentCount);
-	auto &srcType = getType(getObject(insn.word(3)));
+	auto &srcType = getObjectType(insn.word(3));
 	auto src = Operand(this, state, insn.word(3));
 
 	SIMD::UInt result = src.UInt(0);
@@ -2291,7 +2273,7 @@ SpirvShader::EmitResult SpirvShader::EmitAll(InsnIterator insn, EmitState *state
 	auto &type = getType(insn.resultTypeId());
 	ASSERT(type.componentCount == 1);
 	auto &dst = state->createIntermediate(insn.resultId(), type.componentCount);
-	auto &srcType = getType(getObject(insn.word(3)));
+	auto &srcType = getObjectType(insn.word(3));
 	auto src = Operand(this, state, insn.word(3));
 
 	SIMD::UInt result = src.UInt(0);
@@ -2436,7 +2418,7 @@ SpirvShader::EmitResult SpirvShader::EmitArrayLength(InsnIterator insn, EmitStat
 	ASSERT(resultType.componentCount == 1);
 	ASSERT(resultType.definition.opcode() == spv::OpTypeInt);
 
-	auto &structPtrTy = getType(getObject(structPtrId));
+	auto &structPtrTy = getObjectType(structPtrId);
 	auto &structTy = getType(structPtrTy.element);
 	auto arrayId = Type::ID(structTy.definition.word(2 + arrayFieldIdx));
 
