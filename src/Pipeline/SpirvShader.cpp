@@ -940,7 +940,7 @@ uint32_t SpirvShader::GetPackedInterpolant(int32_t location) const
 	uint32_t packedInterpolant = 0;
 	for(uint32_t i = 0; i < maxInterpolant; ++i)
 	{
-		if (inputs[i].Type != ATTRIBTYPE_UNUSED)
+		if(inputs[i].Type != ATTRIBTYPE_UNUSED)
 		{
 			++packedInterpolant;
 		}
@@ -1991,7 +1991,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 	case spv::OpImageDrefGather:
 	case spv::OpImageFetch:
 	case spv::OpImageQueryLod:
-		return EmitImageSample(insn, state);
+		return EmitImageSample(ImageInstruction(insn, *this), state);
 
 	case spv::OpImageQuerySizeLod:
 		return EmitImageQuerySizeLod(insn, state);
@@ -2006,10 +2006,10 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 		return EmitImageQuerySamples(insn, state);
 
 	case spv::OpImageRead:
-		return EmitImageRead(insn, state);
+		return EmitImageRead(ImageInstruction(insn, *this), state);
 
 	case spv::OpImageWrite:
-		return EmitImageWrite(insn, state);
+		return EmitImageWrite(ImageInstruction(insn, *this), state);
 
 	case spv::OpImageTexelPointer:
 		return EmitImageTexelPointer(insn, state);
@@ -2564,16 +2564,16 @@ SpirvShader::Operand::Operand(const Intermediate &value)
 {
 }
 
-bool SpirvShader::Operand::isConstantZero() const
+bool SpirvShader::Object::isConstantZero() const
 {
-	if(!constant)
+	if(kind != Kind::Constant)
 	{
 		return false;
 	}
 
-	for(uint32_t i = 0; i < componentCount; i++)
+	for(uint32_t i = 0; i < constantValue.size(); i++)
 	{
-		if(constant[i] != 0)
+		if(constantValue[i] != 0)
 		{
 			return false;
 		}
