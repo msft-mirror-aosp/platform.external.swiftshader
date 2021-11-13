@@ -327,6 +327,8 @@ public:
 		Type::ID typeId() const { return definition.resultTypeId(); }
 		Object::ID id() const { return definition.resultId(); }
 
+		bool isConstantZero() const;
+
 		InsnIterator definition;
 		std::vector<uint32_t> constantValue;
 
@@ -509,18 +511,18 @@ public:
 
 	// Compact representation of image instruction state that is passed to the
 	// trampoline function for retrieving/generating the corresponding sampling routine.
-	struct ImageInstructionState
+	struct ImageInstructionSignature
 	{
-		ImageInstructionState(Variant variant, SamplerMethod samplerMethod)
-		    : state(0)
+		ImageInstructionSignature(Variant variant, SamplerMethod samplerMethod)
+		    : signature(0)
 		{
 			this->variant = variant;
 			this->samplerMethod = samplerMethod;
 		}
 
 		// Unmarshal from raw 32-bit data
-		explicit ImageInstructionState(uint32_t state)
-		    : state(state)
+		explicit ImageInstructionSignature(uint32_t signature)
+		    : signature(signature)
 		{}
 
 		SamplerFunction getSamplerFunction() const
@@ -565,22 +567,25 @@ public:
 				uint32_t sample : 1;            // 0-1 scalar integer
 			};
 
-			uint32_t state;
+			uint32_t signature;
 		};
 	};
 
 	// This gets stored as a literal in the generated code, so it should be compact.
-	static_assert(sizeof(ImageInstructionState) == sizeof(uint32_t), "ImageInstructionState must be 32-bit");
+	static_assert(sizeof(ImageInstructionSignature) == sizeof(uint32_t), "ImageInstructionSignature must be 32-bit");
 
-	struct ImageInstruction : public ImageInstructionState
+	struct ImageInstruction : public ImageInstructionSignature
 	{
 		ImageInstruction(InsnIterator insn, const SpirvShader &spirv);
 
 		const uint32_t position;
 
+		Type::ID resultTypeId = 0;
 		Object::ID resultId = 0;
-		Object::ID sampledImageId = 0;
+		Object::ID imageId = 0;
+		Object::ID samplerId = 0;
 		Object::ID coordinateId = 0;
+		Object::ID texelId = 0;
 		Object::ID drefId = 0;
 		Object::ID lodOrBiasId = 0;
 		Object::ID gradDxId = 0;
@@ -589,8 +594,9 @@ public:
 		Object::ID sampleId = 0;
 
 	private:
-		static ImageInstructionState parseVariantAndMethod(InsnIterator insn);
-		static uint32_t getImageOperands(InsnIterator insn);
+		static ImageInstructionSignature parseVariantAndMethod(InsnIterator insn);
+		static uint32_t getImageOperandsIndex(InsnIterator insn);
+		static uint32_t getImageOperandsMask(InsnIterator insn);
 	};
 
 	// This method is for retrieving an ID that uniquely identifies the
@@ -1155,8 +1161,6 @@ private:
 			return SIMD::UInt(constant[i]);
 		}
 
-		bool isConstantZero() const;
-
 	private:
 		RR_PRINT_ONLY(friend struct rr::PrintValue::Ty<Operand>;)
 
@@ -1284,13 +1288,13 @@ private:
 	EmitResult EmitKill(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitFunctionCall(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitPhi(InsnIterator insn, EmitState *state) const;
-	EmitResult EmitImageSample(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitImageSample(const ImageInstruction &instruction, EmitState *state) const;
 	EmitResult EmitImageQuerySizeLod(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitImageQuerySize(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitImageQueryLevels(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitImageQuerySamples(InsnIterator insn, EmitState *state) const;
-	EmitResult EmitImageRead(InsnIterator insn, EmitState *state) const;
-	EmitResult EmitImageWrite(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitImageRead(const ImageInstruction &instruction, EmitState *state) const;
+	EmitResult EmitImageWrite(const ImageInstruction &instruction, EmitState *state) const;
 	EmitResult EmitImageTexelPointer(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitAtomicOp(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitAtomicCompareExchange(InsnIterator insn, EmitState *state) const;
@@ -1304,6 +1308,9 @@ private:
 
 	// Emits code to sample an image, regardless of whether any SIMD lanes are active.
 	void EmitImageSampleUnconditional(Array<SIMD::Float> &out, const ImageInstruction &instruction, EmitState *state) const;
+
+	Pointer<Byte> lookupSamplerFunction(Pointer<Byte> imageDescriptor, const ImageInstruction &instruction, EmitState *state) const;
+	void callSamplerFunction(Pointer<Byte> samplerFunction, Array<SIMD::Float> &out, Pointer<Byte> imageDescriptor, const ImageInstruction &instruction, EmitState *state) const;
 
 	void GetImageDimensions(EmitState const *state, Type const &resultTy, Object::ID imageId, Object::ID lodId, Intermediate &dst) const;
 	SIMD::Pointer GetTexelAddress(EmitState const *state, Pointer<Byte> imageBase, Int imageSizeInBytes, Operand const &coordinate, Type const &imageType, Pointer<Byte> descriptor, int texelSize, Object::ID sampleId, bool useStencilAspect, OutOfBoundsBehavior outOfBoundsBehavior) const;
@@ -1369,8 +1376,8 @@ private:
 	// Returns the pair <significand, exponent>
 	std::pair<SIMD::Float, SIMD::Int> Frexp(RValue<SIMD::Float> val) const;
 
-	static ImageSampler *getImageSampler(const vk::Device *device, uint32_t instruction, uint32_t samplerId, uint32_t imageViewId);
-	static std::shared_ptr<rr::Routine> emitSamplerRoutine(ImageInstructionState instruction, const Sampler &samplerState);
+	static ImageSampler *getImageSampler(const vk::Device *device, uint32_t signature, uint32_t samplerId, uint32_t imageViewId);
+	static std::shared_ptr<rr::Routine> emitSamplerRoutine(ImageInstructionSignature instruction, const Sampler &samplerState);
 
 	// TODO(b/129523279): Eliminate conversion and use vk::Sampler members directly.
 	static sw::FilterType convertFilterMode(const vk::SamplerState *samplerState, VkImageViewType imageViewType, SamplerMethod samplerMethod);
@@ -1469,6 +1476,7 @@ public:
 	Variable outputs = Variable{ MAX_INTERFACE_COMPONENTS };
 	InterpolationData interpolationData;
 
+	Pointer<Byte> device;
 	Pointer<Byte> workgroupMemory;
 	Pointer<Pointer<Byte>> descriptorSets;
 	Pointer<Int> descriptorDynamicOffsets;
