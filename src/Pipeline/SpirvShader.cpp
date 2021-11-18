@@ -409,6 +409,7 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityImageQuery: capabilities.ImageQuery = true; break;
 				case spv::CapabilityDerivativeControl: capabilities.DerivativeControl = true; break;
 				case spv::CapabilityInterpolationFunction: capabilities.InterpolationFunction = true; break;
+				case spv::CapabilityStorageImageWriteWithoutFormat: capabilities.StorageImageWriteWithoutFormat = true; break;
 				case spv::CapabilityGroupNonUniform: capabilities.GroupNonUniform = true; break;
 				case spv::CapabilityGroupNonUniformVote: capabilities.GroupNonUniformVote = true; break;
 				case spv::CapabilityGroupNonUniformArithmetic: capabilities.GroupNonUniformArithmetic = true; break;
@@ -940,7 +941,7 @@ uint32_t SpirvShader::GetPackedInterpolant(int32_t location) const
 	uint32_t packedInterpolant = 0;
 	for(uint32_t i = 0; i < maxInterpolant; ++i)
 	{
-		if (inputs[i].Type != ATTRIBTYPE_UNUSED)
+		if(inputs[i].Type != ATTRIBTYPE_UNUSED)
 		{
 			++packedInterpolant;
 		}
@@ -1640,18 +1641,19 @@ void SpirvShader::emitProlog(SpirvRoutine *routine) const
 			}
 			break;
 
-		case spv::OpImageDrefGather:
+		case spv::OpImageSampleImplicitLod:
+		case spv::OpImageSampleExplicitLod:
+		case spv::OpImageSampleDrefImplicitLod:
+		case spv::OpImageSampleDrefExplicitLod:
+		case spv::OpImageSampleProjImplicitLod:
+		case spv::OpImageSampleProjExplicitLod:
+		case spv::OpImageSampleProjDrefImplicitLod:
+		case spv::OpImageSampleProjDrefExplicitLod:
 		case spv::OpImageFetch:
 		case spv::OpImageGather:
+		case spv::OpImageDrefGather:
+		case spv::OpImageWrite:
 		case spv::OpImageQueryLod:
-		case spv::OpImageSampleDrefExplicitLod:
-		case spv::OpImageSampleDrefImplicitLod:
-		case spv::OpImageSampleExplicitLod:
-		case spv::OpImageSampleImplicitLod:
-		case spv::OpImageSampleProjDrefExplicitLod:
-		case spv::OpImageSampleProjDrefImplicitLod:
-		case spv::OpImageSampleProjExplicitLod:
-		case spv::OpImageSampleProjImplicitLod:
 			{
 				// The 'inline' sampler caches must be created in the prolog to initialize the tags.
 				uint32_t instructionPosition = insn.distanceFrom(this->begin());
@@ -1991,7 +1993,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 	case spv::OpImageDrefGather:
 	case spv::OpImageFetch:
 	case spv::OpImageQueryLod:
-		return EmitImageSample(insn, state);
+		return EmitImageSample(ImageInstruction(insn, *this), state);
 
 	case spv::OpImageQuerySizeLod:
 		return EmitImageQuerySizeLod(insn, state);
@@ -2006,13 +2008,13 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 		return EmitImageQuerySamples(insn, state);
 
 	case spv::OpImageRead:
-		return EmitImageRead(insn, state);
+		return EmitImageRead(ImageInstruction(insn, *this), state);
 
 	case spv::OpImageWrite:
-		return EmitImageWrite(insn, state);
+		return EmitImageWrite(ImageInstruction(insn, *this), state);
 
 	case spv::OpImageTexelPointer:
-		return EmitImageTexelPointer(insn, state);
+		return EmitImageTexelPointer(ImageInstruction(insn, *this), state);
 
 	case spv::OpSampledImage:
 	case spv::OpImage:
@@ -2564,16 +2566,16 @@ SpirvShader::Operand::Operand(const Intermediate &value)
 {
 }
 
-bool SpirvShader::Operand::isConstantZero() const
+bool SpirvShader::Object::isConstantZero() const
 {
-	if(!constant)
+	if(kind != Kind::Constant)
 	{
 		return false;
 	}
 
-	for(uint32_t i = 0; i < componentCount; i++)
+	for(uint32_t i = 0; i < constantValue.size(); i++)
 	{
-		if(constant[i] != 0)
+		if(constantValue[i] != 0)
 		{
 			return false;
 		}

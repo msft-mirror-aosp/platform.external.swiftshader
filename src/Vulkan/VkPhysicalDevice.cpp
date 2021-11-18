@@ -71,7 +71,7 @@ const VkPhysicalDeviceFeatures &PhysicalDevice::getFeatures() const
 		VK_TRUE,   // shaderStorageImageExtendedFormats
 		VK_TRUE,   // shaderStorageImageMultisample
 		VK_FALSE,  // shaderStorageImageReadWithoutFormat
-		VK_FALSE,  // shaderStorageImageWriteWithoutFormat
+		VK_TRUE,   // shaderStorageImageWriteWithoutFormat
 		VK_TRUE,   // shaderUniformBufferArrayDynamicIndexing
 		VK_TRUE,   // shaderSampledImageArrayDynamicIndexing
 		VK_TRUE,   // shaderStorageBufferArrayDynamicIndexing
@@ -953,7 +953,7 @@ static void getFloatControlsProperties(T *properties)
 {
 	// The spec states:
 	// shaderSignedZeroInfNanPreserveFloat32 is a boolean value indicating whether
-	// sign of a zero, Nans and ±∞ can be preserved in 32-bit floating-point
+	// sign of a zero, Nans and �infinity can be preserved in 32-bit floating-point
 	// computations. It also indicates whether the SignedZeroInfNanPreserve execution
 	// mode can be used for 32-bit floating-point types.
 	//
@@ -1107,42 +1107,127 @@ bool PhysicalDevice::hasFeatures(const VkPhysicalDeviceFeatures &requestedFeatur
 	return true;
 }
 
+// CheckFeature returns false if requested is asking for a feature that is not supported
+#define CheckFeature(requested, supported, feature) (requested->feature == VK_FALSE || supported.feature == VK_TRUE)
+
 template<typename T>
-bool PhysicalDevice::hasExtendedFeatures(const T *requestedFeature) const
+T PhysicalDevice::getSupportedFeatures(const T *requested) const
 {
 	VkPhysicalDeviceFeatures2 features;
 	features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-	T supportedFeature;
-	supportedFeature.sType = requestedFeature->sType;
-	supportedFeature.pNext = nullptr;
-	features.pNext = &supportedFeature;
-
+	T supported;
+	supported.sType = requested->sType;
+	supported.pNext = nullptr;
+	features.pNext = &supported;
 	getFeatures2(&features);
-	size_t offsetToFirstBool32 = sizeof(VkBaseOutStructure);
-	size_t numFeatures = (sizeof(T) - offsetToFirstBool32) / sizeof(VkBool32);
-	const VkBool32 *requestedFeatureBools = reinterpret_cast<const VkBool32 *>(
-	    reinterpret_cast<const uint8_t *>(requestedFeature) + offsetToFirstBool32);
-	const VkBool32 *supportedFeatureBools = reinterpret_cast<const VkBool32 *>(
-	    reinterpret_cast<const uint8_t *>(&supportedFeature) + offsetToFirstBool32);
-
-	for(size_t i = 0; i < numFeatures; i++)
-	{
-		if((requestedFeatureBools[i] != VK_FALSE) && (supportedFeatureBools[i] == VK_FALSE))
-		{
-			return false;
-		}
-	}
-	return true;
+	return supported;
 }
 
-#define InstantiateHasExtendedFeatures(Type) template bool PhysicalDevice::hasExtendedFeatures<Type>(const Type *requestedFeature) const
-InstantiateHasExtendedFeatures(VkPhysicalDeviceLineRasterizationFeaturesEXT);
-InstantiateHasExtendedFeatures(VkPhysicalDeviceProvokingVertexFeaturesEXT);
-InstantiateHasExtendedFeatures(VkPhysicalDeviceVulkan11Features);
-InstantiateHasExtendedFeatures(VkPhysicalDeviceVulkan12Features);
-InstantiateHasExtendedFeatures(VkPhysicalDeviceDepthClipEnableFeaturesEXT);
-InstantiateHasExtendedFeatures(VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT);
-#undef InstantiateHasExtendedFeatures
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceLineRasterizationFeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, rectangularLines) &&
+	       CheckFeature(requested, supported, bresenhamLines) &&
+	       CheckFeature(requested, supported, smoothLines) &&
+	       CheckFeature(requested, supported, stippledRectangularLines) &&
+	       CheckFeature(requested, supported, stippledBresenhamLines) &&
+	       CheckFeature(requested, supported, stippledSmoothLines);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceProvokingVertexFeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, provokingVertexLast) &&
+	       CheckFeature(requested, supported, transformFeedbackPreservesProvokingVertex);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceVulkan11Features *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, storageBuffer16BitAccess) &&
+	       CheckFeature(requested, supported, uniformAndStorageBuffer16BitAccess) &&
+	       CheckFeature(requested, supported, storagePushConstant16) &&
+	       CheckFeature(requested, supported, storageInputOutput16) &&
+	       CheckFeature(requested, supported, multiview) &&
+	       CheckFeature(requested, supported, multiviewGeometryShader) &&
+	       CheckFeature(requested, supported, multiviewTessellationShader) &&
+	       CheckFeature(requested, supported, variablePointersStorageBuffer) &&
+	       CheckFeature(requested, supported, variablePointers) &&
+	       CheckFeature(requested, supported, protectedMemory) &&
+	       CheckFeature(requested, supported, samplerYcbcrConversion) &&
+	       CheckFeature(requested, supported, shaderDrawParameters);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceVulkan12Features *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, samplerMirrorClampToEdge) &&
+	       CheckFeature(requested, supported, drawIndirectCount) &&
+	       CheckFeature(requested, supported, storageBuffer8BitAccess) &&
+	       CheckFeature(requested, supported, uniformAndStorageBuffer8BitAccess) &&
+	       CheckFeature(requested, supported, storagePushConstant8) &&
+	       CheckFeature(requested, supported, shaderBufferInt64Atomics) &&
+	       CheckFeature(requested, supported, shaderSharedInt64Atomics) &&
+	       CheckFeature(requested, supported, shaderFloat16) &&
+	       CheckFeature(requested, supported, shaderInt8) &&
+	       CheckFeature(requested, supported, descriptorIndexing) &&
+	       CheckFeature(requested, supported, shaderInputAttachmentArrayDynamicIndexing) &&
+	       CheckFeature(requested, supported, shaderUniformTexelBufferArrayDynamicIndexing) &&
+	       CheckFeature(requested, supported, shaderStorageTexelBufferArrayDynamicIndexing) &&
+	       CheckFeature(requested, supported, shaderUniformBufferArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, shaderSampledImageArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, shaderStorageBufferArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, shaderStorageImageArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, shaderInputAttachmentArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, shaderUniformTexelBufferArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, shaderStorageTexelBufferArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, descriptorBindingUniformBufferUpdateAfterBind) &&
+	       CheckFeature(requested, supported, descriptorBindingSampledImageUpdateAfterBind) &&
+	       CheckFeature(requested, supported, descriptorBindingStorageImageUpdateAfterBind) &&
+	       CheckFeature(requested, supported, descriptorBindingStorageBufferUpdateAfterBind) &&
+	       CheckFeature(requested, supported, descriptorBindingUniformTexelBufferUpdateAfterBind) &&
+	       CheckFeature(requested, supported, descriptorBindingStorageTexelBufferUpdateAfterBind) &&
+	       CheckFeature(requested, supported, descriptorBindingUpdateUnusedWhilePending) &&
+	       CheckFeature(requested, supported, descriptorBindingPartiallyBound) &&
+	       CheckFeature(requested, supported, descriptorBindingVariableDescriptorCount) &&
+	       CheckFeature(requested, supported, runtimeDescriptorArray) &&
+	       CheckFeature(requested, supported, samplerFilterMinmax) &&
+	       CheckFeature(requested, supported, scalarBlockLayout) &&
+	       CheckFeature(requested, supported, imagelessFramebuffer) &&
+	       CheckFeature(requested, supported, uniformBufferStandardLayout) &&
+	       CheckFeature(requested, supported, shaderSubgroupExtendedTypes) &&
+	       CheckFeature(requested, supported, separateDepthStencilLayouts) &&
+	       CheckFeature(requested, supported, hostQueryReset) &&
+	       CheckFeature(requested, supported, timelineSemaphore) &&
+	       CheckFeature(requested, supported, bufferDeviceAddress) &&
+	       CheckFeature(requested, supported, bufferDeviceAddressCaptureReplay) &&
+	       CheckFeature(requested, supported, bufferDeviceAddressMultiDevice) &&
+	       CheckFeature(requested, supported, vulkanMemoryModel) &&
+	       CheckFeature(requested, supported, vulkanMemoryModelDeviceScope) &&
+	       CheckFeature(requested, supported, vulkanMemoryModelAvailabilityVisibilityChains) &&
+	       CheckFeature(requested, supported, shaderOutputViewportIndex) &&
+	       CheckFeature(requested, supported, shaderOutputLayer) &&
+	       CheckFeature(requested, supported, subgroupBroadcastDynamicId);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceDepthClipEnableFeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, depthClipEnable);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, advancedBlendCoherentOperations);
+}
+#undef CheckFeature
 
 void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFormatProperties)
 {
@@ -1302,6 +1387,7 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFor
 
 	switch(format)
 	{
+	// Vulkan 1.0 mandatory storage image formats supporting atomic operations
 	case VK_FORMAT_R32_UINT:
 	case VK_FORMAT_R32_SINT:
 		pFormatProperties->optimalTilingFeatures |=
@@ -1309,14 +1395,11 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFor
 		pFormatProperties->bufferFeatures |=
 		    VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_ATOMIC_BIT;
 		// [[fallthrough]]
+	// Vulkan 1.0 mandatory storage image formats
 	case VK_FORMAT_R8G8B8A8_UNORM:
 	case VK_FORMAT_R8G8B8A8_SNORM:
 	case VK_FORMAT_R8G8B8A8_UINT:
 	case VK_FORMAT_R8G8B8A8_SINT:
-	case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
-	case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
-	case VK_FORMAT_A8B8G8R8_UINT_PACK32:
-	case VK_FORMAT_A8B8G8R8_SINT_PACK32:
 	case VK_FORMAT_R16G16B16A16_UINT:
 	case VK_FORMAT_R16G16B16A16_SINT:
 	case VK_FORMAT_R16G16B16A16_SFLOAT:
@@ -1327,12 +1410,13 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFor
 	case VK_FORMAT_R32G32B32A32_UINT:
 	case VK_FORMAT_R32G32B32A32_SINT:
 	case VK_FORMAT_R32G32B32A32_SFLOAT:
-	// shaderStorageImageExtendedFormats
+	case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+	case VK_FORMAT_A2B10G10R10_UINT_PACK32:
+	// Vulkan 1.0 shaderStorageImageExtendedFormats
 	case VK_FORMAT_R16G16_SFLOAT:
 	case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
 	case VK_FORMAT_R16_SFLOAT:
 	case VK_FORMAT_R16G16B16A16_UNORM:
-	case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
 	case VK_FORMAT_R16G16_UNORM:
 	case VK_FORMAT_R8G8_UNORM:
 	case VK_FORMAT_R16_UNORM:
@@ -1346,14 +1430,19 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFor
 	case VK_FORMAT_R8G8_SINT:
 	case VK_FORMAT_R16_SINT:
 	case VK_FORMAT_R8_SINT:
-	case VK_FORMAT_A2B10G10R10_UINT_PACK32:
 	case VK_FORMAT_R16G16_UINT:
 	case VK_FORMAT_R8G8_UINT:
 	case VK_FORMAT_R16_UINT:
 	case VK_FORMAT_R8_UINT:
+	// Additional formats not listed under "Formats without shader storage format"
+	case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+	case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
+	case VK_FORMAT_A8B8G8R8_UINT_PACK32:
+	case VK_FORMAT_A8B8G8R8_SINT_PACK32:
+	case VK_FORMAT_B8G8R8A8_UNORM:
+	case VK_FORMAT_B8G8R8A8_SRGB:
 		pFormatProperties->optimalTilingFeatures |=
 		    VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
-		// [[fallthrough]]
 		pFormatProperties->bufferFeatures |=
 		    VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT;
 		break;

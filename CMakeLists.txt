@@ -423,6 +423,7 @@ if(MSVC)
         "/we4471" # 'enumeration': a forward declaration of an unscoped enumeration must have an underlying type (int assumed)
         "/we4838" # conversion from 'type_1' to 'type_2' requires a narrowing conversion
         "/we5038" # data member 'member1' will be initialized after data member 'member2' data member 'member' will be initialized after base class 'base_class'
+        "/we4101" # 'identifier' : unreferenced local variable
     )
 else()
     # Explicitly enable these warnings.
@@ -833,6 +834,7 @@ if(SWIFTSHADER_BUILD_VULKAN)
         endif(SWIFTSHADER_BUILD_WSI_D2D)
     elseif(APPLE)
         target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_MACOS_MVK")
+        target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_METAL_EXT")
     elseif(FUCHSIA)
         target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_FUCHSIA")
     else()
