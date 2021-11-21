@@ -514,7 +514,6 @@ public:
 	struct ImageInstructionSignature
 	{
 		ImageInstructionSignature(Variant variant, SamplerMethod samplerMethod)
-		    : signature(0)
 		{
 			this->variant = variant;
 			this->samplerMethod = samplerMethod;
@@ -557,6 +556,9 @@ public:
 				Variant variant : BITS(VARIANT_LAST);
 				SamplerMethod samplerMethod : BITS(SAMPLER_METHOD_LAST);
 				uint32_t gatherComponent : 2;
+				uint32_t dim : BITS(spv::DimSubpassData);  // spv::Dim
+				uint32_t arrayed : 1;
+				uint32_t imageFormat : BITS(spv::ImageFormatR64i);  // spv::ImageFormat
 
 				// Parameters are passed to the sampling routine in this order:
 				uint32_t coordinates : 3;       // 1-4 (does not contain projection component)
@@ -567,7 +569,7 @@ public:
 				uint32_t sample : 1;            // 0-1 scalar integer
 			};
 
-			uint32_t signature;
+			uint32_t signature = 0;
 		};
 	};
 
@@ -668,6 +670,7 @@ public:
 		bool ImageQuery : 1;
 		bool DerivativeControl : 1;
 		bool InterpolationFunction : 1;
+		bool StorageImageWriteWithoutFormat : 1;
 		bool GroupNonUniform : 1;
 		bool GroupNonUniformVote : 1;
 		bool GroupNonUniformBallot : 1;
@@ -805,7 +808,7 @@ public:
 	};
 
 	std::unordered_map<Object::ID, DescriptorDecorations> descriptorDecorations;
-	std::vector<VkFormat> inputAttachmentFormats;
+	std::vector<vk::Format> inputAttachmentFormats;
 
 	struct InterfaceComponent
 	{
@@ -1295,7 +1298,7 @@ private:
 	EmitResult EmitImageQuerySamples(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitImageRead(const ImageInstruction &instruction, EmitState *state) const;
 	EmitResult EmitImageWrite(const ImageInstruction &instruction, EmitState *state) const;
-	EmitResult EmitImageTexelPointer(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitImageTexelPointer(const ImageInstruction &instruction, EmitState *state) const;
 	EmitResult EmitAtomicOp(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitAtomicCompareExchange(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitSampledImageCombineOrSplit(InsnIterator insn, EmitState *state) const;
@@ -1313,7 +1316,8 @@ private:
 	void callSamplerFunction(Pointer<Byte> samplerFunction, Array<SIMD::Float> &out, Pointer<Byte> imageDescriptor, const ImageInstruction &instruction, EmitState *state) const;
 
 	void GetImageDimensions(EmitState const *state, Type const &resultTy, Object::ID imageId, Object::ID lodId, Intermediate &dst) const;
-	SIMD::Pointer GetTexelAddress(EmitState const *state, Pointer<Byte> imageBase, Int imageSizeInBytes, Operand const &coordinate, Type const &imageType, Pointer<Byte> descriptor, int texelSize, Object::ID sampleId, bool useStencilAspect, OutOfBoundsBehavior outOfBoundsBehavior) const;
+	static SIMD::Pointer GetTexelAddress(ImageInstructionSignature instruction, Pointer<Byte> descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const EmitState *state);
+	static void WriteImage(ImageInstructionSignature instruction, Pointer<Byte> descriptor, const Pointer<SIMD::Int> &coord, const Pointer<SIMD::Int> &texelAndMask, vk::Format imageFormat);
 	uint32_t GetConstScalarInt(Object::ID id) const;
 	void EvalSpecConstantOp(InsnIterator insn);
 	void EvalSpecConstantUnaryOp(InsnIterator insn);
@@ -1378,6 +1382,7 @@ private:
 
 	static ImageSampler *getImageSampler(const vk::Device *device, uint32_t signature, uint32_t samplerId, uint32_t imageViewId);
 	static std::shared_ptr<rr::Routine> emitSamplerRoutine(ImageInstructionSignature instruction, const Sampler &samplerState);
+	static std::shared_ptr<rr::Routine> emitWriteRoutine(ImageInstructionSignature instruction, const Sampler &samplerState);
 
 	// TODO(b/129523279): Eliminate conversion and use vk::Sampler members directly.
 	static sw::FilterType convertFilterMode(const vk::SamplerState *samplerState, VkImageViewType imageViewType, SamplerMethod samplerMethod);

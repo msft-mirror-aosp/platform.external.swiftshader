@@ -409,6 +409,7 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityImageQuery: capabilities.ImageQuery = true; break;
 				case spv::CapabilityDerivativeControl: capabilities.DerivativeControl = true; break;
 				case spv::CapabilityInterpolationFunction: capabilities.InterpolationFunction = true; break;
+				case spv::CapabilityStorageImageWriteWithoutFormat: capabilities.StorageImageWriteWithoutFormat = true; break;
 				case spv::CapabilityGroupNonUniform: capabilities.GroupNonUniform = true; break;
 				case spv::CapabilityGroupNonUniformVote: capabilities.GroupNonUniformVote = true; break;
 				case spv::CapabilityGroupNonUniformArithmetic: capabilities.GroupNonUniformArithmetic = true; break;
@@ -1640,18 +1641,19 @@ void SpirvShader::emitProlog(SpirvRoutine *routine) const
 			}
 			break;
 
-		case spv::OpImageDrefGather:
+		case spv::OpImageSampleImplicitLod:
+		case spv::OpImageSampleExplicitLod:
+		case spv::OpImageSampleDrefImplicitLod:
+		case spv::OpImageSampleDrefExplicitLod:
+		case spv::OpImageSampleProjImplicitLod:
+		case spv::OpImageSampleProjExplicitLod:
+		case spv::OpImageSampleProjDrefImplicitLod:
+		case spv::OpImageSampleProjDrefExplicitLod:
 		case spv::OpImageFetch:
 		case spv::OpImageGather:
+		case spv::OpImageDrefGather:
+		case spv::OpImageWrite:
 		case spv::OpImageQueryLod:
-		case spv::OpImageSampleDrefExplicitLod:
-		case spv::OpImageSampleDrefImplicitLod:
-		case spv::OpImageSampleExplicitLod:
-		case spv::OpImageSampleImplicitLod:
-		case spv::OpImageSampleProjDrefExplicitLod:
-		case spv::OpImageSampleProjDrefImplicitLod:
-		case spv::OpImageSampleProjExplicitLod:
-		case spv::OpImageSampleProjImplicitLod:
 			{
 				// The 'inline' sampler caches must be created in the prolog to initialize the tags.
 				uint32_t instructionPosition = insn.distanceFrom(this->begin());
@@ -2012,7 +2014,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 		return EmitImageWrite(ImageInstruction(insn, *this), state);
 
 	case spv::OpImageTexelPointer:
-		return EmitImageTexelPointer(insn, state);
+		return EmitImageTexelPointer(ImageInstruction(insn, *this), state);
 
 	case spv::OpSampledImage:
 	case spv::OpImage:
