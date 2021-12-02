@@ -138,7 +138,7 @@ std::shared_ptr<marl::Scheduler> getOrCreateScheduler()
 		std::weak_ptr<marl::Scheduler> weakptr GUARDED_BY(mutex);
 	};
 
-	static Scheduler scheduler;
+	static Scheduler scheduler;  // TODO(b/208256248): Avoid exit-time destructor.
 
 	marl::lock lock(scheduler.mutex);
 	auto sptr = scheduler.weakptr.lock();
@@ -300,6 +300,7 @@ struct ExtensionProperties : public VkExtensionProperties
 	std::function<bool()> isSupported = [] { return true; };
 };
 
+// TODO(b/208256248): Avoid exit-time destructor.
 static const ExtensionProperties instanceExtensionProperties[] = {
 	{ { VK_KHR_DEVICE_GROUP_CREATION_EXTENSION_NAME, VK_KHR_DEVICE_GROUP_CREATION_SPEC_VERSION } },
 	{ { VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME, VK_KHR_EXTERNAL_FENCE_CAPABILITIES_SPEC_VERSION } },
@@ -312,10 +313,10 @@ static const ExtensionProperties instanceExtensionProperties[] = {
 	{ { VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_SURFACE_SPEC_VERSION } },
 #endif
 #ifdef VK_USE_PLATFORM_XCB_KHR
-	{ { VK_KHR_XCB_SURFACE_EXTENSION_NAME, VK_KHR_XCB_SURFACE_SPEC_VERSION }, [] { return vk::XcbSurfaceKHR::hasLibXCB(); } },
+	{ { VK_KHR_XCB_SURFACE_EXTENSION_NAME, VK_KHR_XCB_SURFACE_SPEC_VERSION }, [] { return vk::XcbSurfaceKHR::isSupported(); } },
 #endif
 #ifdef VK_USE_PLATFORM_XLIB_KHR
-	{ { VK_KHR_XLIB_SURFACE_EXTENSION_NAME, VK_KHR_XLIB_SURFACE_SPEC_VERSION }, [] { return static_cast<bool>(libX11); } },
+	{ { VK_KHR_XLIB_SURFACE_EXTENSION_NAME, VK_KHR_XLIB_SURFACE_SPEC_VERSION }, [] { return vk::XlibSurfaceKHR::isSupported(); } },
 #endif
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
 	{ { VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_SPEC_VERSION } },
@@ -337,6 +338,7 @@ static const ExtensionProperties instanceExtensionProperties[] = {
 #endif
 };
 
+// TODO(b/208256248): Avoid exit-time destructor.
 static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME, VK_KHR_DRIVER_PROPERTIES_SPEC_VERSION } },
 	// Vulkan 1.1 promoted extensions
