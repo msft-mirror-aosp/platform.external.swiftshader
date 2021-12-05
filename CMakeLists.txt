@@ -449,6 +449,8 @@ else()
             "-Wextra-semi"
             "-Wignored-qualifiers"
             "-Wdeprecated-copy"  # implicit copy constructor for 'X' is deprecated because of user-declared copy assignment operator.
+            # TODO(b/208256248): Avoid exit-time destructor.
+            #"-Wexit-time-destructors"  # declaration requires an exit-time destructor
         )
     endif()
 
@@ -796,6 +798,7 @@ if(SWIFTSHADER_BUILD_VULKAN)
         # This variable is also used by SPIRV-Tools to locate SPIRV-Headers
         set(SPIRV-Headers_SOURCE_DIR "${THIRD_PARTY_DIR}/SPIRV-Headers")
         set(SPIRV_SKIP_TESTS TRUE CACHE BOOL "" FORCE)
+        set(SPIRV_SKIP_EXECUTABLES TRUE CACHE BOOL "" FORCE)
         add_subdirectory(${THIRD_PARTY_DIR}/SPIRV-Tools) # Add SPIRV-Tools target
     endif()
 
