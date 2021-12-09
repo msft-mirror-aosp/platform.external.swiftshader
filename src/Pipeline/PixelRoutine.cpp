@@ -2477,14 +2477,14 @@ Vector4f PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, const
 		blendedColor.z = Max(sourceColor.z, destColor.z);
 		break;
 	case VK_BLEND_OP_SRC_EXT:
-		blendedColor.x = sourceColor.x * sourceFactor.x;  // TODO(b/204583457)
-		blendedColor.y = sourceColor.y * sourceFactor.y;  // TODO(b/204583457)
-		blendedColor.z = sourceColor.z * sourceFactor.z;  // TODO(b/204583457)
+		blendedColor.x = sourceColor.x;
+		blendedColor.y = sourceColor.y;
+		blendedColor.z = sourceColor.z;
 		break;
 	case VK_BLEND_OP_DST_EXT:
-		blendedColor.x = destColor.x * destFactor.x;  // TODO(b/204583457)
-		blendedColor.y = destColor.y * destFactor.y;  // TODO(b/204583457)
-		blendedColor.z = destColor.z * destFactor.z;  // TODO(b/204583457)
+		blendedColor.x = destColor.x;
+		blendedColor.y = destColor.y;
+		blendedColor.z = destColor.z;
 		break;
 	case VK_BLEND_OP_ZERO_EXT:
 		blendedColor.x = Float4(0.0f);
@@ -2530,17 +2530,30 @@ Vector4f PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, const
 		blendedColor.w = Max(sourceColor.w, destColor.w);
 		break;
 	case VK_BLEND_OP_SRC_EXT:
-		blendedColor.w = sourceColor.w * sourceFactor.w;  // TODO(b/204583457)
+		blendedColor.w = sourceColor.w;
 		break;
 	case VK_BLEND_OP_DST_EXT:
-		blendedColor.w = destColor.w * destFactor.w;  // TODO(b/204583457)
+		blendedColor.w = destColor.w;
 		break;
 	case VK_BLEND_OP_ZERO_EXT:
 		blendedColor.w = Float4(0.0f);
 		break;
 	case VK_BLEND_OP_MULTIPLY_EXT:
-		// All of the currently supported advanced blend modes compute the alpha the same way
-		// Use VK_BLEND_OP_MULTIPLY_EXT as a placeholder
+	case VK_BLEND_OP_SCREEN_EXT:
+	case VK_BLEND_OP_OVERLAY_EXT:
+	case VK_BLEND_OP_DARKEN_EXT:
+	case VK_BLEND_OP_LIGHTEN_EXT:
+	case VK_BLEND_OP_COLORDODGE_EXT:
+	case VK_BLEND_OP_COLORBURN_EXT:
+	case VK_BLEND_OP_HARDLIGHT_EXT:
+	case VK_BLEND_OP_SOFTLIGHT_EXT:
+	case VK_BLEND_OP_DIFFERENCE_EXT:
+	case VK_BLEND_OP_EXCLUSION_EXT:
+	case VK_BLEND_OP_HSL_HUE_EXT:
+	case VK_BLEND_OP_HSL_SATURATION_EXT:
+	case VK_BLEND_OP_HSL_COLOR_EXT:
+	case VK_BLEND_OP_HSL_LUMINOSITY_EXT:
+		// All of the currently supported 'advanced blend modes' compute the alpha the same way.
 		blendedColor.w = sourceColor.w + destColor.w - (sourceColor.w * destColor.w);
 		break;
 	default:
