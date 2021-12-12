@@ -142,21 +142,11 @@ Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Float4 uvwa[4], Floa
 	bool use32BitFiltering = hasFloatTexture() || hasUnnormalizedIntegerTexture() || force32BitFiltering ||
 	                         state.isCube() || state.unnormalizedCoordinates || state.compareEnable ||
 	                         borderModeActive() || (function == Gather) || (function == Fetch);
-	const sw::float4 compScale = getComponentScale();
-	int gatherComponent = (function == Gather) ? getGatherComponent() : 0;
 	int numComponents = (function == Gather) ? 4 : textureComponentCount();
 
 	if(use32BitFiltering)
 	{
 		c = sampleFloatFilter(texture, u, v, w, a, dRef, offset, sample, lod, anisotropy, uDelta, vDelta, function);
-
-		if(!hasFloatTexture() && !hasUnnormalizedIntegerTexture() && !state.compareEnable)
-		{
-			for(int component = 0; component < numComponents; component++)
-			{
-				c[component] *= Float4(1.0f / compScale[(function == Gather) ? gatherComponent : component]);
-			}
-		}
 	}
 	else  // 16-bit filtering.
 	{
@@ -172,8 +162,17 @@ Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Float4 uvwa[4], Floa
 			{
 				c[component] = Float4(cs[component]);
 			}
+		}
+	}
 
-			c[component] *= Float4(1.0f / compScale[(function == Gather) ? gatherComponent : component]);
+	if(hasNormalizedFormat() && !state.compareEnable)
+	{
+		sw::float4 scale = getComponentScale();
+
+		for(int component = 0; component < numComponents; component++)
+		{
+			int texelComponent = (function == Gather) ? getGatherComponent() : component;
+			c[component] *= Float4(1.0f / scale[texelComponent]);
 		}
 	}
 
@@ -2072,7 +2071,7 @@ Vector4f SamplerCore::replaceBorderTexel(const Vector4f &c, Int4 valid)
 {
 	Vector4i border;
 
-	const bool scaled = !hasFloatTexture() && !hasUnnormalizedIntegerTexture() && !state.compareEnable;
+	const bool scaled = hasNormalizedFormat() && !state.compareEnable;
 	const sw::float4 scaleComp = scaled ? getComponentScale() : sw::float4(1.0f, 1.0f, 1.0f, 1.0f);
 
 	switch(state.border)
@@ -2502,6 +2501,11 @@ void SamplerCore::sRGBtoLinearFF00(Short4 &c)
 	c = Insert(c, *Pointer<Short>(LUT + 2 * Int(Extract(c, 3))), 3);
 }
 
+bool SamplerCore::hasNormalizedFormat() const
+{
+	return state.textureFormat.isSignedNormalized() || state.textureFormat.isUnsignedNormalized();
+}
+
 bool SamplerCore::hasFloatTexture() const
 {
 	return state.textureFormat.isFloatFormat();
@@ -2586,15 +2590,14 @@ sw::float4 SamplerCore::getComponentScale() const
 		break;
 	};
 
-	const sw::float4 scale = state.textureFormat.getScale();
 	const sw::int4 bits = state.textureFormat.bitsPerComponent();
-	const sw::int4 shift = sw::int4(std::max(16 - bits.x, 0), std::max(16 - bits.y, 0), std::max(16 - bits.z, 0),
-	                                std::max(16 - bits.w, 0));
+	const sw::int4 shift = sw::int4(16 - bits.x, 16 - bits.y, 16 - bits.z, 16 - bits.w);
+	const uint16_t sign = state.textureFormat.isUnsigned() ? 0xFFFF : 0x7FFF;
 
-	return sw::float4(static_cast<uint16_t>(scale.x) << shift.x,
-	                  static_cast<uint16_t>(scale.y) << shift.y,
-	                  static_cast<uint16_t>(scale.z) << shift.z,
-	                  static_cast<uint16_t>(scale.w) << shift.w);
+	return sw::float4(static_cast<uint16_t>(0xFFFF << shift.x) & sign,
+	                  static_cast<uint16_t>(0xFFFF << shift.y) & sign,
+	                  static_cast<uint16_t>(0xFFFF << shift.z) & sign,
+	                  static_cast<uint16_t>(0xFFFF << shift.w) & sign);
 }
 
 int SamplerCore::getGatherComponent() const
