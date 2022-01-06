@@ -21,12 +21,13 @@
 
 namespace sw {
 
-SamplerCore::SamplerCore(Pointer<Byte> &constants, const Sampler &state)
+SamplerCore::SamplerCore(Pointer<Byte> &constants, const Sampler &state, SamplerFunction function)
     : constants(constants)
     , state(state)
+    , function(function)
 {
 }
-Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Float4 uvwa[4], Float4 &dRef, Float &&lodOrBias, Float4 &dsx, Float4 &dsy, Vector4i &offset, Int4 &sample, SamplerFunction function)
+Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Float4 uvwa[4], Float4 &dRef, Float &&lodOrBias, Float4 &dsx, Float4 &dsy, Vector4i &offset, Int4 &sample)
 {
 	Vector4f c;
 
@@ -68,19 +69,19 @@ Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Float4 uvwa[4], Floa
 	{
 		if(state.is1D())
 		{
-			computeLod1D(texture, lod, u, dsx, dsy, function);
+			computeLod1D(texture, lod, u, dsx, dsy);
 		}
 		else if(state.is2D())
 		{
-			computeLod2D(texture, lod, anisotropy, uDelta, vDelta, u, v, dsx, dsy, function);
+			computeLod2D(texture, lod, anisotropy, uDelta, vDelta, u, v, dsx, dsy);
 		}
 		else if(state.isCube())
 		{
-			computeLodCube(texture, lod, uvwa[0], uvwa[1], uvwa[2], dsx, dsy, M, function);
+			computeLodCube(texture, lod, uvwa[0], uvwa[1], uvwa[2], dsx, dsy, M);
 		}
 		else
 		{
-			computeLod3D(texture, lod, u, v, w, dsx, dsy, function);
+			computeLod3D(texture, lod, u, v, w, dsx, dsy);
 		}
 
 		Float bias = state.mipLodBias;
@@ -142,158 +143,45 @@ Vector4f SamplerCore::sampleTexture(Pointer<Byte> &texture, Float4 uvwa[4], Floa
 	bool use32BitFiltering = hasFloatTexture() || hasUnnormalizedIntegerTexture() || force32BitFiltering ||
 	                         state.isCube() || state.unnormalizedCoordinates || state.compareEnable ||
 	                         borderModeActive() || (function == Gather) || (function == Fetch);
+	int numComponents = (function == Gather) ? 4 : textureComponentCount();
 
 	if(use32BitFiltering)
 	{
-		c = sampleFloatFilter(texture, u, v, w, a, dRef, offset, sample, lod, anisotropy, uDelta, vDelta, function);
-
-		if(!hasFloatTexture() && !hasUnnormalizedIntegerTexture() && !state.compareEnable)
-		{
-			switch(state.textureFormat)
-			{
-			case VK_FORMAT_R5G6B5_UNORM_PACK16:
-			case VK_FORMAT_B5G6R5_UNORM_PACK16:
-				c.x *= Float4(1.0f / 0xF800);
-				c.y *= Float4(1.0f / 0xFC00);
-				c.z *= Float4(1.0f / 0xF800);
-				break;
-			case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
-			case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
-			case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
-			case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
-				c.x *= Float4(1.0f / 0xF000);
-				c.y *= Float4(1.0f / 0xF000);
-				c.z *= Float4(1.0f / 0xF000);
-				c.w *= Float4(1.0f / 0xF000);
-				break;
-			case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
-			case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
-			case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
-				c.x *= Float4(1.0f / 0xF800);
-				c.y *= Float4(1.0f / 0xF800);
-				c.z *= Float4(1.0f / 0xF800);
-				c.w *= Float4(1.0f / 0x8000);
-				break;
-			case VK_FORMAT_R8_SNORM:
-			case VK_FORMAT_R8G8_SNORM:
-			case VK_FORMAT_R8G8B8A8_SNORM:
-			case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
-				c.x = Max(c.x * Float4(1.0f / 0x7F00), Float4(-1.0f));
-				c.y = Max(c.y * Float4(1.0f / 0x7F00), Float4(-1.0f));
-				c.z = Max(c.z * Float4(1.0f / 0x7F00), Float4(-1.0f));
-				c.w = Max(c.w * Float4(1.0f / 0x7F00), Float4(-1.0f));
-				break;
-			case VK_FORMAT_R8_UNORM:
-			case VK_FORMAT_R8G8_UNORM:
-			case VK_FORMAT_R8G8B8A8_UNORM:
-			case VK_FORMAT_B8G8R8A8_UNORM:
-			case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
-			case VK_FORMAT_B8G8R8A8_SRGB:
-			case VK_FORMAT_R8G8B8A8_SRGB:
-			case VK_FORMAT_R8_SRGB:
-			case VK_FORMAT_R8G8_SRGB:
-				c.x *= Float4(1.0f / 0xFF00u);
-				c.y *= Float4(1.0f / 0xFF00u);
-				c.z *= Float4(1.0f / 0xFF00u);
-				c.w *= Float4(1.0f / 0xFF00u);
-				break;
-			//TODO(b/205576016)
-			case VK_FORMAT_R16_UNORM:
-			case VK_FORMAT_R16G16_UNORM:
-			case VK_FORMAT_R16G16B16A16_UNORM:
-				c.x *= Float4(1.0f / 0xFFFF);
-				c.y *= Float4(1.0f / 0xFFFF);
-				c.z *= Float4(1.0f / 0xFFFF);
-				c.w *= Float4(1.0f / 0xFFFF);
-				break;
-			case VK_FORMAT_R16_SNORM:
-			case VK_FORMAT_R16G16_SNORM:
-			case VK_FORMAT_R16G16B16A16_SNORM:
-				c.x = Max(c.x * Float4(1.0f / 0x7FFF), Float4(-1.0f));
-				c.y = Max(c.y * Float4(1.0f / 0x7FFF), Float4(-1.0f));
-				c.z = Max(c.z * Float4(1.0f / 0x7FFF), Float4(-1.0f));
-				c.w = Max(c.w * Float4(1.0f / 0x7FFF), Float4(-1.0f));
-				break;
-			default:
-				for(int component = 0; component < textureComponentCount(); component++)
-				{
-					c[component] *= Float4(hasUnsignedTextureComponent(component) ? 1.0f / 0xFFFF : 1.0f / 0x7FFF);
-				}
-			}
-		}
+		c = sampleFloatFilter(texture, u, v, w, a, dRef, offset, sample, lod, anisotropy, uDelta, vDelta);
 	}
 	else  // 16-bit filtering.
 	{
-		Vector4s cs = sampleFilter(texture, u, v, w, a, offset, sample, lod, anisotropy, uDelta, vDelta, function);
+		Vector4s cs = sampleFilter(texture, u, v, w, a, offset, sample, lod, anisotropy, uDelta, vDelta);
 
-		switch(state.textureFormat)
+		for(int component = 0; component < numComponents; component++)
 		{
-		case VK_FORMAT_R5G6B5_UNORM_PACK16:
-		case VK_FORMAT_B5G6R5_UNORM_PACK16:
-			c.x = Float4(As<UShort4>(cs.x)) * Float4(1.0f / 0xF800);
-			c.y = Float4(As<UShort4>(cs.y)) * Float4(1.0f / 0xFC00);
-			c.z = Float4(As<UShort4>(cs.z)) * Float4(1.0f / 0xF800);
-			break;
-		case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
-		case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
-		case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
-		case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
-			c.x = Float4(As<UShort4>(cs.x)) * Float4(1.0f / 0xF000);
-			c.y = Float4(As<UShort4>(cs.y)) * Float4(1.0f / 0xF000);
-			c.z = Float4(As<UShort4>(cs.z)) * Float4(1.0f / 0xF000);
-			c.w = Float4(As<UShort4>(cs.w)) * Float4(1.0f / 0xF000);
-			break;
-		case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
-		case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
-		case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
-			c.x = Float4(As<UShort4>(cs.x)) * Float4(1.0f / 0xF800);
-			c.y = Float4(As<UShort4>(cs.y)) * Float4(1.0f / 0xF800);
-			c.z = Float4(As<UShort4>(cs.z)) * Float4(1.0f / 0xF800);
-			c.w = Float4(As<UShort4>(cs.w)) * Float4(1.0f / 0x8000);
-			break;
-		case VK_FORMAT_R8_SNORM:
-		case VK_FORMAT_R8G8_SNORM:
-		case VK_FORMAT_R8G8B8A8_SNORM:
-		case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
-			c.x = Max(Float4(cs.x) * Float4(1.0f / 0x7F00), Float4(-1.0f));
-			c.y = Max(Float4(cs.y) * Float4(1.0f / 0x7F00), Float4(-1.0f));
-			c.z = Max(Float4(cs.z) * Float4(1.0f / 0x7F00), Float4(-1.0f));
-			c.w = Max(Float4(cs.w) * Float4(1.0f / 0x7F00), Float4(-1.0f));
-			break;
-		case VK_FORMAT_R8_UNORM:
-		case VK_FORMAT_R8G8_UNORM:
-		case VK_FORMAT_R8G8B8A8_UNORM:
-		case VK_FORMAT_B8G8R8A8_UNORM:
-		case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
-		case VK_FORMAT_B8G8R8A8_SRGB:
-		case VK_FORMAT_R8G8B8A8_SRGB:
-		case VK_FORMAT_R8_SRGB:
-		case VK_FORMAT_R8G8_SRGB:
-			c.x = Float4(As<UShort4>(cs.x)) * Float4(1.0f / 0xFF00u);
-			c.y = Float4(As<UShort4>(cs.y)) * Float4(1.0f / 0xFF00u);
-			c.z = Float4(As<UShort4>(cs.z)) * Float4(1.0f / 0xFF00u);
-			c.w = Float4(As<UShort4>(cs.w)) * Float4(1.0f / 0xFF00u);
-			break;
-		case VK_FORMAT_R16_SNORM:
-		case VK_FORMAT_R16G16_SNORM:
-		case VK_FORMAT_R16G16B16A16_SNORM:
-			c.x = Max(Float4(cs.x) * Float4(1.0f / 0x7FFF), Float4(-1.0f));
-			c.y = Max(Float4(cs.y) * Float4(1.0f / 0x7FFF), Float4(-1.0f));
-			c.z = Max(Float4(cs.z) * Float4(1.0f / 0x7FFF), Float4(-1.0f));
-			c.w = Max(Float4(cs.w) * Float4(1.0f / 0x7FFF), Float4(-1.0f));
-			break;
-		default:
-			for(int component = 0; component < textureComponentCount(); component++)
+			if(hasUnsignedTextureComponent(component))
 			{
-				if(hasUnsignedTextureComponent(component))
-				{
-					convertUnsigned16(c[component], cs[component]);
-				}
-				else
-				{
-					convertSigned15(c[component], cs[component]);
-				}
+				c[component] = Float4(As<UShort4>(cs[component]));
 			}
+			else
+			{
+				c[component] = Float4(cs[component]);
+			}
+		}
+	}
+
+	if(hasNormalizedFormat() && !state.compareEnable)
+	{
+		sw::float4 scale = getComponentScale();
+
+		for(int component = 0; component < numComponents; component++)
+		{
+			int texelComponent = (function == Gather) ? getGatherComponent() : component;
+			c[component] *= Float4(1.0f / scale[texelComponent]);
+		}
+	}
+
+	if(state.textureFormat.isSignedNormalized())
+	{
+		for(int component = 0; component < numComponents; component++)
+		{
+			c[component] = Max(c[component], Float4(-1.0f));
 		}
 	}
 
@@ -393,9 +281,9 @@ Short4 SamplerCore::offsetSample(Short4 &uvw, Pointer<Byte> &mipmap, int halfOff
 	return uvw;
 }
 
-Vector4s SamplerCore::sampleFilter(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Vector4i &offset, const Int4 &sample, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta, SamplerFunction function)
+Vector4s SamplerCore::sampleFilter(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Vector4i &offset, const Int4 &sample, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta)
 {
-	Vector4s c = sampleAniso(texture, u, v, w, a, offset, sample, lod, anisotropy, uDelta, vDelta, false, function);
+	Vector4s c = sampleAniso(texture, u, v, w, a, offset, sample, lod, anisotropy, uDelta, vDelta, false);
 
 	if(function == Fetch)
 	{
@@ -404,12 +292,12 @@ Vector4s SamplerCore::sampleFilter(Pointer<Byte> &texture, Float4 &u, Float4 &v,
 
 	if(state.mipmapFilter == MIPMAP_LINEAR)
 	{
-		Vector4s cc = sampleAniso(texture, u, v, w, a, offset, sample, lod, anisotropy, uDelta, vDelta, true, function);
+		Vector4s cc = sampleAniso(texture, u, v, w, a, offset, sample, lod, anisotropy, uDelta, vDelta, true);
 
 		lod *= Float(1 << 16);
 
-		UShort4 utri = UShort4(Float4(lod));  // FIXME: Optimize
-		Short4 stri = utri >> 1;              // FIXME: Optimize
+		UShort4 utri = UShort4(Float4(lod));  // TODO: Optimize
+		Short4 stri = utri >> 1;              // TODO: Optimize
 
 		if(hasUnsignedTextureComponent(0))
 			cc.x = MulHigh(As<UShort4>(cc.x), utri);
@@ -462,13 +350,13 @@ Vector4s SamplerCore::sampleFilter(Pointer<Byte> &texture, Float4 &u, Float4 &v,
 	return c;
 }
 
-Vector4s SamplerCore::sampleAniso(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Vector4i &offset, const Int4 &sample, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta, bool secondLOD, SamplerFunction function)
+Vector4s SamplerCore::sampleAniso(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Vector4i &offset, const Int4 &sample, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta, bool secondLOD)
 {
 	Vector4s c;
 
 	if(state.textureFilter != FILTER_ANISOTROPIC)
 	{
-		c = sampleQuad(texture, u, v, w, a, offset, sample, lod, secondLOD, function);
+		c = sampleQuad(texture, u, v, w, a, offset, sample, lod, secondLOD);
 	}
 	else
 	{
@@ -499,7 +387,7 @@ Vector4s SamplerCore::sampleAniso(Pointer<Byte> &texture, Float4 &u, Float4 &v, 
 
 		Do
 		{
-			c = sampleQuad(texture, u0, v0, w, a, offset, sample, lod, secondLOD, function);
+			c = sampleQuad(texture, u0, v0, w, a, offset, sample, lod, secondLOD);
 
 			u0 += du;
 			v0 += dv;
@@ -546,37 +434,36 @@ Vector4s SamplerCore::sampleAniso(Pointer<Byte> &texture, Float4 &u, Float4 &v, 
 	return c;
 }
 
-Vector4s SamplerCore::sampleQuad(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Vector4i &offset, const Int4 &sample, Float &lod, bool secondLOD, SamplerFunction function)
+Vector4s SamplerCore::sampleQuad(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Vector4i &offset, const Int4 &sample, Float &lod, bool secondLOD)
 {
 	if(state.textureType != VK_IMAGE_VIEW_TYPE_3D)
 	{
-		return sampleQuad2D(texture, u, v, w, a, offset, sample, lod, secondLOD, function);
+		return sampleQuad2D(texture, u, v, w, a, offset, sample, lod, secondLOD);
 	}
 	else
 	{
-		return sample3D(texture, u, v, w, offset, sample, lod, secondLOD, function);
+		return sample3D(texture, u, v, w, offset, sample, lod, secondLOD);
 	}
 }
 
-Vector4s SamplerCore::sampleQuad2D(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Vector4i &offset, const Int4 &sample, Float &lod, bool secondLOD, SamplerFunction function)
+Vector4s SamplerCore::sampleQuad2D(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Vector4i &offset, const Int4 &sample, Float &lod, bool secondLOD)
 {
 	Vector4s c;
 
 	int componentCount = textureComponentCount();
 	bool gather = (state.textureFilter == FILTER_GATHER);
 
-	Pointer<Byte> mipmap;
-	Pointer<Byte> buffer;
-	selectMipmap(texture, mipmap, buffer, lod, secondLOD);
+	Pointer<Byte> mipmap = selectMipmap(texture, lod, secondLOD);
+	Pointer<Byte> buffer = *Pointer<Pointer<Byte>>(mipmap + OFFSET(Mipmap, buffer));
 
 	Short4 uuuu = address(u, state.addressingModeU, mipmap);
 	Short4 vvvv = address(v, state.addressingModeV, mipmap);
 	Short4 wwww = address(w, state.addressingModeW, mipmap);
-	Short4 layerIndex = computeLayerIndex(a, mipmap);
+	Short4 layerIndex = computeLayerIndex16(a, mipmap);
 
 	if(state.textureFilter == FILTER_POINT)
 	{
-		c = sampleTexel(uuuu, vvvv, wwww, layerIndex, offset, sample, mipmap, buffer, function);
+		c = sampleTexel(uuuu, vvvv, wwww, layerIndex, offset, sample, mipmap, buffer);
 	}
 	else
 	{
@@ -585,10 +472,10 @@ Vector4s SamplerCore::sampleQuad2D(Pointer<Byte> &texture, Float4 &u, Float4 &v,
 		Short4 uuuu1 = offsetSample(uuuu, mipmap, OFFSET(Mipmap, uHalf), state.addressingModeU == ADDRESSING_WRAP, +1, lod);
 		Short4 vvvv1 = offsetSample(vvvv, mipmap, OFFSET(Mipmap, vHalf), state.addressingModeV == ADDRESSING_WRAP, +1, lod);
 
-		Vector4s c00 = sampleTexel(uuuu0, vvvv0, wwww, layerIndex, offset, sample, mipmap, buffer, function);
-		Vector4s c10 = sampleTexel(uuuu1, vvvv0, wwww, layerIndex, offset, sample, mipmap, buffer, function);
-		Vector4s c01 = sampleTexel(uuuu0, vvvv1, wwww, layerIndex, offset, sample, mipmap, buffer, function);
-		Vector4s c11 = sampleTexel(uuuu1, vvvv1, wwww, layerIndex, offset, sample, mipmap, buffer, function);
+		Vector4s c00 = sampleTexel(uuuu0, vvvv0, wwww, layerIndex, offset, sample, mipmap, buffer);
+		Vector4s c10 = sampleTexel(uuuu1, vvvv0, wwww, layerIndex, offset, sample, mipmap, buffer);
+		Vector4s c01 = sampleTexel(uuuu0, vvvv1, wwww, layerIndex, offset, sample, mipmap, buffer);
+		Vector4s c11 = sampleTexel(uuuu1, vvvv1, wwww, layerIndex, offset, sample, mipmap, buffer);
 
 		if(!gather)  // Blend
 		{
@@ -761,15 +648,14 @@ Vector4s SamplerCore::sampleQuad2D(Pointer<Byte> &texture, Float4 &u, Float4 &v,
 	return c;
 }
 
-Vector4s SamplerCore::sample3D(Pointer<Byte> &texture, Float4 &u_, Float4 &v_, Float4 &w_, Vector4i &offset, const Int4 &sample, Float &lod, bool secondLOD, SamplerFunction function)
+Vector4s SamplerCore::sample3D(Pointer<Byte> &texture, Float4 &u_, Float4 &v_, Float4 &w_, Vector4i &offset, const Int4 &sample, Float &lod, bool secondLOD)
 {
 	Vector4s c_;
 
 	int componentCount = textureComponentCount();
 
-	Pointer<Byte> mipmap;
-	Pointer<Byte> buffer;
-	selectMipmap(texture, mipmap, buffer, lod, secondLOD);
+	Pointer<Byte> mipmap = selectMipmap(texture, lod, secondLOD);
+	Pointer<Byte> buffer = *Pointer<Pointer<Byte>>(mipmap + OFFSET(Mipmap, buffer));
 
 	Short4 uuuu = address(u_, state.addressingModeU, mipmap);
 	Short4 vvvv = address(v_, state.addressingModeV, mipmap);
@@ -777,7 +663,7 @@ Vector4s SamplerCore::sample3D(Pointer<Byte> &texture, Float4 &u_, Float4 &v_, F
 
 	if(state.textureFilter == FILTER_POINT)
 	{
-		c_ = sampleTexel(uuuu, vvvv, wwww, 0, offset, sample, mipmap, buffer, function);
+		c_ = sampleTexel(uuuu, vvvv, wwww, 0, offset, sample, mipmap, buffer);
 	}
 	else
 	{
@@ -849,7 +735,7 @@ Vector4s SamplerCore::sample3D(Pointer<Byte> &texture, Float4 &u_, Float4 &v_, F
 			{
 				for(int k = 0; k < 2; k++)
 				{
-					c[i][j][k] = sampleTexel(u[i][j][k], v[i][j][k], s[i][j][k], 0, offset, sample, mipmap, buffer, function);
+					c[i][j][k] = sampleTexel(u[i][j][k], v[i][j][k], s[i][j][k], 0, offset, sample, mipmap, buffer);
 
 					if(componentCount >= 1)
 					{
@@ -910,9 +796,9 @@ Vector4s SamplerCore::sample3D(Pointer<Byte> &texture, Float4 &u_, Float4 &v_, F
 	return c_;
 }
 
-Vector4f SamplerCore::sampleFloatFilter(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Float4 &dRef, Vector4i &offset, const Int4 &sample, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta, SamplerFunction function)
+Vector4f SamplerCore::sampleFloatFilter(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Float4 &dRef, Vector4i &offset, const Int4 &sample, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta)
 {
-	Vector4f c = sampleFloatAniso(texture, u, v, w, a, dRef, offset, sample, lod, anisotropy, uDelta, vDelta, false, function);
+	Vector4f c = sampleFloatAniso(texture, u, v, w, a, dRef, offset, sample, lod, anisotropy, uDelta, vDelta, false);
 
 	if(function == Fetch)
 	{
@@ -921,7 +807,7 @@ Vector4f SamplerCore::sampleFloatFilter(Pointer<Byte> &texture, Float4 &u, Float
 
 	if(state.mipmapFilter == MIPMAP_LINEAR)
 	{
-		Vector4f cc = sampleFloatAniso(texture, u, v, w, a, dRef, offset, sample, lod, anisotropy, uDelta, vDelta, true, function);
+		Vector4f cc = sampleFloatAniso(texture, u, v, w, a, dRef, offset, sample, lod, anisotropy, uDelta, vDelta, true);
 
 		Float4 lod4 = Float4(Frac(lod));
 
@@ -934,13 +820,13 @@ Vector4f SamplerCore::sampleFloatFilter(Pointer<Byte> &texture, Float4 &u, Float
 	return c;
 }
 
-Vector4f SamplerCore::sampleFloatAniso(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Float4 &dRef, Vector4i &offset, const Int4 &sample, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta, bool secondLOD, SamplerFunction function)
+Vector4f SamplerCore::sampleFloatAniso(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Float4 &dRef, Vector4i &offset, const Int4 &sample, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta, bool secondLOD)
 {
 	Vector4f c;
 
 	if(state.textureFilter != FILTER_ANISOTROPIC)
 	{
-		c = sampleFloat(texture, u, v, w, a, dRef, offset, sample, lod, secondLOD, function);
+		c = sampleFloat(texture, u, v, w, a, dRef, offset, sample, lod, secondLOD);
 	}
 	else
 	{
@@ -969,7 +855,7 @@ Vector4f SamplerCore::sampleFloatAniso(Pointer<Byte> &texture, Float4 &u, Float4
 
 		Do
 		{
-			c = sampleFloat(texture, u0, v0, w, a, dRef, offset, sample, lod, secondLOD, function);
+			c = sampleFloat(texture, u0, v0, w, a, dRef, offset, sample, lod, secondLOD);
 
 			u0 += du;
 			v0 += dv;
@@ -992,34 +878,33 @@ Vector4f SamplerCore::sampleFloatAniso(Pointer<Byte> &texture, Float4 &u, Float4
 	return c;
 }
 
-Vector4f SamplerCore::sampleFloat(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Float4 &dRef, Vector4i &offset, const Int4 &sample, Float &lod, bool secondLOD, SamplerFunction function)
+Vector4f SamplerCore::sampleFloat(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Float4 &dRef, Vector4i &offset, const Int4 &sample, Float &lod, bool secondLOD)
 {
 	if(state.textureType != VK_IMAGE_VIEW_TYPE_3D)
 	{
-		return sampleFloat2D(texture, u, v, w, a, dRef, offset, sample, lod, secondLOD, function);
+		return sampleFloat2D(texture, u, v, w, a, dRef, offset, sample, lod, secondLOD);
 	}
 	else
 	{
-		return sampleFloat3D(texture, u, v, w, dRef, offset, sample, lod, secondLOD, function);
+		return sampleFloat3D(texture, u, v, w, dRef, offset, sample, lod, secondLOD);
 	}
 }
 
-Vector4f SamplerCore::sampleFloat2D(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Float4 &dRef, Vector4i &offset, const Int4 &sample, Float &lod, bool secondLOD, SamplerFunction function)
+Vector4f SamplerCore::sampleFloat2D(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, const Float4 &a, Float4 &dRef, Vector4i &offset, const Int4 &sample, Float &lod, bool secondLOD)
 {
 	Vector4f c;
 
 	int componentCount = textureComponentCount();
 	bool gather = (state.textureFilter == FILTER_GATHER);
 
-	Pointer<Byte> mipmap;
-	Pointer<Byte> buffer;
-	selectMipmap(texture, mipmap, buffer, lod, secondLOD);
+	Pointer<Byte> mipmap = selectMipmap(texture, lod, secondLOD);
+	Pointer<Byte> buffer = *Pointer<Pointer<Byte>>(mipmap + OFFSET(Mipmap, buffer));
 
 	Int4 x0, x1, y0, y1;
 	Float4 fu, fv;
 	Int4 filter = computeFilterOffset(lod);
-	address(u, x0, x1, fu, mipmap, offset.x, filter, OFFSET(Mipmap, width), state.addressingModeU, function);
-	address(v, y0, y1, fv, mipmap, offset.y, filter, OFFSET(Mipmap, height), state.addressingModeV, function);
+	address(u, x0, x1, fu, mipmap, offset.x, filter, OFFSET(Mipmap, width), state.addressingModeU);
+	address(v, y0, y1, fv, mipmap, offset.y, filter, OFFSET(Mipmap, height), state.addressingModeV);
 
 	Int4 pitchP = *Pointer<Int4>(mipmap + OFFSET(Mipmap, pitchP), 16);
 	y0 *= pitchP;
@@ -1028,7 +913,7 @@ Vector4f SamplerCore::sampleFloat2D(Pointer<Byte> &texture, Float4 &u, Float4 &v
 	if(state.isCube() || state.isArrayed())
 	{
 		Int4 face = As<Int4>(w);
-		Int4 layerIndex = computeLayerIndex(a, mipmap, function);
+		Int4 layerIndex = computeLayerIndex(a, mipmap);
 
 		// For cube maps, the layer argument is per cube, each of which has 6 layers
 		if(state.textureType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY)
@@ -1048,16 +933,16 @@ Vector4f SamplerCore::sampleFloat2D(Pointer<Byte> &texture, Float4 &u, Float4 &v
 
 	if(state.textureFilter == FILTER_POINT || (function == Fetch))
 	{
-		c = sampleTexel(x0, y0, z, dRef, sample, mipmap, buffer, function);
+		c = sampleTexel(x0, y0, z, dRef, sample, mipmap, buffer);
 	}
 	else
 	{
 		y1 *= pitchP;
 
-		Vector4f c00 = sampleTexel(x0, y0, z, dRef, sample, mipmap, buffer, function);
-		Vector4f c10 = sampleTexel(x1, y0, z, dRef, sample, mipmap, buffer, function);
-		Vector4f c01 = sampleTexel(x0, y1, z, dRef, sample, mipmap, buffer, function);
-		Vector4f c11 = sampleTexel(x1, y1, z, dRef, sample, mipmap, buffer, function);
+		Vector4f c00 = sampleTexel(x0, y0, z, dRef, sample, mipmap, buffer);
+		Vector4f c10 = sampleTexel(x1, y0, z, dRef, sample, mipmap, buffer);
+		Vector4f c01 = sampleTexel(x0, y1, z, dRef, sample, mipmap, buffer);
+		Vector4f c11 = sampleTexel(x1, y1, z, dRef, sample, mipmap, buffer);
 
 		if(!gather)  // Blend
 		{
@@ -1098,22 +983,21 @@ Vector4f SamplerCore::sampleFloat2D(Pointer<Byte> &texture, Float4 &u, Float4 &v
 	return c;
 }
 
-Vector4f SamplerCore::sampleFloat3D(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, Float4 &dRef, Vector4i &offset, const Int4 &sample, Float &lod, bool secondLOD, SamplerFunction function)
+Vector4f SamplerCore::sampleFloat3D(Pointer<Byte> &texture, Float4 &u, Float4 &v, Float4 &w, Float4 &dRef, Vector4i &offset, const Int4 &sample, Float &lod, bool secondLOD)
 {
 	Vector4f c;
 
 	int componentCount = textureComponentCount();
 
-	Pointer<Byte> mipmap;
-	Pointer<Byte> buffer;
-	selectMipmap(texture, mipmap, buffer, lod, secondLOD);
+	Pointer<Byte> mipmap = selectMipmap(texture, lod, secondLOD);
+	Pointer<Byte> buffer = *Pointer<Pointer<Byte>>(mipmap + OFFSET(Mipmap, buffer));
 
 	Int4 x0, x1, y0, y1, z0, z1;
 	Float4 fu, fv, fw;
 	Int4 filter = computeFilterOffset(lod);
-	address(u, x0, x1, fu, mipmap, offset.x, filter, OFFSET(Mipmap, width), state.addressingModeU, function);
-	address(v, y0, y1, fv, mipmap, offset.y, filter, OFFSET(Mipmap, height), state.addressingModeV, function);
-	address(w, z0, z1, fw, mipmap, offset.z, filter, OFFSET(Mipmap, depth), state.addressingModeW, function);
+	address(u, x0, x1, fu, mipmap, offset.x, filter, OFFSET(Mipmap, width), state.addressingModeU);
+	address(v, y0, y1, fv, mipmap, offset.y, filter, OFFSET(Mipmap, height), state.addressingModeV);
+	address(w, z0, z1, fw, mipmap, offset.z, filter, OFFSET(Mipmap, depth), state.addressingModeW);
 
 	Int4 pitchP = *Pointer<Int4>(mipmap + OFFSET(Mipmap, pitchP), 16);
 	Int4 sliceP = *Pointer<Int4>(mipmap + OFFSET(Mipmap, sliceP), 16);
@@ -1122,21 +1006,21 @@ Vector4f SamplerCore::sampleFloat3D(Pointer<Byte> &texture, Float4 &u, Float4 &v
 
 	if(state.textureFilter == FILTER_POINT || (function == Fetch))
 	{
-		c = sampleTexel(x0, y0, z0, dRef, sample, mipmap, buffer, function);
+		c = sampleTexel(x0, y0, z0, dRef, sample, mipmap, buffer);
 	}
 	else
 	{
 		y1 *= pitchP;
 		z1 *= sliceP;
 
-		Vector4f c000 = sampleTexel(x0, y0, z0, dRef, sample, mipmap, buffer, function);
-		Vector4f c100 = sampleTexel(x1, y0, z0, dRef, sample, mipmap, buffer, function);
-		Vector4f c010 = sampleTexel(x0, y1, z0, dRef, sample, mipmap, buffer, function);
-		Vector4f c110 = sampleTexel(x1, y1, z0, dRef, sample, mipmap, buffer, function);
-		Vector4f c001 = sampleTexel(x0, y0, z1, dRef, sample, mipmap, buffer, function);
-		Vector4f c101 = sampleTexel(x1, y0, z1, dRef, sample, mipmap, buffer, function);
-		Vector4f c011 = sampleTexel(x0, y1, z1, dRef, sample, mipmap, buffer, function);
-		Vector4f c111 = sampleTexel(x1, y1, z1, dRef, sample, mipmap, buffer, function);
+		Vector4f c000 = sampleTexel(x0, y0, z0, dRef, sample, mipmap, buffer);
+		Vector4f c100 = sampleTexel(x1, y0, z0, dRef, sample, mipmap, buffer);
+		Vector4f c010 = sampleTexel(x0, y1, z0, dRef, sample, mipmap, buffer);
+		Vector4f c110 = sampleTexel(x1, y1, z0, dRef, sample, mipmap, buffer);
+		Vector4f c001 = sampleTexel(x0, y0, z1, dRef, sample, mipmap, buffer);
+		Vector4f c101 = sampleTexel(x1, y0, z1, dRef, sample, mipmap, buffer);
+		Vector4f c011 = sampleTexel(x0, y1, z1, dRef, sample, mipmap, buffer);
+		Vector4f c111 = sampleTexel(x1, y1, z1, dRef, sample, mipmap, buffer);
 
 		// Blend first slice
 		if(componentCount >= 1) c000.x = c000.x + fu * (c100.x - c000.x);
@@ -1199,7 +1083,7 @@ static Float log2(Float lod)
 	return lod;
 }
 
-void SamplerCore::computeLod1D(Pointer<Byte> &texture, Float &lod, Float4 &uuuu, Float4 &dsx, Float4 &dsy, SamplerFunction function)
+void SamplerCore::computeLod1D(Pointer<Byte> &texture, Float &lod, Float4 &uuuu, Float4 &dsx, Float4 &dsy)
 {
 	Float4 dudxy;
 
@@ -1223,7 +1107,7 @@ void SamplerCore::computeLod1D(Pointer<Byte> &texture, Float &lod, Float4 &uuuu,
 	lod = log2sqrt(lod);
 }
 
-void SamplerCore::computeLod2D(Pointer<Byte> &texture, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta, Float4 &uuuu, Float4 &vvvv, Float4 &dsx, Float4 &dsy, SamplerFunction function)
+void SamplerCore::computeLod2D(Pointer<Byte> &texture, Float &lod, Float &anisotropy, Float4 &uDelta, Float4 &vDelta, Float4 &uuuu, Float4 &vvvv, Float4 &dsx, Float4 &dsy)
 {
 	Float4 duvdxy;
 
@@ -1271,7 +1155,7 @@ void SamplerCore::computeLod2D(Pointer<Byte> &texture, Float &lod, Float &anisot
 	lod = log2sqrt(lod);  // log2(sqrt(lod))
 }
 
-void SamplerCore::computeLodCube(Pointer<Byte> &texture, Float &lod, Float4 &u, Float4 &v, Float4 &w, Float4 &dsx, Float4 &dsy, Float4 &M, SamplerFunction function)
+void SamplerCore::computeLodCube(Pointer<Byte> &texture, Float &lod, Float4 &u, Float4 &v, Float4 &w, Float4 &dsx, Float4 &dsy, Float4 &M)
 {
 	Float4 dudxy, dvdxy, dsdxy;
 
@@ -1304,7 +1188,7 @@ void SamplerCore::computeLodCube(Pointer<Byte> &texture, Float &lod, Float4 &u, 
 
 	dudxy = Max(Max(duvdxy, dusdxy), dvsdxy);
 
-	lod = Max(Float(dudxy.y), Float(dudxy.z));  // FIXME: Max(dudxy.y, dudxy.z);
+	lod = Max(Float(dudxy.y), Float(dudxy.z));  // TODO: Max(dudxy.y, dudxy.z);
 
 	// Scale by texture dimension.
 	lod *= *Pointer<Float>(texture + OFFSET(Texture, width));
@@ -1312,7 +1196,7 @@ void SamplerCore::computeLodCube(Pointer<Byte> &texture, Float &lod, Float4 &u, 
 	lod = log2(lod);
 }
 
-void SamplerCore::computeLod3D(Pointer<Byte> &texture, Float &lod, Float4 &uuuu, Float4 &vvvv, Float4 &wwww, Float4 &dsx, Float4 &dsy, SamplerFunction function)
+void SamplerCore::computeLod3D(Pointer<Byte> &texture, Float &lod, Float4 &uuuu, Float4 &vvvv, Float4 &wwww, Float4 &dsx, Float4 &dsy)
 {
 	Float4 dudxy, dvdxy, dsdxy;
 
@@ -1341,7 +1225,7 @@ void SamplerCore::computeLod3D(Pointer<Byte> &texture, Float &lod, Float4 &uuuu,
 	dudxy += dvdxy;
 	dudxy += dsdxy;
 
-	lod = Max(Float(dudxy.y), Float(dudxy.z));  // FIXME: Max(dudxy.y, dudxy.z);
+	lod = Max(Float(dudxy.y), Float(dudxy.z));  // TODO: Max(dudxy.y, dudxy.z);
 
 	lod = log2sqrt(lod);  // log2(sqrt(lod))
 }
@@ -1417,7 +1301,7 @@ Short4 SamplerCore::applyOffset(Short4 &uvw, Int4 &offset, const Int4 &whd, Addr
 	case AddressingMode::ADDRESSING_CLAMP:
 	case AddressingMode::ADDRESSING_MIRROR:
 	case AddressingMode::ADDRESSING_MIRRORONCE:
-	case AddressingMode::ADDRESSING_BORDER:  // FIXME: Implement and test ADDRESSING_MIRROR, ADDRESSING_MIRRORONCE, ADDRESSING_BORDER
+	case AddressingMode::ADDRESSING_BORDER:  // TODO(b/29069044): Implement and test ADDRESSING_MIRROR, ADDRESSING_MIRRORONCE, ADDRESSING_BORDER
 		tmp = Min(Max(tmp, Int4(0)), whd - Int4(1));
 		break;
 	case AddressingMode::ADDRESSING_SEAMLESS:
@@ -1429,7 +1313,7 @@ Short4 SamplerCore::applyOffset(Short4 &uvw, Int4 &offset, const Int4 &whd, Addr
 	return As<Short4>(UShort4(tmp));
 }
 
-void SamplerCore::computeIndices(UInt index[4], Short4 uuuu, Short4 vvvv, Short4 wwww, const Short4 &layerIndex, Vector4i &offset, const Int4 &sample, const Pointer<Byte> &mipmap, SamplerFunction function)
+void SamplerCore::computeIndices(UInt index[4], Short4 uuuu, Short4 vvvv, Short4 wwww, const Short4 &layerIndex, Vector4i &offset, const Int4 &sample, const Pointer<Byte> &mipmap)
 {
 	uuuu = MulHigh(As<UShort4>(uuuu), UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, width))));
 
@@ -1496,7 +1380,7 @@ void SamplerCore::computeIndices(UInt index[4], Short4 uuuu, Short4 vvvv, Short4
 	index[3] = Extract(indices, 3);
 }
 
-void SamplerCore::computeIndices(UInt index[4], Int4 uuuu, Int4 vvvv, Int4 wwww, const Int4 &sample, Int4 valid, const Pointer<Byte> &mipmap, SamplerFunction function)
+void SamplerCore::computeIndices(UInt index[4], Int4 uuuu, Int4 vvvv, Int4 wwww, const Int4 &sample, Int4 valid, const Pointer<Byte> &mipmap)
 {
 	UInt4 indices = uuuu;
 
@@ -1770,7 +1654,10 @@ Vector4s SamplerCore::sampleTexel(UInt index[4], Pointer<Byte> buffer)
 		cc = Insert(cc, Pointer<Int>(buffer)[index[2]], 2);
 		cc = Insert(cc, Pointer<Int>(buffer)[index[3]], 3);
 
-		c = a2b10g10r10Unpack(cc);
+		c.x = Short4(cc << 6) & Short4(0xFFC0u);
+		c.y = Short4(cc >> 4) & Short4(0xFFC0u);
+		c.z = Short4(cc >> 14) & Short4(0xFFC0u);
+		c.w = Short4(cc >> 16) & Short4(0xC000u);
 	}
 	else if(state.textureFormat == VK_FORMAT_A2R10G10B10_UNORM_PACK32)
 	{
@@ -1780,7 +1667,10 @@ Vector4s SamplerCore::sampleTexel(UInt index[4], Pointer<Byte> buffer)
 		cc = Insert(cc, Pointer<Int>(buffer)[index[2]], 2);
 		cc = Insert(cc, Pointer<Int>(buffer)[index[3]], 3);
 
-		c = a2r10g10b10Unpack(cc);
+		c.x = Short4(cc >> 14) & Short4(0xFFC0u);
+		c.y = Short4(cc >> 4) & Short4(0xFFC0u);
+		c.z = Short4(cc << 6) & Short4(0xFFC0u);
+		c.w = Short4(cc >> 16) & Short4(0xC000u);
 	}
 	else if(state.textureFormat == VK_FORMAT_A2B10G10R10_UINT_PACK32)
 	{
@@ -1790,10 +1680,10 @@ Vector4s SamplerCore::sampleTexel(UInt index[4], Pointer<Byte> buffer)
 		cc = Insert(cc, Pointer<Int>(buffer)[index[2]], 2);
 		cc = Insert(cc, Pointer<Int>(buffer)[index[3]], 3);
 
-		c.x = Short4((cc & Int4(0x3FF)));
-		c.y = Short4(((cc >> 10) & Int4(0x3FF)));
-		c.z = Short4(((cc >> 20) & Int4(0x3FF)));
-		c.w = Short4(((cc >> 30) & Int4(0x3)));
+		c.x = Short4(cc & Int4(0x3FF));
+		c.y = Short4((cc >> 10) & Int4(0x3FF));
+		c.z = Short4((cc >> 20) & Int4(0x3FF));
+		c.w = Short4((cc >> 30) & Int4(0x3));
 	}
 	else if(state.textureFormat == VK_FORMAT_A2R10G10B10_UINT_PACK32)
 	{
@@ -1828,12 +1718,12 @@ Vector4s SamplerCore::sampleTexel(UInt index[4], Pointer<Byte> buffer)
 	return c;
 }
 
-Vector4s SamplerCore::sampleTexel(Short4 &uuuu, Short4 &vvvv, Short4 &wwww, const Short4 &layerIndex, Vector4i &offset, const Int4 &sample, Pointer<Byte> &mipmap, Pointer<Byte> buffer, SamplerFunction function)
+Vector4s SamplerCore::sampleTexel(Short4 &uuuu, Short4 &vvvv, Short4 &wwww, const Short4 &layerIndex, Vector4i &offset, const Int4 &sample, Pointer<Byte> &mipmap, Pointer<Byte> buffer)
 {
 	Vector4s c;
 
 	UInt index[4];
-	computeIndices(index, uuuu, vvvv, wwww, layerIndex, offset, sample, mipmap, function);
+	computeIndices(index, uuuu, vvvv, wwww, layerIndex, offset, sample, mipmap);
 
 	if(isYcbcrFormat())
 	{
@@ -1854,7 +1744,7 @@ Vector4s SamplerCore::sampleTexel(Short4 &uuuu, Short4 &vvvv, Short4 &wwww, cons
 
 		// Chroma
 		{
-			computeIndices(index, uuuu, vvvv, wwww, layerIndex, offset, sample, mipmap + sizeof(Mipmap), function);
+			computeIndices(index, uuuu, vvvv, wwww, layerIndex, offset, sample, mipmap + sizeof(Mipmap));
 			UShort4 U, V;
 
 			if(state.textureFormat == VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM)
@@ -1977,7 +1867,7 @@ Vector4s SamplerCore::sampleTexel(Short4 &uuuu, Short4 &vvvv, Short4 &wwww, cons
 	return c;
 }
 
-Vector4f SamplerCore::sampleTexel(Int4 &uuuu, Int4 &vvvv, Int4 &wwww, Float4 &dRef, const Int4 &sample, Pointer<Byte> &mipmap, Pointer<Byte> buffer, SamplerFunction function)
+Vector4f SamplerCore::sampleTexel(Int4 &uuuu, Int4 &vvvv, Int4 &wwww, Float4 &dRef, const Int4 &sample, Pointer<Byte> &mipmap, Pointer<Byte> buffer)
 {
 	Int4 valid;
 
@@ -1991,7 +1881,7 @@ Vector4f SamplerCore::sampleTexel(Int4 &uuuu, Int4 &vvvv, Int4 &wwww, Float4 &dR
 	}
 
 	UInt index[4];
-	computeIndices(index, uuuu, vvvv, wwww, sample, valid, mipmap, function);
+	computeIndices(index, uuuu, vvvv, wwww, sample, valid, mipmap);
 
 	Vector4f c;
 
@@ -2018,7 +1908,7 @@ Vector4f SamplerCore::sampleTexel(Int4 &uuuu, Int4 &vvvv, Int4 &wwww, Float4 &dR
 			t2 = Int4(*Pointer<UShort4>(buffer + index[2] * 4));
 			t3 = Int4(*Pointer<UShort4>(buffer + index[3] * 4));
 
-			// FIXME: shuffles
+			// TODO: shuffles
 			c.x = As<Float4>(halfToFloatBits(t0));
 			c.y = As<Float4>(halfToFloatBits(t1));
 			c.z = As<Float4>(halfToFloatBits(t2));
@@ -2041,7 +1931,7 @@ Vector4f SamplerCore::sampleTexel(Int4 &uuuu, Int4 &vvvv, Int4 &wwww, Float4 &dR
 		case VK_FORMAT_R32_SINT:
 		case VK_FORMAT_R32_UINT:
 		case VK_FORMAT_D32_SFLOAT:
-			// FIXME: Optimal shuffling?
+			// TODO: Optimal shuffling?
 			c.x.x = *Pointer<Float>(buffer + index[0] * 4);
 			c.x.y = *Pointer<Float>(buffer + index[1] * 4);
 			c.x.z = *Pointer<Float>(buffer + index[2] * 4);
@@ -2050,7 +1940,7 @@ Vector4f SamplerCore::sampleTexel(Int4 &uuuu, Int4 &vvvv, Int4 &wwww, Float4 &dR
 		case VK_FORMAT_R32G32_SFLOAT:
 		case VK_FORMAT_R32G32_SINT:
 		case VK_FORMAT_R32G32_UINT:
-			// FIXME: Optimal shuffling?
+			// TODO: Optimal shuffling?
 			c.x.xy = *Pointer<Float4>(buffer + index[0] * 8);
 			c.x.zw = *Pointer<Float4>(buffer + index[1] * 8 - 8);
 			c.z.xy = *Pointer<Float4>(buffer + index[2] * 8);
@@ -2178,20 +2068,8 @@ Vector4f SamplerCore::replaceBorderTexel(const Vector4f &c, Int4 valid)
 {
 	Vector4i border;
 
-	const bool scaled = !hasFloatTexture() && !hasUnnormalizedIntegerTexture() && !state.compareEnable;
-	const sw::float4 scale = state.textureFormat.getScale();
-	const sw::int4 bits = state.textureFormat.bitsPerComponent();
-	const sw::int4 shift = sw::int4(std::max(16 - bits.x, 0), std::max(16 - bits.y, 0), std::max(16 - bits.z, 0), std::max(16 - bits.w, 0));
-	sw::float4 scaleComp = scaled ? sw::float4(static_cast<uint16_t>(scale.x) << shift.x, static_cast<uint16_t>(scale.y) << shift.y,
-	                                           static_cast<uint16_t>(scale.z) << shift.z, static_cast<uint16_t>(scale.w) << shift.w)
-	                              : sw::float4(1.0, 1.0, 1.0, 1.0);
-	// TODO(b/204709464): Unlike other formats, the fixed point presentation of the formats below are handled with bit extension.
-	// This special handling of such formats should be removed later.
-	const VkFormat format = static_cast<VkFormat>(state.textureFormat);
-	if(format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 || format == VK_FORMAT_A2R10G10B10_UNORM_PACK32)
-		scaleComp = sw::float4(0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF);
-	else if(format == VK_FORMAT_A2B10G10R10_SNORM_PACK32 || format == VK_FORMAT_A2R10G10B10_SNORM_PACK32)
-		scaleComp = sw::float4(0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF);
+	const bool scaled = hasNormalizedFormat() && !state.compareEnable;
+	const sw::float4 scaleComp = scaled ? getComponentScale() : sw::float4(1.0f, 1.0f, 1.0f, 1.0f);
 
 	switch(state.border)
 	{
@@ -2253,32 +2131,28 @@ Vector4f SamplerCore::replaceBorderTexel(const Vector4f &c, Int4 valid)
 	return out;
 }
 
-void SamplerCore::selectMipmap(const Pointer<Byte> &texture, Pointer<Byte> &mipmap, Pointer<Byte> &buffer, const Float &lod, bool secondLOD)
+Pointer<Byte> SamplerCore::selectMipmap(const Pointer<Byte> &texture, const Float &lod, bool secondLOD)
 {
 	Pointer<Byte> mipmap0 = texture + OFFSET(Texture, mipmap[0]);
 
 	if(state.mipmapFilter == MIPMAP_NONE)
 	{
-		mipmap = mipmap0;
+		return mipmap0;
 	}
-	else
+
+	Int ilod;
+
+	if(state.mipmapFilter == MIPMAP_POINT)
 	{
-		Int ilod;
-
-		if(state.mipmapFilter == MIPMAP_POINT)
-		{
-			// TODO: Preferred formula is ceil(lod + 0.5) - 1
-			ilod = RoundInt(lod);
-		}
-		else  // MIPMAP_LINEAR
-		{
-			ilod = Int(lod);
-		}
-
-		mipmap = mipmap0 + ilod * sizeof(Mipmap) + secondLOD * sizeof(Mipmap);
+		// TODO: Preferred formula is ceil(lod + 0.5) - 1
+		ilod = RoundInt(lod);
+	}
+	else  // MIPMAP_LINEAR
+	{
+		ilod = Int(lod);
 	}
 
-	buffer = *Pointer<Pointer<Byte>>(mipmap + OFFSET(Mipmap, buffer));
+	return mipmap0 + ilod * sizeof(Mipmap) + secondLOD * sizeof(Mipmap);
 }
 
 Int4 SamplerCore::computeFilterOffset(Float &lod)
@@ -2337,7 +2211,7 @@ Short4 SamplerCore::address(const Float4 &uw, AddressingMode addressingMode, Poi
 	}
 }
 
-Short4 SamplerCore::computeLayerIndex(const Float4 &a, Pointer<Byte> &mipmap)
+Short4 SamplerCore::computeLayerIndex16(const Float4 &a, Pointer<Byte> &mipmap)
 {
 	if(!state.isArrayed())
 	{
@@ -2363,7 +2237,7 @@ static Int4 mod(Int4 n, Int4 d)
 	return (positive & x) | (~positive & (x + d));
 }
 
-void SamplerCore::address(const Float4 &uvw, Int4 &xyz0, Int4 &xyz1, Float4 &f, Pointer<Byte> &mipmap, Int4 &offset, Int4 &filter, int whd, AddressingMode addressingMode, SamplerFunction function)
+void SamplerCore::address(const Float4 &uvw, Int4 &xyz0, Int4 &xyz1, Float4 &f, Pointer<Byte> &mipmap, Int4 &offset, Int4 &filter, int whd, AddressingMode addressingMode)
 {
 	if(addressingMode == ADDRESSING_UNUSED)
 	{
@@ -2466,10 +2340,8 @@ void SamplerCore::address(const Float4 &uvw, Int4 &xyz0, Int4 &xyz1, Float4 &f, 
 					break;
 				case ADDRESSING_MIRRORONCE:
 					{
-						Float4 half = As<Float4>(Int4(halfBits));
 						Float4 one = As<Float4>(Int4(oneBits));
-						Float4 two = As<Float4>(Int4(twoBits));
-						coord = one - Abs(two * Frac(Min(Max(coord, -one), two) * half) - one);
+						coord = Min(Abs(coord), one);
 					}
 					break;
 				case ADDRESSING_BORDER:
@@ -2540,7 +2412,7 @@ void SamplerCore::address(const Float4 &uvw, Int4 &xyz0, Int4 &xyz1, Float4 &f, 
 				UNREACHABLE("addressingMode %d", int(addressingMode));  // Cube sampling doesn't support offset.
 			case ADDRESSING_MIRROR:
 			case ADDRESSING_MIRRORONCE:
-				// TODO: Implement ADDRESSING_MIRROR and ADDRESSING_MIRRORONCE.
+				// TODO(b/29069044): Implement ADDRESSING_MIRROR and ADDRESSING_MIRRORONCE.
 				// Fall through to Clamp.
 			case ADDRESSING_CLAMP:
 				xyz0 = Min(Max(xyz0, Int4(0)), maxXYZ);
@@ -2578,7 +2450,7 @@ void SamplerCore::address(const Float4 &uvw, Int4 &xyz0, Int4 &xyz1, Float4 &f, 
 	}
 }
 
-Int4 SamplerCore::computeLayerIndex(const Float4 &a, Pointer<Byte> &mipmap, SamplerFunction function)
+Int4 SamplerCore::computeLayerIndex(const Float4 &a, Pointer<Byte> &mipmap)
 {
 	if(!state.isArrayed())
 	{
@@ -2608,16 +2480,6 @@ Int4 SamplerCore::computeLayerIndex(const Float4 &a, Pointer<Byte> &mipmap, Samp
 	}
 }
 
-void SamplerCore::convertSigned15(Float4 &cf, Short4 &cs)
-{
-	cf = Float4(cs) * Float4(1.0f / 0x7FFF);
-}
-
-void SamplerCore::convertUnsigned16(Float4 &cf, Short4 &cs)
-{
-	cf = Float4(As<UShort4>(cs)) * Float4(1.0f / 0xFFFF);
-}
-
 void SamplerCore::sRGBtoLinearFF00(Short4 &c)
 {
 	c = As<UShort4>(c) >> 8;
@@ -2628,6 +2490,11 @@ void SamplerCore::sRGBtoLinearFF00(Short4 &c)
 	c = Insert(c, *Pointer<Short>(LUT + 2 * Int(Extract(c, 1))), 1);
 	c = Insert(c, *Pointer<Short>(LUT + 2 * Int(Extract(c, 2))), 2);
 	c = Insert(c, *Pointer<Short>(LUT + 2 * Int(Extract(c, 3))), 3);
+}
+
+bool SamplerCore::hasNormalizedFormat() const
+{
+	return state.textureFormat.isSignedNormalized() || state.textureFormat.isUnsignedNormalized();
 }
 
 bool SamplerCore::hasFloatTexture() const
@@ -2699,6 +2566,51 @@ VkComponentSwizzle SamplerCore::gatherSwizzle() const
 		UNREACHABLE("Invalid component");
 		return VK_COMPONENT_SWIZZLE_R;
 	}
+}
+
+sw::float4 SamplerCore::getComponentScale() const
+{
+	// TODO(b/204709464): Unlike other formats, the fixed-point representation of the formats below are handled with bit extension.
+	// This special handling of such formats should be removed later.
+	switch(state.textureFormat)
+	{
+	case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
+	case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
+		return sw::float4(0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF);
+	default:
+		break;
+	};
+
+	const sw::int4 bits = state.textureFormat.bitsPerComponent();
+	const sw::int4 shift = sw::int4(16 - bits.x, 16 - bits.y, 16 - bits.z, 16 - bits.w);
+	const uint16_t sign = state.textureFormat.isUnsigned() ? 0xFFFF : 0x7FFF;
+
+	return sw::float4(static_cast<uint16_t>(0xFFFF << shift.x) & sign,
+	                  static_cast<uint16_t>(0xFFFF << shift.y) & sign,
+	                  static_cast<uint16_t>(0xFFFF << shift.z) & sign,
+	                  static_cast<uint16_t>(0xFFFF << shift.w) & sign);
+}
+
+int SamplerCore::getGatherComponent() const
+{
+	VkComponentSwizzle swizzle = gatherSwizzle();
+
+	switch(swizzle)
+	{
+	default: UNSUPPORTED("VkComponentSwizzle %d", (int)swizzle); return 0;
+	case VK_COMPONENT_SWIZZLE_R:
+	case VK_COMPONENT_SWIZZLE_G:
+	case VK_COMPONENT_SWIZZLE_B:
+	case VK_COMPONENT_SWIZZLE_A:
+		// Normalize all components using the gather component scale.
+		return swizzle - VK_COMPONENT_SWIZZLE_R;
+	case VK_COMPONENT_SWIZZLE_ZERO:
+	case VK_COMPONENT_SWIZZLE_ONE:
+		// These cases are handled later.
+		return 0;
+	}
+
+	return 0;
 }
 
 }  // namespace sw

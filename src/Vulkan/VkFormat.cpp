@@ -44,6 +44,9 @@ bool Format::isUnsignedNormalized() const
 	case VK_FORMAT_R16G16_UNORM:
 	case VK_FORMAT_R16G16B16_UNORM:
 	case VK_FORMAT_R16G16B16A16_UNORM:
+	case VK_FORMAT_D16_UNORM:
+	case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
+	case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
 		return true;
 	default:
 		// sRGB encoded formats are also unsigned normalized.
@@ -1529,7 +1532,7 @@ bool Format::isUnsignedComponent(int component) const
 	return false;
 }
 
-int Format::bytes() const
+size_t Format::bytes() const
 {
 	switch(format)
 	{
@@ -1742,7 +1745,7 @@ int Format::bytes() const
 	return 0;
 }
 
-int Format::pitchB(int width, int border) const
+size_t Format::pitchB(int width, int border) const
 {
 	// Render targets require 2x2 quads
 	width = sw::align<2>(width + 2 * border);
@@ -1818,7 +1821,7 @@ int Format::pitchB(int width, int border) const
 	}
 }
 
-int Format::sliceBUnpadded(int width, int height, int border) const
+size_t Format::sliceBUnpadded(int width, int height, int border) const
 {
 	// Render targets require 2x2 quads
 	height = sw::align<2>(height + 2 * border);
@@ -1890,7 +1893,7 @@ int Format::sliceBUnpadded(int width, int height, int border) const
 	}
 }
 
-int Format::sliceB(int width, int height, int border) const
+size_t Format::sliceB(int width, int height, int border) const
 {
 	return sw::align<16>(sliceBUnpadded(width, height, border) + 15);
 }

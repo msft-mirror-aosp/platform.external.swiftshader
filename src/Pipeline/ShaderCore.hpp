@@ -188,7 +188,7 @@ Float4 logarithm2(RValue<Float4> x, bool pp = false);
 Float4 exponential(RValue<Float4> x, bool pp = false);
 Float4 logarithm(RValue<Float4> x, bool pp = false);
 Float4 power(RValue<Float4> x, RValue<Float4> y, bool pp = false);
-Float4 reciprocal(RValue<Float4> x, bool pp = false, bool finite = false, bool exactAtPow2 = false);
+Float4 reciprocal(RValue<Float4> x, bool pp = false, bool exactAtPow2 = false);
 Float4 reciprocalSquareRoot(RValue<Float4> x, bool abs, bool pp = false);
 Float4 modulo(RValue<Float4> x, RValue<Float4> y);
 Float4 sine_pi(RValue<Float4> x, bool pp = false);    // limited to [-pi, pi] range
@@ -224,8 +224,6 @@ sw::SIMD::UInt halfToFloatBits(sw::SIMD::UInt halfBits);
 sw::SIMD::UInt floatToHalfBits(sw::SIMD::UInt floatBits, bool storeInUpperBits);
 Float4 r11g11b10Unpack(UInt r11g11b10bits);
 UInt r11g11b10Pack(const Float4 &value);
-Vector4s a2b10g10r10Unpack(const Int4 &value);
-Vector4s a2r10g10b10Unpack(const Int4 &value);
 
 rr::RValue<rr::Bool> AnyTrue(rr::RValue<sw::SIMD::Int> const &ints);
 

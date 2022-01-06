@@ -20,6 +20,9 @@ sudo aptitude install -yq gcc-9 g++-9
 sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 --slave /usr/bin/g++ g++ /usr/bin/g++-9
 sudo update-alternatives --set gcc "/usr/bin/gcc-9"
 
+# Install libxcb-shm0-dev
+sudo aptitude install -yq libxcb-shm0-dev
+
 mkdir -p build && cd build
 
 if [[ -z "${REACTOR_BACKEND}" ]]; then
@@ -42,7 +45,6 @@ cmake --build . -- -j $(nproc)
 cd .. # Some tests must be run from project root
 
 build/ReactorUnitTests
-build/gles-unittests
 build/system-unittests
 build/vk-unittests
 

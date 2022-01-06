@@ -174,7 +174,7 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[MAX_COLOR_BUFFERS], Pointer<Byte> 
 			if(interpolateW())
 			{
 				w = interpolate(xxxx, Dw, rhw, primitive + OFFSET(Primitive, w), false, false);
-				rhw = reciprocal(w, false, false, true);
+				rhw = reciprocal(w, false, true);
 
 				if(state.centroid || shaderContainsInterpolation)  // TODO(b/194714095)
 				{
@@ -1189,7 +1189,18 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 			v = Insert(v, *Pointer<Int>(buffer + 0), 2);
 			v = Insert(v, *Pointer<Int>(buffer + 4), 3);
 
-			pixel = a2b10g10r10Unpack(v);
+			pixel.x = Short4(v << 6) & Short4(0xFFC0u);
+			pixel.y = Short4(v >> 4) & Short4(0xFFC0u);
+			pixel.z = Short4(v >> 14) & Short4(0xFFC0u);
+			pixel.w = Short4(v >> 16) & Short4(0xC000u);
+
+			// Expand to 16 bit range
+			pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 10);
+			pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 10);
+			pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 10);
+			pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 2);
+			pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 4);
+			pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 8);
 		}
 		break;
 	case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
@@ -1201,7 +1212,18 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 			v = Insert(v, *Pointer<Int>(buffer + 4 * x), 2);
 			v = Insert(v, *Pointer<Int>(buffer + 4 * x + 4), 3);
 
-			pixel = a2r10g10b10Unpack(v);
+			pixel.x = Short4(v >> 14) & Short4(0xFFC0u);
+			pixel.y = Short4(v >> 4) & Short4(0xFFC0u);
+			pixel.z = Short4(v << 6) & Short4(0xFFC0u);
+			pixel.w = Short4(v >> 16) & Short4(0xC000u);
+
+			// Expand to 16 bit range
+			pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 10);
+			pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 10);
+			pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 10);
+			pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 2);
+			pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 4);
+			pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 8);
 		}
 		break;
 	default:
@@ -2455,14 +2477,14 @@ Vector4f PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, const
 		blendedColor.z = Max(sourceColor.z, destColor.z);
 		break;
 	case VK_BLEND_OP_SRC_EXT:
-		blendedColor.x = sourceColor.x * sourceFactor.x;  // TODO(b/204583457)
-		blendedColor.y = sourceColor.y * sourceFactor.y;  // TODO(b/204583457)
-		blendedColor.z = sourceColor.z * sourceFactor.z;  // TODO(b/204583457)
+		blendedColor.x = sourceColor.x;
+		blendedColor.y = sourceColor.y;
+		blendedColor.z = sourceColor.z;
 		break;
 	case VK_BLEND_OP_DST_EXT:
-		blendedColor.x = destColor.x * destFactor.x;  // TODO(b/204583457)
-		blendedColor.y = destColor.y * destFactor.y;  // TODO(b/204583457)
-		blendedColor.z = destColor.z * destFactor.z;  // TODO(b/204583457)
+		blendedColor.x = destColor.x;
+		blendedColor.y = destColor.y;
+		blendedColor.z = destColor.z;
 		break;
 	case VK_BLEND_OP_ZERO_EXT:
 		blendedColor.x = Float4(0.0f);
@@ -2508,17 +2530,30 @@ Vector4f PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, const
 		blendedColor.w = Max(sourceColor.w, destColor.w);
 		break;
 	case VK_BLEND_OP_SRC_EXT:
-		blendedColor.w = sourceColor.w * sourceFactor.w;  // TODO(b/204583457)
+		blendedColor.w = sourceColor.w;
 		break;
 	case VK_BLEND_OP_DST_EXT:
-		blendedColor.w = destColor.w * destFactor.w;  // TODO(b/204583457)
+		blendedColor.w = destColor.w;
 		break;
 	case VK_BLEND_OP_ZERO_EXT:
 		blendedColor.w = Float4(0.0f);
 		break;
 	case VK_BLEND_OP_MULTIPLY_EXT:
-		// All of the currently supported advanced blend modes compute the alpha the same way
-		// Use VK_BLEND_OP_MULTIPLY_EXT as a placeholder
+	case VK_BLEND_OP_SCREEN_EXT:
+	case VK_BLEND_OP_OVERLAY_EXT:
+	case VK_BLEND_OP_DARKEN_EXT:
+	case VK_BLEND_OP_LIGHTEN_EXT:
+	case VK_BLEND_OP_COLORDODGE_EXT:
+	case VK_BLEND_OP_COLORBURN_EXT:
+	case VK_BLEND_OP_HARDLIGHT_EXT:
+	case VK_BLEND_OP_SOFTLIGHT_EXT:
+	case VK_BLEND_OP_DIFFERENCE_EXT:
+	case VK_BLEND_OP_EXCLUSION_EXT:
+	case VK_BLEND_OP_HSL_HUE_EXT:
+	case VK_BLEND_OP_HSL_SATURATION_EXT:
+	case VK_BLEND_OP_HSL_COLOR_EXT:
+	case VK_BLEND_OP_HSL_LUMINOSITY_EXT:
+		// All of the currently supported 'advanced blend modes' compute the alpha the same way.
 		blendedColor.w = sourceColor.w + destColor.w - (sourceColor.w * destColor.w);
 		break;
 	default:

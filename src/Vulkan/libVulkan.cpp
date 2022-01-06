@@ -59,10 +59,6 @@
 #	include "WSI/XcbSurfaceKHR.hpp"
 #endif
 
-#ifdef VK_USE_PLATFORM_XLIB_KHR
-#	include "WSI/XlibSurfaceKHR.hpp"
-#endif
-
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
 #	include "WSI/WaylandSurfaceKHR.hpp"
 #endif
@@ -138,7 +134,7 @@ std::shared_ptr<marl::Scheduler> getOrCreateScheduler()
 		std::weak_ptr<marl::Scheduler> weakptr GUARDED_BY(mutex);
 	};
 
-	static Scheduler scheduler;
+	static Scheduler scheduler;  // TODO(b/208256248): Avoid exit-time destructor.
 
 	marl::lock lock(scheduler.mutex);
 	auto sptr = scheduler.weakptr.lock();
@@ -300,6 +296,7 @@ struct ExtensionProperties : public VkExtensionProperties
 	std::function<bool()> isSupported = [] { return true; };
 };
 
+// TODO(b/208256248): Avoid exit-time destructor.
 static const ExtensionProperties instanceExtensionProperties[] = {
 	{ { VK_KHR_DEVICE_GROUP_CREATION_EXTENSION_NAME, VK_KHR_DEVICE_GROUP_CREATION_SPEC_VERSION } },
 	{ { VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME, VK_KHR_EXTERNAL_FENCE_CAPABILITIES_SPEC_VERSION } },
@@ -312,10 +309,7 @@ static const ExtensionProperties instanceExtensionProperties[] = {
 	{ { VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_SURFACE_SPEC_VERSION } },
 #endif
 #ifdef VK_USE_PLATFORM_XCB_KHR
-	{ { VK_KHR_XCB_SURFACE_EXTENSION_NAME, VK_KHR_XCB_SURFACE_SPEC_VERSION }, [] { return vk::XcbSurfaceKHR::hasLibXCB(); } },
-#endif
-#ifdef VK_USE_PLATFORM_XLIB_KHR
-	{ { VK_KHR_XLIB_SURFACE_EXTENSION_NAME, VK_KHR_XLIB_SURFACE_SPEC_VERSION }, [] { return static_cast<bool>(libX11); } },
+	{ { VK_KHR_XCB_SURFACE_EXTENSION_NAME, VK_KHR_XCB_SURFACE_SPEC_VERSION }, [] { return vk::XcbSurfaceKHR::isSupported(); } },
 #endif
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
 	{ { VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_SPEC_VERSION } },
@@ -337,6 +331,7 @@ static const ExtensionProperties instanceExtensionProperties[] = {
 #endif
 };
 
+// TODO(b/208256248): Avoid exit-time destructor.
 static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME, VK_KHR_DRIVER_PROPERTIES_SPEC_VERSION } },
 	// Vulkan 1.1 promoted extensions
@@ -425,6 +420,10 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_SPEC_VERSION } },
 	{ { VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_FEEDBACK_SPEC_VERSION } },
 	{ { VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME, VK_KHR_COPY_COMMANDS_2_SPEC_VERSION } },
+	{ { VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME, VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_SPEC_VERSION } },
+	{ { VK_KHR_FORMAT_FEATURE_FLAGS_2_EXTENSION_NAME, VK_KHR_FORMAT_FEATURE_FLAGS_2_SPEC_VERSION } },
+	{ { VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME, VK_KHR_VULKAN_MEMORY_MODEL_SPEC_VERSION } },
+	{ { VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME, VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_SPEC_VERSION } },
 };
 
 static uint32_t numSupportedExtensions(const ExtensionProperties *extensionProperties, uint32_t extensionPropertiesCount)
@@ -936,6 +935,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_4444_FORMATS_FEATURES_EXT:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES:
 			break;
 		default:
 			// "the [driver] must skip over, without processing (other than reading the sType and pNext members) any structures in the chain with sType values not defined by [supported extenions]"
@@ -3341,11 +3341,24 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFormatProperties2(VkPhysicalDevice
 	TRACE("(VkPhysicalDevice physicalDevice = %p, VkFormat format = %d, VkFormatProperties2* pFormatProperties = %p)",
 	      physicalDevice, format, pFormatProperties);
 
-	auto extInfo = reinterpret_cast<VkBaseInStructure const *>(pFormatProperties->pNext);
-	while(extInfo)
+	VkBaseOutStructure *extensionProperties = reinterpret_cast<VkBaseOutStructure *>(pFormatProperties->pNext);
+	while(extensionProperties)
 	{
-		UNSUPPORTED("pFormatProperties->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
-		extInfo = extInfo->pNext;
+		switch(extensionProperties->sType)
+		{
+		case VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3_KHR:
+			{
+				auto *properties3 = reinterpret_cast<VkFormatProperties3KHR *>(extensionProperties);
+				vk::Cast(physicalDevice)->GetFormatProperties(format, properties3);
+			}
+			break;
+		default:
+			// "the [driver] must skip over, without processing (other than reading the sType and pNext members) any structures in the chain with sType values not defined by [supported extenions]"
+			UNSUPPORTED("pFormatProperties->pNext sType = %s", vk::Stringify(extensionProperties->sType).c_str());
+			break;
+		}
+
+		extensionProperties = extensionProperties->pNext;
 	}
 
 	vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &(pFormatProperties->formatProperties));
@@ -3919,27 +3932,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vkGetPhysicalDeviceXcbPresentationSupportKHR(VkPh
 {
 	TRACE("(VkPhysicalDevice physicalDevice = %p, uint32_t queueFamilyIndex = %d, xcb_connection_t* connection = %p, xcb_visualid_t visual_id = %d)",
 	      physicalDevice, int(queueFamilyIndex), connection, int(visual_id));
-
-	return VK_TRUE;
-}
-#endif
-
-#ifdef VK_USE_PLATFORM_XLIB_KHR
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateXlibSurfaceKHR(VkInstance instance, const VkXlibSurfaceCreateInfoKHR *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkSurfaceKHR *pSurface)
-{
-	TRACE("(VkInstance instance = %p, VkXlibSurfaceCreateInfoKHR* pCreateInfo = %p, VkAllocationCallbacks* pAllocator = %p, VkSurface* pSurface = %p)",
-	      instance, pCreateInfo, pAllocator, pSurface);
-
-	// VUID-VkXlibSurfaceCreateInfoKHR-dpy-01313: dpy must point to a valid Xlib Display
-	ASSERT(pCreateInfo->dpy);
-
-	return vk::XlibSurfaceKHR::Create(pAllocator, pCreateInfo, pSurface);
-}
-
-VKAPI_ATTR VkBool32 VKAPI_CALL vkGetPhysicalDeviceXlibPresentationSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, Display *dpy, VisualID visualID)
-{
-	TRACE("(VkPhysicalDevice physicalDevice = %p, uint32_t queueFamilyIndex = %d, Display* dpy = %p, VisualID visualID = %lu)",
-	      physicalDevice, int(queueFamilyIndex), dpy, visualID);
 
 	return VK_TRUE;
 }
