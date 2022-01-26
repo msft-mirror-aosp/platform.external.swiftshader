@@ -1,4 +1,4 @@
-// Copyright 2016 The SwiftShader Authors. All Rights Reserved.
+// Copyright 2022 The SwiftShader Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,20 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef sw_Triangle_hpp
-#define sw_Triangle_hpp
-
-#include "Vertex.hpp"
+#include "SwiftConfig.hpp"
+#include "Configurator.hpp"
 
 namespace sw {
-
-struct Triangle
+Configuration readConfigurationFromFile()
 {
-	Vertex V0;
-	Vertex V1;
-	Vertex V2;
-};
+	Configurator ini("SwiftShader.ini");
+	Configuration config{};
+	config.threadCount = ini.getInteger("Processor", "ThreadCount", 0);
 
+	return config;
+}
+
+const Configuration &getConfiguration()
+{
+	static Configuration config = readConfigurationFromFile();
+	return config;
+}
 }  // namespace sw
-
-#endif  // sw_Triangle_hpp
