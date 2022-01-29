@@ -879,6 +879,7 @@ class Short4 : public LValue<Short4>
 public:
 	explicit Short4(RValue<Int> cast);
 	explicit Short4(RValue<Int4> cast);
+	explicit Short4(RValue<UInt4> cast);
 	//	explicit Short4(RValue<Float> cast);
 	explicit Short4(RValue<Float4> cast);
 
@@ -956,6 +957,7 @@ RValue<Short4> CmpEQ(RValue<Short4> x, RValue<Short4> y);
 class UShort4 : public LValue<UShort4>
 {
 public:
+	explicit UShort4(RValue<UInt4> cast);
 	explicit UShort4(RValue<Int4> cast);
 	explicit UShort4(RValue<Float4> cast, bool saturate = false);
 
@@ -2340,6 +2342,9 @@ RValue<Float4> operator/=(Float4 &lhs, RValue<Float4> rhs);
 RValue<Float4> operator%=(Float4 &lhs, RValue<Float4> rhs);
 RValue<Float4> operator+(RValue<Float4> val);
 RValue<Float4> operator-(RValue<Float4> val);
+
+// Computes `x * y + z`, which may be fused into one operation to produce a higher-precision result.
+RValue<Float4> MulAdd(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z);
 
 RValue<Float4> Abs(RValue<Float4> x);
 RValue<Float4> Max(RValue<Float4> x, RValue<Float4> y);
