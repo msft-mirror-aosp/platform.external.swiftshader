@@ -1776,6 +1776,11 @@ Short4::Short4(RValue<Int> cast)
 	storeValue(swizzle);
 }
 
+Short4::Short4(RValue<UInt4> cast)
+    : Short4(As<Int4>(cast))
+{
+}
+
 //	Short4::Short4(RValue<Float> cast)
 //	{
 //	}
@@ -2005,6 +2010,11 @@ RValue<Short> Extract(RValue<Short4> val, int i)
 	return RValue<Short>(Nucleus::createExtractElement(val.value(), Short::type(), i));
 }
 
+UShort4::UShort4(RValue<UInt4> cast)
+    : UShort4(As<Int4>(cast))
+{
+}
+
 UShort4::UShort4(RValue<Int4> cast)
 {
 	*this = Short4(cast);
@@ -2180,13 +2190,6 @@ RValue<Short8> operator+(RValue<Short8> lhs, RValue<Short8> rhs)
 RValue<Short8> operator&(RValue<Short8> lhs, RValue<Short8> rhs)
 {
 	return RValue<Short8>(Nucleus::createAnd(lhs.value(), rhs.value()));
-}
-
-RValue<Int4> Abs(RValue<Int4> x)
-{
-	// TODO: Optimize.
-	auto negative = x >> 31;
-	return (x ^ negative) - negative;
 }
 
 UShort8::UShort8(unsigned short c)
@@ -4222,16 +4225,6 @@ RValue<Float4> operator+(RValue<Float4> val)
 RValue<Float4> operator-(RValue<Float4> val)
 {
 	return RValue<Float4>(Nucleus::createFNeg(val.value()));
-}
-
-RValue<Float4> Abs(RValue<Float4> x)
-{
-	// TODO: Optimize.
-	Value *vector = Nucleus::createBitCast(x.value(), Int4::type());
-	int64_t constantVector[4] = { 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF };
-	Value *result = Nucleus::createAnd(vector, Nucleus::createConstantVector(constantVector, Int4::type()));
-
-	return As<Float4>(result);
 }
 
 RValue<Float4> Insert(RValue<Float4> x, RValue<Float> element, int i)
