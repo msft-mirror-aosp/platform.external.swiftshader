@@ -377,14 +377,23 @@ llvm::Value *lowerMulHigh(llvm::Value *x, llvm::Value *y, bool sext)
 
 namespace rr {
 
-std::string BackendName()
+std::string Caps::backendName()
 {
 	return std::string("LLVM ") + LLVM_VERSION_STRING;
 }
 
-const Capabilities Caps = {
-	true,  // CoroutinesSupported
-};
+bool Caps::coroutinesSupported()
+{
+	return true;
+}
+
+bool Caps::fmaIsFast()
+{
+	static bool AVX2 = CPUID::supportsAVX2();  // Also checks for FMA support
+
+	// If x86 FMA instructions are supported, assume LLVM will emit them instead of making calls to std::fma().
+	return AVX2;
+}
 
 // The abstract Type* types are implemented as LLVM types, except that
 // 64-bit vectors are emulated using 128-bit ones to avoid use of MMX in x86
@@ -3162,6 +3171,12 @@ Float4::Float4(RValue<Float> rhs)
 RValue<Float4> MulAdd(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z)
 {
 	auto func = llvm::Intrinsic::getDeclaration(jit->module.get(), llvm::Intrinsic::fmuladd, { T(Float4::type()) });
+	return RValue<Float4>(V(jit->builder->CreateCall(func, { V(x.value()), V(y.value()), V(z.value()) })));
+}
+
+RValue<Float4> FMA(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z)
+{
+	auto func = llvm::Intrinsic::getDeclaration(jit->module.get(), llvm::Intrinsic::fma, { T(Float4::type()) });
 	return RValue<Float4>(V(jit->builder->CreateCall(func, { V(x.value()), V(y.value()), V(z.value()) })));
 }
 
