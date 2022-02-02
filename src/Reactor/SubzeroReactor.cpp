@@ -351,14 +351,21 @@ static_assert(!subzeroEmitTextAsm, "Compile Subzero with ALLOW_DUMP=1 for subzer
 
 namespace rr {
 
-std::string BackendName()
+std::string Caps::backendName()
 {
 	return "Subzero";
 }
 
-const Capabilities Caps = {
-	true,  // CoroutinesSupported
-};
+bool Caps::coroutinesSupported()
+{
+	return true;
+}
+
+bool Caps::fmaIsFast()
+{
+	// TODO(b/214591655): Subzero currently never emits FMA instructions. std::fma() is called instead.
+	return false;
+}
 
 enum EmulatedType
 {
@@ -3938,6 +3945,12 @@ RValue<Float4> MulAdd(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z)
 {
 	// TODO(b/214591655): Use FMA when available.
 	return x * y + z;
+}
+
+RValue<Float4> FMA(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z)
+{
+	// TODO(b/214591655): Use FMA instructions when available.
+	return emulated::FMA(x, y, z);
 }
 
 RValue<Float4> Abs(RValue<Float4> x)
