@@ -77,13 +77,12 @@ enum class Precision
 	/*Half,*/   // Half precision
 };
 
-std::string BackendName();
-
-struct Capabilities
+struct Caps
 {
-	bool CoroutinesSupported;  // Support for rr::Coroutine<F>
+	static std::string backendName();
+	static bool coroutinesSupported();  // Support for rr::Coroutine<F>
+	static bool fmaIsFast();            // rr::FMA() is faster than `x * y + z`
 };
-extern const Capabilities Caps;
 
 class Bool;
 class Byte;
@@ -2345,6 +2344,8 @@ RValue<Float4> operator-(RValue<Float4> val);
 
 // Computes `x * y + z`, which may be fused into one operation to produce a higher-precision result.
 RValue<Float4> MulAdd(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z);
+// Computes a fused `x * y + z` operation. Caps::fmaIsFast indicates whether it emits an FMA instruction.
+RValue<Float4> FMA(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z);
 
 RValue<Float4> Abs(RValue<Float4> x);
 RValue<Float4> Max(RValue<Float4> x, RValue<Float4> y);
