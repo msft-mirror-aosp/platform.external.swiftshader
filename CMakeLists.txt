@@ -743,9 +743,9 @@ endif()
 add_subdirectory(src/Reactor) # Add ReactorSubzero and ReactorLLVM targets
 
 if(${REACTOR_BACKEND} STREQUAL "LLVM")
-    set(Reactor ReactorLLVM)
+    add_library(Reactor ALIAS ReactorLLVM)
 elseif(${REACTOR_BACKEND} STREQUAL "Subzero")
-    set(Reactor ReactorSubzero)
+    add_library(Reactor ALIAS ReactorSubzero)
 else()
     message(FATAL_ERROR "REACTOR_BACKEND must be 'LLVM' or 'Subzero'")
 endif()
@@ -924,6 +924,7 @@ if(SWIFTSHADER_BUILD_BENCHMARKS)
         set_target_properties(benchmark_main PROPERTIES FOLDER "third_party")
     endif()
 
+    add_subdirectory(${TESTS_DIR}/PipelineBenchmarks) # Add PipelineBenchmarks target
     add_subdirectory(${TESTS_DIR}/ReactorBenchmarks) # Add ReactorBenchmarks target
     add_subdirectory(${TESTS_DIR}/SystemBenchmarks) # Add system-benchmarks target
     add_subdirectory(${TESTS_DIR}/VulkanBenchmarks) # Add VulkanBenchmarks target
