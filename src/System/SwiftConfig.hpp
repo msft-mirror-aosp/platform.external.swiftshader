@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "Reactor/Nucleus.hpp"
 #include "marl/scheduler.h"
 
 namespace sw {
@@ -37,6 +38,16 @@ struct Configuration
 	// Core affinity and affinity policy used by the scheduler.
 	uint64_t affinityMask = 0xffffffffffffffff;
 	AffinityPolicy affinityPolicy = AffinityPolicy::AnyOf;
+
+	// Directory where ASM listings of JITted code will be emitted.
+	std::string asmEmitDir = "";
+
+	// Whether SPIR-V profiling is enabled.
+	bool enableSpirvProfiling = false;
+	// Period controlling how often SPIR-V profiles are reported.
+	uint64_t spvProfilingReportPeriodMs = 1000;
+	// Directory where SPIR-V profile reports will be written.
+	std::string spvProfilingReportDir = "";
 };
 
 // Get the configuration as parsed from a configuration file.
@@ -44,6 +55,9 @@ const Configuration &getConfiguration();
 
 // Get the scheduler configuration given a configuration.
 marl::Scheduler::Config getSchedulerConfiguration(const Configuration &config);
+
+// Get the debug configuration for Reactor given a configuration.
+rr::DebugConfig getReactorDebugConfig(const Configuration &config);
 }  // namespace sw
 
 #endif

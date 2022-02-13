@@ -89,6 +89,8 @@ Configuration readConfigurationFromFile()
 {
 	Configurator ini("SwiftShader.ini");
 	Configuration config{};
+
+	// Processor flags.
 	config.threadCount = ini.getInteger<uint32_t>("Processor", "ThreadCount", 0);
 	config.affinityMask = ini.getInteger<uint64_t>("Processor", "AffinityMask", 0xffffffffffffffff);
 	if(config.affinityMask == 0)
@@ -106,6 +108,18 @@ Configuration readConfigurationFromFile()
 		// Default.
 		config.affinityPolicy = Configuration::AffinityPolicy::AnyOf;
 	}
+
+	// Debug flags.
+	config.asmEmitDir = ini.getValue("Debug", "AsmEmitDir");
+	if(config.asmEmitDir.size() > 0 && *config.asmEmitDir.rend() != '/')
+	{
+		config.asmEmitDir.push_back('/');
+	}
+
+	// Profiling flags.
+	config.enableSpirvProfiling = ini.getBoolean("Profiler", "EnableSpirvProfiling");
+	config.spvProfilingReportPeriodMs = ini.getInteger<uint64_t>("Profiler", "SpirvProfilingReportPeriodMs");
+	config.spvProfilingReportDir = ini.getValue("Profiler", "SpirvProfilingReportDir");
 
 	return config;
 }
@@ -131,5 +145,12 @@ marl::Scheduler::Config getSchedulerConfiguration(const Configuration &config)
 		sw::CPUID::setDenormalsAreZero(true);
 	});
 	return cfg;
+}
+
+rr::DebugConfig getReactorDebugConfig(const Configuration &config)
+{
+	rr::DebugConfig debugCfg;
+	debugCfg.asmEmitDir = config.asmEmitDir;
+	return debugCfg;
 }
 }  // namespace sw
