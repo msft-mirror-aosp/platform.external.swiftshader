@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include "SpirvShader.hpp"
+
+#include "SpirvProfiler.hpp"
 #include "SpirvShaderDebug.hpp"
 
 #include "System/Debug.hpp"
@@ -32,11 +34,13 @@ SpirvShader::SpirvShader(
     const vk::RenderPass *renderPass,
     uint32_t subpassIndex,
     bool robustBufferAccess,
-    const std::shared_ptr<vk::dbg::Context> &dbgctx)
+    const std::shared_ptr<vk::dbg::Context> &dbgctx,
+    std::shared_ptr<SpirvProfiler> profiler)
     : insns{ insns }
     , inputs{ MAX_INTERFACE_COMPONENTS }
     , outputs{ MAX_INTERFACE_COMPONENTS }
     , robustBufferAccess(robustBufferAccess)
+    , profiler(profiler)
 {
 	ASSERT(insns.size() > 0);
 
@@ -165,8 +169,21 @@ SpirvShader::SpirvShader(
 			break;
 
 		case spv::OpDecorateString:
+			{
+				auto decoration = static_cast<spv::Decoration>(insn.word(2));
+
+				// We assume these are for HLSL semantics, ignore them (b/214576937).
+				ASSERT(decoration == spv::DecorationUserSemantic || decoration == spv::DecorationUserTypeGOOGLE);
+			}
+			break;
+
 		case spv::OpMemberDecorateString:
-			// We assume these are for HLSL semantics, ignore them.
+			{
+				auto decoration = static_cast<spv::Decoration>(insn.word(3));
+
+				// We assume these are for HLSL semantics, ignore them (b/214576937).
+				ASSERT(decoration == spv::DecorationUserSemantic || decoration == spv::DecorationUserTypeGOOGLE);
+			}
 			break;
 
 		case spv::OpDecorationGroup:
@@ -763,6 +780,9 @@ SpirvShader::SpirvShader(
 				if(!strcmp(ext, "SPV_EXT_shader_stencil_export")) break;
 				if(!strcmp(ext, "SPV_KHR_float_controls")) break;
 				if(!strcmp(ext, "SPV_KHR_vulkan_memory_model")) break;
+				if(!strcmp(ext, "SPV_GOOGLE_decorate_string")) break;
+				if(!strcmp(ext, "SPV_GOOGLE_hlsl_functionality1")) break;
+				if(!strcmp(ext, "SPV_GOOGLE_user_type")) break;
 				UNSUPPORTED("SPIR-V Extension: %s", ext);
 			}
 			break;
@@ -1625,6 +1645,11 @@ OutOfBoundsBehavior SpirvShader::EmitState::getOutOfBoundsBehavior(spv::StorageC
 
 void SpirvShader::emitProlog(SpirvRoutine *routine) const
 {
+	if(IsProfilingEnabled())
+	{
+		routine->profData = std::make_unique<SpirvProfileData>();
+	}
+
 	for(auto insn : *this)
 	{
 		switch(insn.opcode())
@@ -1721,6 +1746,12 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 	defer(dbgEndEmitInstruction(insn, state));
 
 	auto opcode = insn.opcode();
+
+	if(IsProfilingEnabled() && IsStatement(opcode))
+	{
+		int64_t *counter = &state->routine->profData->spvOpExecutionCount[opcode];
+		AddAtomic(Pointer<Long>(ConstantPointer(counter)), 1);
+	}
 
 #if SPIRV_SHADER_ENABLE_DBG
 	{
@@ -2517,6 +2548,11 @@ void SpirvShader::emitEpilog(SpirvRoutine *routine) const
 		default:
 			break;
 		}
+	}
+
+	if(IsProfilingEnabled())
+	{
+		profiler->RegisterShaderForProfiling(std::to_string(insns.getIdentifier()) + "_" + std::to_string((uintptr_t)routine), std::move(routine->profData));
 	}
 }
 
