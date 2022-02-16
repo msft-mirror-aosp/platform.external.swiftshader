@@ -23,16 +23,19 @@ namespace fuzz {
 FuzzerPassPropagateInstructionsDown::FuzzerPassPropagateInstructionsDown(
     opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
-    protobufs::TransformationSequence* transformations,
-    bool ignore_inapplicable_transformations)
+    protobufs::TransformationSequence* transformations)
     : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations, ignore_inapplicable_transformations) {}
+                 transformations) {}
+
+FuzzerPassPropagateInstructionsDown::~FuzzerPassPropagateInstructionsDown() =
+    default;
 
 void FuzzerPassPropagateInstructionsDown::Apply() {
   for (const auto& function : *GetIRContext()->module()) {
     std::vector<const opt::BasicBlock*> reachable_blocks;
     for (const auto& block : function) {
-      if (GetIRContext()->IsReachable(block)) {
+      if (GetIRContext()->GetDominatorAnalysis(&function)->IsReachable(
+              &block)) {
         reachable_blocks.push_back(&block);
       }
     }

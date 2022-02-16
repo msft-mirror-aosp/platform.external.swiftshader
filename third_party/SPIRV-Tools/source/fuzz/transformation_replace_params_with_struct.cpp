@@ -22,8 +22,8 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationReplaceParamsWithStruct::TransformationReplaceParamsWithStruct(
-    protobufs::TransformationReplaceParamsWithStruct message)
-    : message_(std::move(message)) {}
+    const protobufs::TransformationReplaceParamsWithStruct& message)
+    : message_(message) {}
 
 TransformationReplaceParamsWithStruct::TransformationReplaceParamsWithStruct(
     const std::vector<uint32_t>& parameter_id, uint32_t fresh_function_type_id,

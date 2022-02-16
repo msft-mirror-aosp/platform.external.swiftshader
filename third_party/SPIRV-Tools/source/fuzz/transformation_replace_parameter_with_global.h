@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationReplaceParameterWithGlobal : public Transformation {
  public:
   explicit TransformationReplaceParameterWithGlobal(
-      protobufs::TransformationReplaceParameterWithGlobal message);
+      const protobufs::TransformationReplaceParameterWithGlobal& message);
 
   TransformationReplaceParameterWithGlobal(uint32_t function_type_fresh_id,
                                            uint32_t parameter_id,

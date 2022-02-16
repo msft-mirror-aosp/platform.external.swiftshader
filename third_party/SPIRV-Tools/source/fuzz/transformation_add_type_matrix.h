@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationAddTypeMatrix : public Transformation {
  public:
   explicit TransformationAddTypeMatrix(
-      protobufs::TransformationAddTypeMatrix message);
+      const protobufs::TransformationAddTypeMatrix& message);
 
   TransformationAddTypeMatrix(uint32_t fresh_id, uint32_t column_type_id,
                               uint32_t column_count);

@@ -18,10 +18,7 @@
 
 namespace {
 
-// A custom, small stack size for the fibers in these tests.
-// Note: Stack sizes less than 16KB may cause issues on some platforms.
-// See: https://github.com/google/marl/issues/201
-constexpr size_t fiberStackSize = 16 * 1024;
+auto constexpr fiberStackSize = 8 * 1024;
 
 }  // anonymous namespace
 

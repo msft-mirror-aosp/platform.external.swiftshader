@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationPermutePhiOperands : public Transformation {
  public:
   explicit TransformationPermutePhiOperands(
-      protobufs::TransformationPermutePhiOperands message);
+      const protobufs::TransformationPermutePhiOperands& message);
 
   TransformationPermutePhiOperands(uint32_t result_id,
                                    const std::vector<uint32_t>& permutation);

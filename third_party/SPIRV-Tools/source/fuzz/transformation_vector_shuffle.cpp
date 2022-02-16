@@ -21,8 +21,8 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationVectorShuffle::TransformationVectorShuffle(
-    protobufs::TransformationVectorShuffle message)
-    : message_(std::move(message)) {}
+    const spvtools::fuzz::protobufs::TransformationVectorShuffle& message)
+    : message_(message) {}
 
 TransformationVectorShuffle::TransformationVectorShuffle(
     const protobufs::InstructionDescriptor& instruction_to_insert_before,
@@ -130,18 +130,13 @@ void TransformationVectorShuffle::Apply(
 
   // Add a shuffle instruction right before the instruction identified by
   // |message_.instruction_to_insert_before|.
-  auto insert_before =
-      FindInstruction(message_.instruction_to_insert_before(), ir_context);
-  opt::Instruction* new_instruction =
-      insert_before->InsertBefore(MakeUnique<opt::Instruction>(
+  FindInstruction(message_.instruction_to_insert_before(), ir_context)
+      ->InsertBefore(MakeUnique<opt::Instruction>(
           ir_context, SpvOpVectorShuffle, result_type_id, message_.fresh_id(),
           shuffle_operands));
   fuzzerutil::UpdateModuleIdBound(ir_context, message_.fresh_id());
-  // Inform the def-use manager about the new instruction and record its basic
-  // block.
-  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(new_instruction);
-  ir_context->set_instr_block(new_instruction,
-                              ir_context->get_instr_block(insert_before));
+  ir_context->InvalidateAnalysesExceptFor(
+      opt::IRContext::Analysis::kAnalysisNone);
 
   AddDataSynonymFacts(ir_context, transformation_context);
 }
@@ -204,7 +199,7 @@ void TransformationVectorShuffle::AddDataSynonymFacts(
       // Check that the first vector can participate in data synonym facts.
       if (!fuzzerutil::CanMakeSynonymOf(
               ir_context, *transformation_context,
-              *ir_context->get_def_use_mgr()->GetDef(message_.vector1()))) {
+              ir_context->get_def_use_mgr()->GetDef(message_.vector1()))) {
         continue;
       }
       descriptor_for_source_component =
@@ -213,7 +208,7 @@ void TransformationVectorShuffle::AddDataSynonymFacts(
       // Check that the second vector can participate in data synonym facts.
       if (!fuzzerutil::CanMakeSynonymOf(
               ir_context, *transformation_context,
-              *ir_context->get_def_use_mgr()->GetDef(message_.vector2()))) {
+              ir_context->get_def_use_mgr()->GetDef(message_.vector2()))) {
         continue;
       }
       auto index_into_vector_2 =
