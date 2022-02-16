@@ -17,9 +17,7 @@
 
 #include "SamplerCore.hpp"
 #include "ShaderCore.hpp"
-#include "SpirvBinary.hpp"
 #include "SpirvID.hpp"
-#include "SpirvProfiler.hpp"
 #include "Device/Config.hpp"
 #include "Device/Sampler.hpp"
 #include "System/Debug.hpp"
@@ -48,13 +46,11 @@
 
 namespace vk {
 
-class Device;
 class PipelineLayout;
 class ImageView;
 class Sampler;
 class RenderPass;
 struct SampledImageDescriptor;
-struct SamplerState;
 
 namespace dbg {
 class Context;
@@ -154,7 +150,8 @@ private:
 class SpirvShader
 {
 public:
-	SpirvBinary insns;
+	using InsnStore = std::vector<uint32_t>;
+	InsnStore insns;
 
 	using ImageSampler = void(void *texture, void *uvsIn, void *texelOut, void *constants);
 
@@ -170,11 +167,11 @@ public:
 	class InsnIterator
 	{
 	public:
-		InsnIterator() = default;
 		InsnIterator(InsnIterator const &other) = default;
-		InsnIterator &operator=(const InsnIterator &other) = default;
 
-		explicit InsnIterator(SpirvBinary::const_iterator iter)
+		InsnIterator() = default;
+
+		explicit InsnIterator(InsnStore::const_iterator iter)
 		    : iter{ iter }
 		{
 		}
@@ -197,41 +194,13 @@ public:
 
 		uint32_t const *wordPointer(uint32_t n) const
 		{
+			ASSERT(n < wordCount());
 			return &iter[n];
 		}
 
 		const char *string(uint32_t n) const
 		{
 			return reinterpret_cast<const char *>(wordPointer(n));
-		}
-
-		// Returns the number of whole-words that a string literal starting at
-		// word n consumes. If the end of the intruction is reached before the
-		// null-terminator is found, then the function DABORT()s and 0 is
-		// returned.
-		uint32_t stringSizeInWords(uint32_t n) const
-		{
-			uint32_t c = wordCount();
-			for(uint32_t i = n; n < c; i++)
-			{
-				auto *u32 = wordPointer(i);
-				auto *u8 = reinterpret_cast<const uint8_t *>(u32);
-				// SPIR-V spec 2.2.1. Instructions:
-				// A string is interpreted as a nul-terminated stream of
-				// characters. The character set is Unicode in the UTF-8
-				// encoding scheme. The UTF-8 octets (8-bit bytes) are packed
-				// four per word, following the little-endian convention (i.e.,
-				// the first octet is in the lowest-order 8 bits of the word).
-				// The final word contains the string’s nul-termination
-				// character (0), and all contents past the end of the string in
-				// the final word are padded with 0.
-				if(u8[3] == 0)
-				{
-					return 1 + i - n;
-				}
-			}
-			DABORT("SPIR-V string literal was not null-terminated");
-			return 0;
 		}
 
 		bool hasResultAndType() const
@@ -252,11 +221,6 @@ public:
 		{
 			ASSERT(hasResultAndType());
 			return word(2);
-		}
-
-		uint32_t distanceFrom(const InsnIterator &other) const
-		{
-			return static_cast<uint32_t>(iter - other.iter);
 		}
 
 		bool operator==(InsnIterator const &other) const
@@ -288,13 +252,12 @@ public:
 		}
 
 	private:
-		SpirvBinary::const_iterator iter;
+		InsnStore::const_iterator iter;
 	};
 
-	// Range-based-for interface
+	/* range-based-for interface */
 	InsnIterator begin() const
 	{
-		// Skip over the header words
 		return InsnIterator{ insns.cbegin() + 5 };
 	}
 
@@ -327,8 +290,6 @@ public:
 		spv::Op opcode() const { return definition.opcode(); }
 		Type::ID typeId() const { return definition.resultTypeId(); }
 		Object::ID id() const { return definition.resultId(); }
-
-		bool isConstantZero() const;
 
 		InsnIterator definition;
 		std::vector<uint32_t> constantValue;
@@ -390,7 +351,6 @@ public:
 
 		Block() = default;
 		Block(const Block &other) = default;
-		Block &operator=(const Block &other) = default;
 		explicit Block(InsnIterator begin, InsnIterator end);
 
 		/* range-based-for interface */
@@ -502,7 +462,7 @@ public:
 	};
 
 	// OpImageSample variants
-	enum Variant : uint32_t
+	enum Variant
 	{
 		None,  // No Dref or Proj. Also used by OpImageFetch and OpImageQueryLod.
 		Dref,
@@ -511,24 +471,25 @@ public:
 		VARIANT_LAST = ProjDref
 	};
 
-	// Compact representation of image instruction state that is passed to the
+	// Compact representation of image instruction parameters that is passed to the
 	// trampoline function for retrieving/generating the corresponding sampling routine.
-	struct ImageInstructionSignature
+	struct ImageInstruction
 	{
-		ImageInstructionSignature(Variant variant, SamplerMethod samplerMethod)
+		ImageInstruction(Variant variant, SamplerMethod samplerMethod)
+		    : parameters(0)
 		{
 			this->variant = variant;
 			this->samplerMethod = samplerMethod;
 		}
 
 		// Unmarshal from raw 32-bit data
-		explicit ImageInstructionSignature(uint32_t signature)
-		    : signature(signature)
+		ImageInstruction(uint32_t parameters)
+		    : parameters(parameters)
 		{}
 
 		SamplerFunction getSamplerFunction() const
 		{
-			return { samplerMethod, offset != 0, sample != 0 };
+			return { static_cast<SamplerMethod>(samplerMethod), offset != 0, sample != 0 };
 		}
 
 		bool isDref() const
@@ -541,26 +502,13 @@ public:
 			return (variant == Proj) || (variant == ProjDref);
 		}
 
-		bool hasLod() const
-		{
-			return samplerMethod == Lod || samplerMethod == Fetch;  // We always pass a Lod operand for Fetch operations.
-		}
-
-		bool hasGrad() const
-		{
-			return samplerMethod == Grad;
-		}
-
 		union
 		{
 			struct
 			{
-				Variant variant : BITS(VARIANT_LAST);
-				SamplerMethod samplerMethod : BITS(SAMPLER_METHOD_LAST);
+				uint32_t variant : BITS(VARIANT_LAST);
+				uint32_t samplerMethod : BITS(SAMPLER_METHOD_LAST);
 				uint32_t gatherComponent : 2;
-				uint32_t dim : BITS(spv::DimSubpassData);  // spv::Dim
-				uint32_t arrayed : 1;
-				uint32_t imageFormat : BITS(spv::ImageFormatR64i);  // spv::ImageFormat
 
 				// Parameters are passed to the sampling routine in this order:
 				uint32_t coordinates : 3;       // 1-4 (does not contain projection component)
@@ -571,63 +519,41 @@ public:
 				uint32_t sample : 1;            // 0-1 scalar integer
 			};
 
-			uint32_t signature = 0;
+			uint32_t parameters;
 		};
 	};
 
-	// This gets stored as a literal in the generated code, so it should be compact.
-	static_assert(sizeof(ImageInstructionSignature) == sizeof(uint32_t), "ImageInstructionSignature must be 32-bit");
-
-	struct ImageInstruction : public ImageInstructionSignature
-	{
-		ImageInstruction(InsnIterator insn, const SpirvShader &spirv);
-
-		const uint32_t position;
-
-		Type::ID resultTypeId = 0;
-		Object::ID resultId = 0;
-		Object::ID imageId = 0;
-		Object::ID samplerId = 0;
-		Object::ID coordinateId = 0;
-		Object::ID texelId = 0;
-		Object::ID drefId = 0;
-		Object::ID lodOrBiasId = 0;
-		Object::ID gradDxId = 0;
-		Object::ID gradDyId = 0;
-		Object::ID offsetId = 0;
-		Object::ID sampleId = 0;
-
-	private:
-		static ImageInstructionSignature parseVariantAndMethod(InsnIterator insn);
-		static uint32_t getImageOperandsIndex(InsnIterator insn);
-		static uint32_t getImageOperandsMask(InsnIterator insn);
-	};
+	static_assert(sizeof(ImageInstruction) == sizeof(uint32_t), "ImageInstruction must be 32-bit");
 
 	// This method is for retrieving an ID that uniquely identifies the
 	// shader entry point represented by this object.
-	uint64_t getIdentifier() const
+	uint64_t getSerialID() const
 	{
-		return ((uint64_t)entryPoint.value() << 32) | insns.getIdentifier();
+		return ((uint64_t)entryPoint.value() << 32) | codeSerialID;
 	}
 
-	SpirvShader(VkShaderStageFlagBits stage,
+	SpirvShader(uint32_t codeSerialID,
+	            VkShaderStageFlagBits stage,
 	            const char *entryPointName,
-	            SpirvBinary const &insns,
+	            InsnStore const &insns,
 	            const vk::RenderPass *renderPass,
 	            uint32_t subpassIndex,
 	            bool robustBufferAccess,
-	            const std::shared_ptr<vk::dbg::Context> &dbgctx,
-	            std::shared_ptr<SpirvProfiler> profiler);
+	            const std::shared_ptr<vk::dbg::Context> &dbgctx);
 
 	~SpirvShader();
 
-	struct ExecutionModes
+	struct Modes
 	{
 		bool EarlyFragmentTests : 1;
 		bool DepthReplacing : 1;
 		bool DepthGreater : 1;
 		bool DepthLess : 1;
 		bool DepthUnchanged : 1;
+		bool ContainsKill : 1;
+		bool ContainsControlBarriers : 1;
+		bool NeedsCentroid : 1;
+		bool ContainsSampleQualifier : 1;
 
 		// Compute workgroup dimensions
 		int WorkgroupSizeX = 1;
@@ -635,22 +561,9 @@ public:
 		int WorkgroupSizeZ = 1;
 	};
 
-	const ExecutionModes &getExecutionModes() const
+	Modes const &getModes() const
 	{
-		return executionModes;
-	}
-
-	struct Analysis
-	{
-		bool ContainsKill : 1;
-		bool ContainsControlBarriers : 1;
-		bool NeedsCentroid : 1;
-		bool ContainsSampleQualifier : 1;
-	};
-
-	const Analysis &getAnalysis() const
-	{
-		return analysis;
+		return modes;
 	}
 
 	struct Capabilities
@@ -673,7 +586,6 @@ public:
 		bool ImageQuery : 1;
 		bool DerivativeControl : 1;
 		bool InterpolationFunction : 1;
-		bool StorageImageWriteWithoutFormat : 1;
 		bool GroupNonUniform : 1;
 		bool GroupNonUniformVote : 1;
 		bool GroupNonUniformBallot : 1;
@@ -683,11 +595,9 @@ public:
 		bool DeviceGroup : 1;
 		bool MultiView : 1;
 		bool StencilExportEXT : 1;
-		bool VulkanMemoryModel : 1;
-		bool VulkanMemoryModelDeviceScope : 1;
 	};
 
-	const Capabilities &getUsedCapabilities() const
+	Capabilities const &getUsedCapabilities() const
 	{
 		return capabilities;
 	}
@@ -813,7 +723,7 @@ public:
 	};
 
 	std::unordered_map<Object::ID, DescriptorDecorations> descriptorDecorations;
-	std::vector<vk::Format> inputAttachmentFormats;
+	std::vector<VkFormat> inputAttachmentFormats;
 
 	struct InterfaceComponent
 	{
@@ -886,31 +796,20 @@ public:
 	WorkgroupMemory workgroupMemory;
 
 private:
-	const bool robustBufferAccess;
-
-	Function::ID entryPoint;
-	spv::ExecutionModel executionModel = spv::ExecutionModelMax;  // Invalid prior to OpEntryPoint parsing.
-	ExecutionModes executionModes = {};
+	const uint32_t codeSerialID;
+	Modes modes = {};
 	Capabilities capabilities = {};
-	spv::AddressingModel addressingModel = spv::AddressingModelLogical;
-	spv::MemoryModel memoryModel = spv::MemoryModelSimple;
-	HandleMap<Extension> extensionsByID;
-	std::unordered_set<uint32_t> extensionsImported;
-
-	Analysis analysis = {};
-	mutable bool imageWriteEmitted = false;
-
 	HandleMap<Type> types;
 	HandleMap<Object> defs;
 	HandleMap<Function> functions;
 	std::unordered_map<StringID, String> strings;
+	HandleMap<Extension> extensionsByID;
+	std::unordered_set<uint32_t> extensionsImported;
+	Function::ID entryPoint;
+	mutable bool imageWriteEmitted = false;
 
-	std::shared_ptr<SpirvProfiler> profiler;
-
-	bool IsProfilingEnabled() const
-	{
-		return profiler != nullptr;
-	}
+	const bool robustBufferAccess = true;
+	spv::ExecutionModel executionModel = spv::ExecutionModelMax;  // Invalid prior to OpEntryPoint parsing.
 
 	// DeclareType creates a Type for the given OpTypeX instruction, storing
 	// it into the types map. It is called from the analysis pass (constructor).
@@ -1030,7 +929,7 @@ private:
 		    , multiSampleCount(multiSampleCount)
 		    , executionModel(executionModel)
 		{
-			ASSERT(executionModel != spv::ExecutionModelMax);  // Must parse OpEntryPoint before emitting.
+			ASSERT(executionModelToStage(executionModel) != VkShaderStageFlagBits(0));  // Must parse OpEntryPoint before emitting.
 		}
 
 		// Returns the mask describing the active lanes as updated by dynamic
@@ -1124,9 +1023,9 @@ private:
 		std::unordered_map<Object::ID, Intermediate> intermediates;
 		std::unordered_map<Object::ID, SIMD::Pointer> pointers;
 
-		const bool robustBufferAccess;  // Emit robustBufferAccess safe code.
-		const unsigned int multiSampleCount;
-		const spv::ExecutionModel executionModel;
+		const bool robustBufferAccess = true;  // Emit robustBufferAccess safe code.
+		const unsigned int multiSampleCount = 0;
+		const spv::ExecutionModel executionModel = spv::ExecutionModelMax;
 	};
 
 	// EmitResult is an enumerator of result values from the Emit functions.
@@ -1179,6 +1078,8 @@ private:
 			return SIMD::UInt(constant[i]);
 		}
 
+		bool isConstantZero() const;
+
 	private:
 		RR_PRINT_ONLY(friend struct rr::PrintValue::Ty<Operand>;)
 
@@ -1211,11 +1112,6 @@ private:
 		auto it = defs.find(id);
 		ASSERT_MSG(it != defs.end(), "Unknown object %d", id.value());
 		return it->second;
-	}
-
-	Type const &getObjectType(Object::ID id) const
-	{
-		return getType(getObject(id));
 	}
 
 	Function const &getFunction(Function::ID id) const
@@ -1306,14 +1202,19 @@ private:
 	EmitResult EmitKill(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitFunctionCall(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitPhi(InsnIterator insn, EmitState *state) const;
-	EmitResult EmitImageSample(const ImageInstruction &instruction, EmitState *state) const;
+	EmitResult EmitImageSampleImplicitLod(Variant variant, InsnIterator insn, EmitState *state) const;
+	EmitResult EmitImageSampleExplicitLod(Variant variant, InsnIterator insn, EmitState *state) const;
+	EmitResult EmitImageGather(Variant variant, InsnIterator insn, EmitState *state) const;
+	EmitResult EmitImageFetch(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitImageSample(ImageInstruction instruction, InsnIterator insn, EmitState *state) const;
 	EmitResult EmitImageQuerySizeLod(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitImageQuerySize(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitImageQueryLod(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitImageQueryLevels(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitImageQuerySamples(InsnIterator insn, EmitState *state) const;
-	EmitResult EmitImageRead(const ImageInstruction &instruction, EmitState *state) const;
-	EmitResult EmitImageWrite(const ImageInstruction &instruction, EmitState *state) const;
-	EmitResult EmitImageTexelPointer(const ImageInstruction &instruction, EmitState *state) const;
+	EmitResult EmitImageRead(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitImageWrite(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitImageTexelPointer(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitAtomicOp(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitAtomicCompareExchange(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitSampledImageCombineOrSplit(InsnIterator insn, EmitState *state) const;
@@ -1325,14 +1226,10 @@ private:
 	EmitResult EmitArrayLength(InsnIterator insn, EmitState *state) const;
 
 	// Emits code to sample an image, regardless of whether any SIMD lanes are active.
-	void EmitImageSampleUnconditional(Array<SIMD::Float> &out, const ImageInstruction &instruction, EmitState *state) const;
-
-	Pointer<Byte> lookupSamplerFunction(Pointer<Byte> imageDescriptor, const ImageInstruction &instruction, EmitState *state) const;
-	void callSamplerFunction(Pointer<Byte> samplerFunction, Array<SIMD::Float> &out, Pointer<Byte> imageDescriptor, const ImageInstruction &instruction, EmitState *state) const;
+	void EmitImageSampleUnconditional(Array<SIMD::Float> &out, ImageInstruction instruction, InsnIterator insn, EmitState *state) const;
 
 	void GetImageDimensions(EmitState const *state, Type const &resultTy, Object::ID imageId, Object::ID lodId, Intermediate &dst) const;
-	static SIMD::Pointer GetTexelAddress(ImageInstructionSignature instruction, Pointer<Byte> descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const EmitState *state);
-	static void WriteImage(ImageInstructionSignature instruction, Pointer<Byte> descriptor, const Pointer<SIMD::Int> &coord, const Pointer<SIMD::Int> &texelAndMask, vk::Format imageFormat);
+	SIMD::Pointer GetTexelAddress(EmitState const *state, Pointer<Byte> imageBase, Int imageSizeInBytes, Operand const &coordinate, Type const &imageType, Pointer<Byte> descriptor, int texelSize, Object::ID sampleId, bool useStencilAspect, OutOfBoundsBehavior outOfBoundsBehavior) const;
 	uint32_t GetConstScalarInt(Object::ID id) const;
 	void EvalSpecConstantOp(InsnIterator insn);
 	void EvalSpecConstantUnaryOp(InsnIterator insn);
@@ -1340,15 +1237,14 @@ private:
 
 	// Fragment input interpolation functions
 	uint32_t GetNumInputComponents(int32_t location) const;
-	uint32_t GetPackedInterpolant(int32_t location) const;
 	enum InterpolationType
 	{
 		Centroid,
 		AtSample,
 		AtOffset,
 	};
-	SIMD::Float Interpolate(SIMD::Pointer const &ptr, int32_t location, Object::ID paramId,
-	                        uint32_t component, EmitState *state, InterpolationType type) const;
+	SIMD::Float Interpolate(SIMD::Pointer const &ptr, int32_t location, Object::ID paramId, uint32_t component,
+	                        uint32_t component_count, EmitState *state, InterpolationType type) const;
 
 	// Helper for implementing OpStore, which doesn't take an InsnIterator so it
 	// can also store independent operands.
@@ -1395,14 +1291,13 @@ private:
 	// Returns the pair <significand, exponent>
 	std::pair<SIMD::Float, SIMD::Int> Frexp(RValue<SIMD::Float> val) const;
 
-	static ImageSampler *getImageSampler(const vk::Device *device, uint32_t signature, uint32_t samplerId, uint32_t imageViewId);
-	static std::shared_ptr<rr::Routine> emitSamplerRoutine(ImageInstructionSignature instruction, const Sampler &samplerState);
-	static std::shared_ptr<rr::Routine> emitWriteRoutine(ImageInstructionSignature instruction, const Sampler &samplerState);
+	static ImageSampler *getImageSampler(uint32_t instruction, vk::SampledImageDescriptor const *imageDescriptor, const vk::Sampler *sampler);
+	static std::shared_ptr<rr::Routine> emitSamplerRoutine(ImageInstruction instruction, const Sampler &samplerState);
 
 	// TODO(b/129523279): Eliminate conversion and use vk::Sampler members directly.
-	static sw::FilterType convertFilterMode(const vk::SamplerState *samplerState, VkImageViewType imageViewType, SamplerMethod samplerMethod);
-	static sw::MipmapType convertMipmapMode(const vk::SamplerState *samplerState);
-	static sw::AddressingMode convertAddressingMode(int coordinateIndex, const vk::SamplerState *samplerState, VkImageViewType imageViewType);
+	static sw::FilterType convertFilterMode(const vk::Sampler *sampler, VkImageViewType imageViewType, ImageInstruction instruction);
+	static sw::MipmapType convertMipmapMode(const vk::Sampler *sampler);
+	static sw::AddressingMode convertAddressingMode(int coordinateIndex, const vk::Sampler *sampler, VkImageViewType imageViewType);
 
 	// Returns 0 when invalid.
 	static VkShaderStageFlagBits executionModelToStage(spv::ExecutionModel model);
@@ -1468,12 +1363,10 @@ public:
 
 	using Variable = Array<SIMD::Float>;
 
-	// Single-entry 'inline' sampler routine cache.
 	struct SamplerCache
 	{
 		Pointer<Byte> imageDescriptor = nullptr;
-		Int samplerId;
-
+		Pointer<Byte> sampler;
 		Pointer<Byte> function;
 	};
 
@@ -1491,12 +1384,11 @@ public:
 	vk::PipelineLayout const *const pipelineLayout;
 
 	std::unordered_map<SpirvShader::Object::ID, Variable> variables;
-	std::unordered_map<uint32_t, SamplerCache> samplerCache;  // Indexed by the instruction position, in words.
+	std::unordered_map<SpirvShader::Object::ID, SamplerCache> samplerCache;
 	Variable inputs = Variable{ MAX_INTERFACE_COMPONENTS };
 	Variable outputs = Variable{ MAX_INTERFACE_COMPONENTS };
 	InterpolationData interpolationData;
 
-	Pointer<Byte> device;
 	Pointer<Byte> workgroupMemory;
 	Pointer<Pointer<Byte>> descriptorSets;
 	Pointer<Int> descriptorDynamicOffsets;
@@ -1563,13 +1455,12 @@ public:
 	}
 
 private:
-	// The phis and the profile data are only accessible to SpirvShader
-	// as they are only used and exist between calls to
-	// SpirvShader::emitProlog() and SpirvShader::emitEpilog().
+	// The phis are only accessible to SpirvShader as they are only used and
+	// exist between calls to SpirvShader::emitProlog() and
+	// SpirvShader::emitEpilog().
 	friend class SpirvShader;
 
 	std::unordered_map<SpirvShader::Object::ID, Variable> phis;
-	std::unique_ptr<SpirvProfileData> profData;
 };
 
 }  // namespace sw

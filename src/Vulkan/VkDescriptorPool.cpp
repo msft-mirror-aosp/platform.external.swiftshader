@@ -39,7 +39,7 @@ DescriptorPool::DescriptorPool(const VkDescriptorPoolCreateInfo *pCreateInfo, vo
 
 void DescriptorPool::destroy(const VkAllocationCallbacks *pAllocator)
 {
-	vk::freeHostMemory(pool, pAllocator);
+	vk::deallocate(pool, pAllocator);
 }
 
 size_t DescriptorPool::ComputeRequiredAllocationSize(const VkDescriptorPoolCreateInfo *pCreateInfo)

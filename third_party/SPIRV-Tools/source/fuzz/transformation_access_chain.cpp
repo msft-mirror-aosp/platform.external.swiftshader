@@ -23,8 +23,8 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationAccessChain::TransformationAccessChain(
-    protobufs::TransformationAccessChain message)
-    : message_(std::move(message)) {}
+    const spvtools::fuzz::protobufs::TransformationAccessChain& message)
+    : message_(message) {}
 
 TransformationAccessChain::TransformationAccessChain(
     uint32_t fresh_id, uint32_t pointer_id,
@@ -122,7 +122,7 @@ bool TransformationAccessChain::IsApplicable(
 
       bool successful;
       std::tie(successful, index_value) =
-          GetStructIndexValue(ir_context, index_id, subobject_type_id);
+          GetIndexValue(ir_context, index_id, subobject_type_id);
 
       if (!successful) {
         return false;
@@ -228,11 +228,6 @@ void TransformationAccessChain::Apply(
 
   uint32_t id_pairs_used = 0;
 
-  opt::Instruction* instruction_to_insert_before =
-      FindInstruction(message_.instruction_to_insert_before(), ir_context);
-  opt::BasicBlock* enclosing_block =
-      ir_context->get_instr_block(instruction_to_insert_before);
-
   // Go through the index ids in turn.
   for (auto index_id : message_.index_id()) {
     uint32_t index_value;
@@ -247,7 +242,7 @@ void TransformationAccessChain::Apply(
       // It is a struct: we need to retrieve the integer value.
 
       index_value =
-          GetStructIndexValue(ir_context, index_id, subobject_type_id).second;
+          GetIndexValue(ir_context, index_id, subobject_type_id).second;
 
       new_index_id = index_id;
 
@@ -285,37 +280,29 @@ void TransformationAccessChain::Apply(
 
       // Clamp the integer and add the corresponding instructions in the module
       // if |add_clamping_instructions| is set.
+      auto instruction_to_insert_before =
+          FindInstruction(message_.instruction_to_insert_before(), ir_context);
 
       // Compare the index with the bound via an instruction of the form:
       //   %fresh_ids.first = OpULessThanEqual %bool %int_id %bound_minus_one.
       fuzzerutil::UpdateModuleIdBound(ir_context, fresh_ids.first());
-      auto comparison_instruction = MakeUnique<opt::Instruction>(
+      instruction_to_insert_before->InsertBefore(MakeUnique<opt::Instruction>(
           ir_context, SpvOpULessThanEqual, bool_type_id, fresh_ids.first(),
           opt::Instruction::OperandList(
               {{SPV_OPERAND_TYPE_ID, {index_instruction->result_id()}},
-               {SPV_OPERAND_TYPE_ID, {bound_minus_one_id}}}));
-      auto comparison_instruction_ptr = comparison_instruction.get();
-      instruction_to_insert_before->InsertBefore(
-          std::move(comparison_instruction));
-      ir_context->get_def_use_mgr()->AnalyzeInstDefUse(
-          comparison_instruction_ptr);
-      ir_context->set_instr_block(comparison_instruction_ptr, enclosing_block);
+               {SPV_OPERAND_TYPE_ID, {bound_minus_one_id}}})));
 
       // Select the index if in-bounds, otherwise one less than the bound:
       //   %fresh_ids.second = OpSelect %int_type %fresh_ids.first %int_id
       //                           %bound_minus_one
       fuzzerutil::UpdateModuleIdBound(ir_context, fresh_ids.second());
-      auto select_instruction = MakeUnique<opt::Instruction>(
+      instruction_to_insert_before->InsertBefore(MakeUnique<opt::Instruction>(
           ir_context, SpvOpSelect, int_type_inst->result_id(),
           fresh_ids.second(),
           opt::Instruction::OperandList(
               {{SPV_OPERAND_TYPE_ID, {fresh_ids.first()}},
                {SPV_OPERAND_TYPE_ID, {index_instruction->result_id()}},
-               {SPV_OPERAND_TYPE_ID, {bound_minus_one_id}}}));
-      auto select_instruction_ptr = select_instruction.get();
-      instruction_to_insert_before->InsertBefore(std::move(select_instruction));
-      ir_context->get_def_use_mgr()->AnalyzeInstDefUse(select_instruction_ptr);
-      ir_context->set_instr_block(select_instruction_ptr, enclosing_block);
+               {SPV_OPERAND_TYPE_ID, {bound_minus_one_id}}})));
 
       new_index_id = fresh_ids.second();
 
@@ -339,14 +326,13 @@ void TransformationAccessChain::Apply(
   // Add the access chain instruction to the module, and update the module's
   // id bound.
   fuzzerutil::UpdateModuleIdBound(ir_context, message_.fresh_id());
-  auto access_chain_instruction = MakeUnique<opt::Instruction>(
-      ir_context, SpvOpAccessChain, result_type, message_.fresh_id(), operands);
-  auto access_chain_instruction_ptr = access_chain_instruction.get();
-  instruction_to_insert_before->InsertBefore(
-      std::move(access_chain_instruction));
-  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(
-      access_chain_instruction_ptr);
-  ir_context->set_instr_block(access_chain_instruction_ptr, enclosing_block);
+  FindInstruction(message_.instruction_to_insert_before(), ir_context)
+      ->InsertBefore(MakeUnique<opt::Instruction>(
+          ir_context, SpvOpAccessChain, result_type, message_.fresh_id(),
+          operands));
+
+  // Conservatively invalidate all analyses.
+  ir_context->InvalidateAnalysesExceptFor(opt::IRContext::kAnalysisNone);
 
   // If the base pointer's pointee value was irrelevant, the same is true of
   // the pointee value of the result of this access chain.
@@ -363,12 +349,9 @@ protobufs::Transformation TransformationAccessChain::ToMessage() const {
   return result;
 }
 
-std::pair<bool, uint32_t> TransformationAccessChain::GetStructIndexValue(
+std::pair<bool, uint32_t> TransformationAccessChain::GetIndexValue(
     opt::IRContext* ir_context, uint32_t index_id,
     uint32_t object_type_id) const {
-  assert(ir_context->get_def_use_mgr()->GetDef(object_type_id)->opcode() ==
-             SpvOpTypeStruct &&
-         "Precondition: the type must be a struct type.");
   if (!ValidIndexToComposite(ir_context, index_id, object_type_id)) {
     return {false, 0};
   }
@@ -377,9 +360,10 @@ std::pair<bool, uint32_t> TransformationAccessChain::GetStructIndexValue(
   uint32_t bound = fuzzerutil::GetBoundForCompositeIndex(
       *ir_context->get_def_use_mgr()->GetDef(object_type_id), ir_context);
 
-  // Ensure that the index given must represent a constant.
-  assert(spvOpcodeIsConstant(index_instruction->opcode()) &&
-         "A non-constant index should already have been rejected.");
+  // The index must be a constant
+  if (!spvOpcodeIsConstant(index_instruction->opcode())) {
+    return {false, 0};
+  }
 
   // The index must be in bounds.
   uint32_t value = index_instruction->GetSingleWordInOperand(0);

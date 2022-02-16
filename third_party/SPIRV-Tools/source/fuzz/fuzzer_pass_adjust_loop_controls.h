@@ -26,8 +26,9 @@ class FuzzerPassAdjustLoopControls : public FuzzerPass {
   FuzzerPassAdjustLoopControls(
       opt::IRContext* ir_context, TransformationContext* transformation_context,
       FuzzerContext* fuzzer_context,
-      protobufs::TransformationSequence* transformations,
-      bool ignore_inapplicable_transformations);
+      protobufs::TransformationSequence* transformations);
+
+  ~FuzzerPassAdjustLoopControls() override;
 
   void Apply() override;
 };

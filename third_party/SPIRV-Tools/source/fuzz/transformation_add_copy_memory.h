@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationAddCopyMemory : public Transformation {
  public:
   explicit TransformationAddCopyMemory(
-      protobufs::TransformationAddCopyMemory message);
+      const protobufs::TransformationAddCopyMemory& message);
 
   TransformationAddCopyMemory(
       const protobufs::InstructionDescriptor& instruction_descriptor,

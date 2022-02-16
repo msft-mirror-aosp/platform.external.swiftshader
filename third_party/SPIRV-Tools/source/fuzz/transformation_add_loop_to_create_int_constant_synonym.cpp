@@ -23,8 +23,9 @@ uint32_t kMaxNumOfIterations = 32;
 
 TransformationAddLoopToCreateIntConstantSynonym::
     TransformationAddLoopToCreateIntConstantSynonym(
-        protobufs::TransformationAddLoopToCreateIntConstantSynonym message)
-    : message_(std::move(message)) {}
+        const protobufs::TransformationAddLoopToCreateIntConstantSynonym&
+            message)
+    : message_(message) {}
 
 TransformationAddLoopToCreateIntConstantSynonym::
     TransformationAddLoopToCreateIntConstantSynonym(
