@@ -261,15 +261,14 @@ void clipBottom(sw::Polygon &polygon)
 
 namespace sw {
 
-unsigned int Clipper::ComputeClipFlags(const float4 &v, bool depthClipEnable)
+unsigned int Clipper::ComputeClipFlags(const float4 &v)
 {
-	int depthClipFlags = ((v.z > v.w) ? CLIP_FAR : 0) |
-	                     ((v.z < 0) ? CLIP_NEAR : 0);
 	return ((v.x > v.w) ? CLIP_RIGHT : 0) |
 	       ((v.y > v.w) ? CLIP_TOP : 0) |
+	       ((v.z > v.w) ? CLIP_FAR : 0) |
 	       ((v.x < -v.w) ? CLIP_LEFT : 0) |
 	       ((v.y < -v.w) ? CLIP_BOTTOM : 0) |
-	       (depthClipEnable ? depthClipFlags : 0) |
+	       ((v.z < 0) ? CLIP_NEAR : 0) |
 	       Clipper::CLIP_FINITE;  // FIXME: xyz finite
 }
 

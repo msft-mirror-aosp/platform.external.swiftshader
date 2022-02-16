@@ -18,8 +18,8 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationSetFunctionControl::TransformationSetFunctionControl(
-    protobufs::TransformationSetFunctionControl message)
-    : message_(std::move(message)) {}
+    const spvtools::fuzz::protobufs::TransformationSetFunctionControl& message)
+    : message_(message) {}
 
 TransformationSetFunctionControl::TransformationSetFunctionControl(
     uint32_t function_id, uint32_t function_control) {

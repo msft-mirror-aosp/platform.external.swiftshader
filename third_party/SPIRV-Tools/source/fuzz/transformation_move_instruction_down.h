@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationMoveInstructionDown : public Transformation {
  public:
   explicit TransformationMoveInstructionDown(
-      protobufs::TransformationMoveInstructionDown message);
+      const protobufs::TransformationMoveInstructionDown& message);
 
   explicit TransformationMoveInstructionDown(
       const protobufs::InstructionDescriptor& instruction);

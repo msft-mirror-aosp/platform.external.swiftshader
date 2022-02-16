@@ -27,7 +27,8 @@ class TransformationReplaceAddSubMulWithCarryingExtended
     : public Transformation {
  public:
   explicit TransformationReplaceAddSubMulWithCarryingExtended(
-      protobufs::TransformationReplaceAddSubMulWithCarryingExtended message);
+      const protobufs::TransformationReplaceAddSubMulWithCarryingExtended&
+          message);
 
   explicit TransformationReplaceAddSubMulWithCarryingExtended(
       uint32_t struct_fresh_id, uint32_t result_id);

@@ -23,8 +23,9 @@ namespace fuzz {
 
 TransformationPermuteFunctionParameters::
     TransformationPermuteFunctionParameters(
-        protobufs::TransformationPermuteFunctionParameters message)
-    : message_(std::move(message)) {}
+        const spvtools::fuzz::protobufs::
+            TransformationPermuteFunctionParameters& message)
+    : message_(message) {}
 
 TransformationPermuteFunctionParameters::
     TransformationPermuteFunctionParameters(

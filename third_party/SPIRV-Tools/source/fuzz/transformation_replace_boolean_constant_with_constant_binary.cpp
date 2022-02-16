@@ -111,9 +111,9 @@ bool unsigned_int_binop_evaluates_to(T lhs, T rhs, SpvOp binop,
 
 TransformationReplaceBooleanConstantWithConstantBinary::
     TransformationReplaceBooleanConstantWithConstantBinary(
-        protobufs::TransformationReplaceBooleanConstantWithConstantBinary
-            message)
-    : message_(std::move(message)) {}
+        const spvtools::fuzz::protobufs::
+            TransformationReplaceBooleanConstantWithConstantBinary& message)
+    : message_(message) {}
 
 TransformationReplaceBooleanConstantWithConstantBinary::
     TransformationReplaceBooleanConstantWithConstantBinary(

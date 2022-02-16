@@ -23,7 +23,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/KhronosGroup/SPIRV-Tools/utils/vscode/src/schema"
+	"../schema"
 )
 
 // Type is an enumerator of token types.

@@ -21,8 +21,9 @@ namespace fuzz {
 
 TransformationReplaceOpPhiIdFromDeadPredecessor::
     TransformationReplaceOpPhiIdFromDeadPredecessor(
-        protobufs::TransformationReplaceOpPhiIdFromDeadPredecessor message)
-    : message_(std::move(message)) {}
+        const protobufs::TransformationReplaceOpPhiIdFromDeadPredecessor&
+            message)
+    : message_(message) {}
 
 TransformationReplaceOpPhiIdFromDeadPredecessor::
     TransformationReplaceOpPhiIdFromDeadPredecessor(uint32_t opphi_id,
