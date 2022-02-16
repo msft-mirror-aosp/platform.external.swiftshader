@@ -95,7 +95,6 @@ void ConditionVariable::notify_one() {
     marl::lock lock(mutex);
     if (waiting.size() > 0) {
       (*waiting.begin())->notify();  // Only wake one fiber.
-      return;
     }
   }
   if (numWaitingOnCondition > 0) {

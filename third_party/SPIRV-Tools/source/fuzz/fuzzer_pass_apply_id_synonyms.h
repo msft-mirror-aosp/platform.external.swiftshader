@@ -28,8 +28,9 @@ class FuzzerPassApplyIdSynonyms : public FuzzerPass {
   FuzzerPassApplyIdSynonyms(opt::IRContext* ir_context,
                             TransformationContext* transformation_context,
                             FuzzerContext* fuzzer_context,
-                            protobufs::TransformationSequence* transformations,
-                            bool ignore_inapplicable_transformations);
+                            protobufs::TransformationSequence* transformations);
+
+  ~FuzzerPassApplyIdSynonyms() override;
 
   void Apply() override;
 

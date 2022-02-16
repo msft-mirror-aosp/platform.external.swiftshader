@@ -27,8 +27,9 @@ class FuzzerPassReplaceLinearAlgebraInstructions : public FuzzerPass {
   FuzzerPassReplaceLinearAlgebraInstructions(
       opt::IRContext* ir_context, TransformationContext* transformation_context,
       FuzzerContext* fuzzer_context,
-      protobufs::TransformationSequence* transformations,
-      bool ignore_inapplicable_transformations);
+      protobufs::TransformationSequence* transformations);
+
+  ~FuzzerPassReplaceLinearAlgebraInstructions();
 
   void Apply() override;
 };

@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/KhronosGroup/SPIRV-Tools/utils/vscode/src/lsp/jsonrpc2"
+	"../jsonrpc2"
 )
 
 type loggingStream struct {

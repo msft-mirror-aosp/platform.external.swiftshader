@@ -19,8 +19,9 @@ namespace fuzz {
 
 TransformationComputeDataSynonymFactClosure::
     TransformationComputeDataSynonymFactClosure(
-        protobufs::TransformationComputeDataSynonymFactClosure message)
-    : message_(std::move(message)) {}
+        const spvtools::fuzz::protobufs::
+            TransformationComputeDataSynonymFactClosure& message)
+    : message_(message) {}
 
 TransformationComputeDataSynonymFactClosure::
     TransformationComputeDataSynonymFactClosure(

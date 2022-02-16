@@ -29,8 +29,9 @@ const uint32_t kOpCopyMemorySizedFirstMemoryOperandsMaskIndex = 3;
 }  // namespace
 
 TransformationSetMemoryOperandsMask::TransformationSetMemoryOperandsMask(
-    protobufs::TransformationSetMemoryOperandsMask message)
-    : message_(std::move(message)) {}
+    const spvtools::fuzz::protobufs::TransformationSetMemoryOperandsMask&
+        message)
+    : message_(message) {}
 
 TransformationSetMemoryOperandsMask::TransformationSetMemoryOperandsMask(
     const protobufs::InstructionDescriptor& memory_access_instruction,
@@ -52,9 +53,7 @@ bool TransformationSetMemoryOperandsMask::IsApplicable(
                SpvOpCopyMemory ||
            message_.memory_access_instruction().target_instruction_opcode() ==
                SpvOpCopyMemorySized);
-    assert(MultipleMemoryOperandMasksAreSupported(ir_context) &&
-           "Multiple memory operand masks are not supported for this SPIR-V "
-           "version.");
+    assert(MultipleMemoryOperandMasksAreSupported(ir_context));
   }
 
   auto instruction =
@@ -206,16 +205,14 @@ uint32_t TransformationSetMemoryOperandsMask::GetInOperandIndexForMask(
 
 bool TransformationSetMemoryOperandsMask::
     MultipleMemoryOperandMasksAreSupported(opt::IRContext* ir_context) {
-  // TODO(afd): We capture the environments for which this loop control is
-  //  definitely not supported.  The check should be refined on demand for other
-  //  target environments.
+  // TODO(afd): We capture the universal environments for which this loop
+  //  control is definitely not supported.  The check should be refined on
+  //  demand for other target environments.
   switch (ir_context->grammar().target_env()) {
     case SPV_ENV_UNIVERSAL_1_0:
     case SPV_ENV_UNIVERSAL_1_1:
     case SPV_ENV_UNIVERSAL_1_2:
     case SPV_ENV_UNIVERSAL_1_3:
-    case SPV_ENV_VULKAN_1_0:
-    case SPV_ENV_VULKAN_1_1:
       return false;
     default:
       return true;
