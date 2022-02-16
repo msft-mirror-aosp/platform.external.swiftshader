@@ -312,8 +312,39 @@ bool TargetLowering::shouldBePooled(const Constant *C) {
   }
 }
 
+TargetLowering::SandboxType
+TargetLowering::determineSandboxTypeFromFlags(const ClFlags &Flags) {
+  assert(!Flags.getUseSandboxing() || !Flags.getUseNonsfi());
+  if (Flags.getUseNonsfi()) {
+    return TargetLowering::ST_Nonsfi;
+  }
+  if (Flags.getUseSandboxing()) {
+    return TargetLowering::ST_NaCl;
+  }
+  return TargetLowering::ST_None;
+}
+
 TargetLowering::TargetLowering(Cfg *Func)
-    : Func(Func), Ctx(Func->getContext()) {}
+    : Func(Func), Ctx(Func->getContext()),
+      SandboxingType(determineSandboxTypeFromFlags(getFlags())) {}
+
+TargetLowering::AutoBundle::AutoBundle(TargetLowering *Target,
+                                       InstBundleLock::Option Option)
+    : Target(Target), NeedSandboxing(getFlags().getUseSandboxing()) {
+  assert(!Target->AutoBundling);
+  Target->AutoBundling = true;
+  if (NeedSandboxing) {
+    Target->_bundle_lock(Option);
+  }
+}
+
+TargetLowering::AutoBundle::~AutoBundle() {
+  assert(Target->AutoBundling);
+  Target->AutoBundling = false;
+  if (NeedSandboxing) {
+    Target->_bundle_unlock();
+  }
+}
 
 void TargetLowering::genTargetHelperCalls() {
   TimerMarker T(TimerStack::TT_genHelpers, Func);
@@ -998,9 +1029,12 @@ void TargetDataLowering::emitGlobal(const VariableDeclaration &Var,
   Str << "\t.type\t" << Name << ",%object\n";
 
   const bool UseDataSections = getFlags().getDataSections();
+  const bool UseNonsfi = getFlags().getUseNonsfi();
   const std::string Suffix =
       dataSectionSuffix(SectionSuffix, Name, UseDataSections);
-  if (IsConstant)
+  if (IsConstant && UseNonsfi)
+    Str << "\t.section\t.data.rel.ro" << Suffix << ",\"aw\",%progbits\n";
+  else if (IsConstant)
     Str << "\t.section\t.rodata" << Suffix << ",\"a\",%progbits\n";
   else if (HasNonzeroInitializer)
     Str << "\t.section\t.data" << Suffix << ",\"aw\",%progbits\n";

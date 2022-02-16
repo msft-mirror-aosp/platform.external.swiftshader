@@ -1608,6 +1608,12 @@ void Cfg::doBranchOpt() {
   }
 }
 
+void Cfg::markNodesForSandboxing() {
+  for (const InstJumpTable *JT : JumpTables)
+    for (SizeT I = 0; I < JT->getNumTargets(); ++I)
+      JT->getTarget(I)->setNeedsAlignment();
+}
+
 // ======================== Dump routines ======================== //
 
 // emitTextHeader() is not target-specific (apart from what is abstracted by
@@ -1664,6 +1670,7 @@ void Cfg::emit() {
   OstreamLocker L(Ctx);
   Ostream &Str = Ctx->getStrEmit();
   const Assembler *Asm = getAssembler<>();
+  const bool NeedSandboxing = getFlags().getUseSandboxing();
 
   emitTextHeader(FunctionName, Ctx, Asm);
   if (getFlags().getDecorateAsm()) {
@@ -1675,6 +1682,10 @@ void Cfg::emit() {
     }
   }
   for (CfgNode *Node : Nodes) {
+    if (NeedSandboxing && Node->needsAlignment()) {
+      Str << "\t" << Asm->getAlignDirective() << " "
+          << Asm->getBundleAlignLog2Bytes() << "\n";
+    }
     Node->emit(this);
   }
   emitJumpTables();
@@ -1685,7 +1696,10 @@ void Cfg::emitIAS() {
   TimerMarker T(TimerStack::TT_emitAsm, this);
   // The emitIAS() routines emit into the internal assembler buffer, so there's
   // no need to lock the streams.
+  const bool NeedSandboxing = getFlags().getUseSandboxing();
   for (CfgNode *Node : Nodes) {
+    if (NeedSandboxing && Node->needsAlignment())
+      getAssembler()->alignCfgNode();
     Node->emitIAS(this);
   }
   emitJumpTables();

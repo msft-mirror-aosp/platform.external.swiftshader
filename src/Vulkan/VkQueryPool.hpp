@@ -99,13 +99,12 @@ public:
 
 	void writeTimestamp(uint32_t query);
 
-	inline Query *getQuery(uint32_t query) const { return &pool[query]; }
-	inline VkQueryType getType() const { return type; }
+	inline Query *getQuery(uint32_t query) const { return &(pool[query]); }
 
 private:
-	Query *const pool;
-	const VkQueryType type;
-	const uint32_t count;
+	Query *pool;
+	VkQueryType type;
+	uint32_t count;
 };
 
 static inline QueryPool *Cast(VkQueryPool object)

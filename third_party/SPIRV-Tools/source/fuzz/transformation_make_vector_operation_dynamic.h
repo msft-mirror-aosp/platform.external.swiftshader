@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationMakeVectorOperationDynamic : public Transformation {
  public:
   explicit TransformationMakeVectorOperationDynamic(
-      protobufs::TransformationMakeVectorOperationDynamic message);
+      const protobufs::TransformationMakeVectorOperationDynamic& message);
 
   TransformationMakeVectorOperationDynamic(uint32_t instruction_result_id,
                                            uint32_t constant_index_id);

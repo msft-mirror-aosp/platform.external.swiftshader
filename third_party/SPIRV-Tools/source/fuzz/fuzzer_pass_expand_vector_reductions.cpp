@@ -24,10 +24,11 @@ namespace fuzz {
 FuzzerPassExpandVectorReductions::FuzzerPassExpandVectorReductions(
     opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
-    protobufs::TransformationSequence* transformations,
-    bool ignore_inapplicable_transformations)
+    protobufs::TransformationSequence* transformations)
     : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations, ignore_inapplicable_transformations) {}
+                 transformations) {}
+
+FuzzerPassExpandVectorReductions::~FuzzerPassExpandVectorReductions() = default;
 
 void FuzzerPassExpandVectorReductions::Apply() {
   for (auto& function : *GetIRContext()->module()) {
@@ -47,7 +48,7 @@ void FuzzerPassExpandVectorReductions::Apply() {
 
         // It must be able to make a synonym of |instruction|.
         if (!fuzzerutil::CanMakeSynonymOf(
-                GetIRContext(), *GetTransformationContext(), instruction)) {
+                GetIRContext(), *GetTransformationContext(), &instruction)) {
           continue;
         }
 

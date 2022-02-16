@@ -24,10 +24,11 @@ namespace fuzz {
 FuzzerPassAddLocalVariables::FuzzerPassAddLocalVariables(
     opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
-    protobufs::TransformationSequence* transformations,
-    bool ignore_inapplicable_transformations)
+    protobufs::TransformationSequence* transformations)
     : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations, ignore_inapplicable_transformations) {}
+                 transformations) {}
+
+FuzzerPassAddLocalVariables::~FuzzerPassAddLocalVariables() = default;
 
 void FuzzerPassAddLocalVariables::Apply() {
   auto basic_type_ids_and_pointers =
@@ -35,10 +36,6 @@ void FuzzerPassAddLocalVariables::Apply() {
 
   // These are the basic types that are available to this fuzzer pass.
   auto& basic_types = basic_type_ids_and_pointers.first;
-  if (basic_types.empty()) {
-    // The pass cannot do anything if there are no basic types.
-    return;
-  }
 
   // These are the pointers to those basic types that are *initially* available
   // to the fuzzer pass.  The fuzzer pass might add pointer types in cases where
