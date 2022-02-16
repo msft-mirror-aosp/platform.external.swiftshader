@@ -20,8 +20,8 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationAddParameter::TransformationAddParameter(
-    protobufs::TransformationAddParameter message)
-    : message_(std::move(message)) {}
+    const protobufs::TransformationAddParameter& message)
+    : message_(message) {}
 
 TransformationAddParameter::TransformationAddParameter(
     uint32_t function_id, uint32_t parameter_fresh_id,

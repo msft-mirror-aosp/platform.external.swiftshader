@@ -22,8 +22,9 @@ namespace fuzz {
 
 TransformationSwapConditionalBranchOperands::
     TransformationSwapConditionalBranchOperands(
-        protobufs::TransformationSwapConditionalBranchOperands message)
-    : message_(std::move(message)) {}
+        const spvtools::fuzz::protobufs::
+            TransformationSwapConditionalBranchOperands& message)
+    : message_(message) {}
 
 TransformationSwapConditionalBranchOperands::
     TransformationSwapConditionalBranchOperands(
@@ -69,13 +70,11 @@ void TransformationSwapConditionalBranchOperands::Apply(
 
   // We are swapping the labels in OpBranchConditional. This means that we must
   // invert the guard as well. We are using OpLogicalNot for that purpose here.
-  auto new_instruction = MakeUnique<opt::Instruction>(
+  iter.InsertBefore(MakeUnique<opt::Instruction>(
       ir_context, SpvOpLogicalNot, condition_inst->type_id(),
       message_.fresh_id(),
       opt::Instruction::OperandList{
-          {SPV_OPERAND_TYPE_ID, {condition_inst->result_id()}}});
-  auto new_instruction_ptr = new_instruction.get();
-  iter.InsertBefore(std::move(new_instruction));
+          {SPV_OPERAND_TYPE_ID, {condition_inst->result_id()}}}));
 
   fuzzerutil::UpdateModuleIdBound(ir_context, message_.fresh_id());
 
@@ -90,13 +89,9 @@ void TransformationSwapConditionalBranchOperands::Apply(
     std::swap(branch_inst->GetInOperand(3), branch_inst->GetInOperand(4));
   }
 
-  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(new_instruction_ptr);
-  ir_context->set_instr_block(new_instruction_ptr, block);
-  ir_context->get_def_use_mgr()->EraseUseRecordsOfOperandIds(branch_inst);
-  ir_context->get_def_use_mgr()->AnalyzeInstUse(branch_inst);
-
-  // No analyses need to be invalidated since the transformation is local to a
-  // block and the def-use and instruction-to-block mappings have been updated.
+  // Make sure the changes are analyzed.
+  ir_context->InvalidateAnalysesExceptFor(
+      opt::IRContext::Analysis::kAnalysisNone);
 }
 
 protobufs::Transformation

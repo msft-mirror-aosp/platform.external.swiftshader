@@ -19,7 +19,6 @@
 #include "Pipeline/Constants.hpp"
 #include "System/Debug.hpp"
 #include "System/Math.hpp"
-#include "Vulkan/VkDevice.hpp"
 
 namespace sw {
 
@@ -35,7 +34,7 @@ QuadRasterizer::~QuadRasterizer()
 
 void QuadRasterizer::generate()
 {
-	constants = device + OFFSET(vk::Device, constants);
+	constants = *Pointer<Pointer<Byte>>(data + OFFSET(DrawData, constants));
 	occlusion = 0;
 
 	Do
@@ -70,13 +69,13 @@ void QuadRasterizer::generate()
 
 void QuadRasterizer::rasterize(Int &yMin, Int &yMax)
 {
-	Pointer<Byte> cBuffer[MAX_COLOR_BUFFERS];
+	Pointer<Byte> cBuffer[RENDERTARGETS];
 	Pointer<Byte> zBuffer;
 	Pointer<Byte> sBuffer;
 
 	Int clusterCountLog2 = 31 - Ctlz(UInt(clusterCount), false);
 
-	for(int index = 0; index < MAX_COLOR_BUFFERS; index++)
+	for(int index = 0; index < RENDERTARGETS; index++)
 	{
 		if(state.colorWriteActive(index))
 		{
@@ -84,7 +83,7 @@ void QuadRasterizer::rasterize(Int &yMin, Int &yMax)
 		}
 	}
 
-	if(state.depthTestActive || state.depthBoundsTestActive)
+	if(state.depthTestActive)
 	{
 		zBuffer = *Pointer<Pointer<Byte>>(data + OFFSET(DrawData, depthBuffer)) + yMin * *Pointer<Int>(data + OFFSET(DrawData, depthPitchB));
 	}
@@ -148,19 +147,17 @@ void QuadRasterizer::rasterize(Int &yMin, Int &yMax)
 
 			if(spirvShader)
 			{
-				int packedInterpolant = 0;
-				for(int interfaceInterpolant = 0; interfaceInterpolant < MAX_INTERFACE_COMPONENTS; interfaceInterpolant++)
+				for(int interpolant = 0; interpolant < MAX_INTERFACE_COMPONENTS; interpolant++)
 				{
-					if(spirvShader->inputs[interfaceInterpolant].Type == SpirvShader::ATTRIBTYPE_UNUSED)
+					if(spirvShader->inputs[interpolant].Type == SpirvShader::ATTRIBTYPE_UNUSED)
 						continue;
 
-					Dv[interfaceInterpolant] = *Pointer<Float4>(primitive + OFFSET(Primitive, V[packedInterpolant].C), 16);
-					if(!spirvShader->inputs[interfaceInterpolant].Flat)
+					Dv[interpolant] = *Pointer<Float4>(primitive + OFFSET(Primitive, V[interpolant].C), 16);
+					if(!spirvShader->inputs[interpolant].Flat)
 					{
-						Dv[interfaceInterpolant] +=
-						    yyyy * *Pointer<Float4>(primitive + OFFSET(Primitive, V[packedInterpolant].B), 16);
+						Dv[interpolant] +=
+						    yyyy * *Pointer<Float4>(primitive + OFFSET(Primitive, V[interpolant].B), 16);
 					}
-					packedInterpolant++;
 				}
 
 				for(unsigned int i = 0; i < state.numClipDistances; i++)
@@ -201,13 +198,17 @@ void QuadRasterizer::rasterize(Int &yMin, Int &yMax)
 						Short4 mask = CmpGT(xxxx, xLeft[i]) & CmpGT(xRight[i], xxxx);
 						cMask[q] = SignMask(PackSigned(mask, mask)) & 0x0000000F;
 					}
+					else
+					{
+						cMask[q] = 0;
+					}
 				}
 
 				quad(cBuffer, zBuffer, sBuffer, cMask, x, y);
 			}
 		}
 
-		for(int index = 0; index < MAX_COLOR_BUFFERS; index++)
+		for(int index = 0; index < RENDERTARGETS; index++)
 		{
 			if(state.colorWriteActive(index))
 			{
@@ -215,7 +216,7 @@ void QuadRasterizer::rasterize(Int &yMin, Int &yMax)
 			}
 		}
 
-		if(state.depthTestActive || state.depthBoundsTestActive)
+		if(state.depthTestActive)
 		{
 			zBuffer += *Pointer<Int>(data + OFFSET(DrawData, depthPitchB)) << (1 + clusterCountLog2);  // FIXME: Precompute
 		}

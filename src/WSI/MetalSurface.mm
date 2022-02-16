@@ -136,7 +136,7 @@ void MetalSurface::destroySurface(const VkAllocationCallbacks *pAllocator) API_A
         metalLayer->release();
     }
 
-    vk::freeHostMemory(metalLayer, pAllocator);
+    vk::deallocate(metalLayer, pAllocator);
 }
 
 size_t MetalSurface::ComputeRequiredAllocationSize(const void *pCreateInfo) API_AVAILABLE(macosx(10.11))

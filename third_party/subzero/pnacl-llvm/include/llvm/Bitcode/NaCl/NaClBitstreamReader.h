@@ -426,7 +426,13 @@ private:
   class Block {
   public:
     Block() = delete;
-    Block &operator=(const Block &Rhs) = default;
+    Block &operator=(const Block &Rhs) {
+      GlobalAbbrevs = Rhs.GlobalAbbrevs;
+      NumGlobalAbbrevs = Rhs.NumGlobalAbbrevs;
+      LocalAbbrevs = Rhs.LocalAbbrevs;
+      CodeAbbrev = Rhs.CodeAbbrev;
+      return *this;
+    }
     Block(NaClBitstreamReader::BlockInfo *GlobalAbbrevs,
           NaClBitcodeSelectorAbbrev &CodeAbbrev)
         : GlobalAbbrevs(GlobalAbbrevs),

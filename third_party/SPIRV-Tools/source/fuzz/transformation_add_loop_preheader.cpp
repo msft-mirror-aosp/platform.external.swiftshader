@@ -20,8 +20,8 @@
 namespace spvtools {
 namespace fuzz {
 TransformationAddLoopPreheader::TransformationAddLoopPreheader(
-    protobufs::TransformationAddLoopPreheader message)
-    : message_(std::move(message)) {}
+    const protobufs::TransformationAddLoopPreheader& message)
+    : message_(message) {}
 
 TransformationAddLoopPreheader::TransformationAddLoopPreheader(
     uint32_t loop_header_block, uint32_t fresh_id,
