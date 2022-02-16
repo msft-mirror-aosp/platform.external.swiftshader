@@ -225,21 +225,13 @@ spv_result_t ValidateEntryPoint(ValidationState_t& _, const Instruction* inst) {
                 }
               }
             }
-            if (i.opcode() == SpvOpExecutionModeId) {
-              const auto mode = i.GetOperandAs<SpvExecutionMode>(1);
-              if (mode == SpvExecutionModeLocalSizeId) {
-                ok = true;
-                break;
-              }
-            }
           }
           if (!ok) {
             return _.diag(SPV_ERROR_INVALID_DATA, inst)
-                   << _.VkErrorID(6426)
                    << "In the Vulkan environment, GLCompute execution model "
-                      "entry points require either the LocalSize or "
-                      "LocalSizeId execution mode or an object decorated with "
-                      "WorkgroupSize must be specified.";
+                      "entry points require either the LocalSize execution "
+                      "mode or an object decorated with WorkgroupSize must be "
+                      "specified.";
           }
         }
         break;
@@ -436,10 +428,6 @@ spv_result_t ValidateExecutionMode(ValidationState_t& _,
       break;
     case SpvExecutionModeLocalSize:
     case SpvExecutionModeLocalSizeId:
-      if (mode == SpvExecutionModeLocalSizeId && !_.IsLocalSizeIdAllowed())
-        return _.diag(SPV_ERROR_INVALID_DATA, inst)
-               << "LocalSizeId mode is not allowed by the current environment.";
-
       if (!std::all_of(models->begin(), models->end(),
                        [&_](const SpvExecutionModel& model) {
                          switch (model) {

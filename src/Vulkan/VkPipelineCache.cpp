@@ -13,49 +13,65 @@
 // limitations under the License.
 
 #include "VkPipelineCache.hpp"
-
 #include <cstring>
 
 namespace vk {
 
-PipelineCache::SpirvBinaryKey::SpirvBinaryKey(const sw::SpirvBinary &spirv,
-                                              const VkSpecializationInfo *specializationInfo,
-                                              bool optimize)
-    : spirv(spirv)
+PipelineCache::SpirvShaderKey::SpirvShaderKey(const VkShaderStageFlagBits pipelineStage,
+                                              const std::string &entryPointName,
+                                              const std::vector<uint32_t> &insns,
+                                              const vk::RenderPass *renderPass,
+                                              const uint32_t subpassIndex,
+                                              const vk::SpecializationInfo &specializationInfo)
+    : pipelineStage(pipelineStage)
+    , entryPointName(entryPointName)
+    , insns(insns)
+    , renderPass(renderPass)
+    , subpassIndex(subpassIndex)
     , specializationInfo(specializationInfo)
-    , optimize(optimize)
 {
 }
 
-bool PipelineCache::SpirvBinaryKey::operator<(const SpirvBinaryKey &other) const
+bool PipelineCache::SpirvShaderKey::operator<(const SpirvShaderKey &other) const
 {
-	if(spirv.size() != other.spirv.size())
+	if(pipelineStage != other.pipelineStage)
 	{
-		return spirv.size() < other.spirv.size();
+		return pipelineStage < other.pipelineStage;
 	}
 
-	int cmp = memcmp(spirv.data(), other.spirv.data(), spirv.size() * sizeof(uint32_t));
+	if(renderPass != other.renderPass)
+	{
+		return renderPass < other.renderPass;
+	}
+
+	if(subpassIndex != other.subpassIndex)
+	{
+		return subpassIndex < other.subpassIndex;
+	}
+
+	if(insns.size() != other.insns.size())
+	{
+		return insns.size() < other.insns.size();
+	}
+
+	if(entryPointName.size() != other.entryPointName.size())
+	{
+		return entryPointName.size() < other.entryPointName.size();
+	}
+
+	int cmp = memcmp(entryPointName.c_str(), other.entryPointName.c_str(), entryPointName.size());
 	if(cmp != 0)
 	{
 		return cmp < 0;
 	}
 
-	if(optimize != other.optimize)
+	cmp = memcmp(insns.data(), other.insns.data(), insns.size() * sizeof(uint32_t));
+	if(cmp != 0)
 	{
-		return !optimize && other.optimize;
+		return cmp < 0;
 	}
 
 	return (specializationInfo < other.specializationInfo);
-}
-
-PipelineCache::ComputeProgramKey::ComputeProgramKey(uint64_t shaderIdentifier, uint32_t pipelineLayoutIdentifier)
-    : shaderIdentifier(shaderIdentifier)
-    , pipelineLayoutIdentifier(pipelineLayoutIdentifier)
-{}
-
-bool PipelineCache::ComputeProgramKey::operator<(const ComputeProgramKey &other) const
-{
-	return std::tie(shaderIdentifier, pipelineLayoutIdentifier) < std::tie(other.shaderIdentifier, other.pipelineLayoutIdentifier);
 }
 
 PipelineCache::PipelineCache(const VkPipelineCacheCreateInfo *pCreateInfo, void *mem)
@@ -83,7 +99,7 @@ PipelineCache::~PipelineCache()
 
 void PipelineCache::destroy(const VkAllocationCallbacks *pAllocator)
 {
-	vk::freeHostMemory(data, pAllocator);
+	vk::deallocate(data, pAllocator);
 }
 
 size_t PipelineCache::ComputeRequiredAllocationSize(const VkPipelineCacheCreateInfo *pCreateInfo)

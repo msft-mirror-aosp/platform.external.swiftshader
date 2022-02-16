@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationCompositeConstruct : public Transformation {
  public:
   explicit TransformationCompositeConstruct(
-      protobufs::TransformationCompositeConstruct message);
+      const protobufs::TransformationCompositeConstruct& message);
 
   TransformationCompositeConstruct(
       uint32_t composite_type_id, std::vector<uint32_t> component,

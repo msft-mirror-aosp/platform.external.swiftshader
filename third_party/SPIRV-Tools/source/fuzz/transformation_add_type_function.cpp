@@ -22,8 +22,8 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationAddTypeFunction::TransformationAddTypeFunction(
-    protobufs::TransformationAddTypeFunction message)
-    : message_(std::move(message)) {}
+    const spvtools::fuzz::protobufs::TransformationAddTypeFunction& message)
+    : message_(message) {}
 
 TransformationAddTypeFunction::TransformationAddTypeFunction(
     uint32_t fresh_id, uint32_t return_type_id,

@@ -45,7 +45,7 @@ public:
 	VkResult present(PresentImage *image) override;
 
 private:
-	VkResult lazyCreateFrameBuffer();
+	void lazyCreateFrameBuffer();
 	void destroyFrameBuffer();
 
 	const HWND hwnd;
@@ -60,4 +60,4 @@ private:
 };
 
 }  // namespace vk
-#endif  // SWIFTSHADER_WIN32SURFACEKHR_HPP
+#endif  //SWIFTSHADER_WIN32SURFACEKHR_HPP

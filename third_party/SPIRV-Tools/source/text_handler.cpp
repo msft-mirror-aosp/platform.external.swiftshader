@@ -120,8 +120,7 @@ spv_result_t getWord(spv_text text, spv_position position, std::string* word) {
         case '\n':
         case '\r':
           if (escaping || quoting) break;
-          word->assign(text->str + start_index, text->str + position->index);
-          return SPV_SUCCESS;
+        // Fall through.
         case '\0': {  // NOTE: End of word found!
           word->assign(text->str + start_index, text->str + position->index);
           return SPV_SUCCESS;

@@ -13,12 +13,10 @@
 // limitations under the License.
 
 #include "VkBuffer.hpp"
-
 #include "VkConfig.hpp"
 #include "VkDeviceMemory.hpp"
 
 #include <cstring>
-#include <limits>
 
 namespace vk {
 
@@ -48,7 +46,7 @@ Buffer::Buffer(const VkBufferCreateInfo *pCreateInfo, void *mem)
 
 void Buffer::destroy(const VkAllocationCallbacks *pAllocator)
 {
-	vk::freeHostMemory(queueFamilyIndices, pAllocator);
+	vk::deallocate(queueFamilyIndices, pAllocator);
 }
 
 size_t Buffer::ComputeRequiredAllocationSize(const VkBufferCreateInfo *pCreateInfo)
@@ -59,17 +57,6 @@ size_t Buffer::ComputeRequiredAllocationSize(const VkBufferCreateInfo *pCreateIn
 const VkMemoryRequirements Buffer::getMemoryRequirements() const
 {
 	VkMemoryRequirements memoryRequirements = {};
-
-	// Add 15 bytes of padding to ensure that any type of attribute within the
-	// buffer can be read using 16-bit accesses.
-	// TODO(b/196822081): Also reserve space for a header containing the size of the buffer (for robust buffer access)
-	memoryRequirements.size = this->size + 15;
-
-	if(memoryRequirements.size < this->size)  // Overflow occurred
-	{
-		memoryRequirements.size = std::numeric_limits<VkDeviceSize>::max();
-	}
-
 	if(usage & (VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT))
 	{
 		memoryRequirements.alignment = vk::MIN_TEXEL_BUFFER_OFFSET_ALIGNMENT;
@@ -86,9 +73,9 @@ const VkMemoryRequirements Buffer::getMemoryRequirements() const
 	{
 		memoryRequirements.alignment = REQUIRED_MEMORY_ALIGNMENT;
 	}
-
 	memoryRequirements.memoryTypeBits = vk::MEMORY_TYPE_GENERIC_BIT;
-
+	memoryRequirements.size = size;  // TODO: also reserve space for a header containing
+	                                 // the size of the buffer (for robust buffer access)
 	return memoryRequirements;
 }
 
@@ -116,7 +103,7 @@ void Buffer::copyTo(void *dstMemory, VkDeviceSize pSize, VkDeviceSize pOffset) c
 	memcpy(dstMemory, getOffsetPointer(pOffset), pSize);
 }
 
-void Buffer::copyTo(Buffer *dstBuffer, const VkBufferCopy2KHR &pRegion) const
+void Buffer::copyTo(Buffer *dstBuffer, const VkBufferCopy &pRegion) const
 {
 	copyTo(dstBuffer->getOffsetPointer(pRegion.dstOffset), pRegion.size, pRegion.srcOffset);
 }

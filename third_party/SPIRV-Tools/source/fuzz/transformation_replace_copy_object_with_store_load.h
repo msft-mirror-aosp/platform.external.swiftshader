@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationReplaceCopyObjectWithStoreLoad : public Transformation {
  public:
   explicit TransformationReplaceCopyObjectWithStoreLoad(
-      protobufs::TransformationReplaceCopyObjectWithStoreLoad message);
+      const protobufs::TransformationReplaceCopyObjectWithStoreLoad& message);
 
   TransformationReplaceCopyObjectWithStoreLoad(
       uint32_t copy_object_result_id, uint32_t fresh_variable_id,

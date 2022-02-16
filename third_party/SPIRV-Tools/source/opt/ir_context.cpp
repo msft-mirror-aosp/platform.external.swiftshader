@@ -30,8 +30,7 @@ static const int kSpvDecorateBuiltinInIdx = 2;
 static const int kEntryPointInterfaceInIdx = 3;
 static const int kEntryPointFunctionIdInIdx = 1;
 
-// Constants for OpenCL.DebugInfo.100 / NonSemantic.Shader.DebugInfo.100
-// extension instructions.
+// Constants for OpenCL.DebugInfo.100 extension instructions.
 static const uint32_t kDebugFunctionOperandFunctionIndex = 13;
 static const uint32_t kDebugGlobalVariableOperandVariableIndex = 11;
 
@@ -171,9 +170,7 @@ Instruction* IRContext::KillInst(Instruction* inst) {
   KillOperandFromDebugInstructions(inst);
 
   if (AreAnalysesValid(kAnalysisDefUse)) {
-    analysis::DefUseManager* def_use_mgr = get_def_use_mgr();
-    def_use_mgr->ClearInst(inst);
-    for (auto& l_inst : inst->dbg_line_insts()) def_use_mgr->ClearInst(&l_inst);
+    get_def_use_mgr()->ClearInst(inst);
   }
   if (AreAnalysesValid(kAnalysisInstrToBlockMapping)) {
     instr_to_block_.erase(inst);
@@ -217,12 +214,10 @@ Instruction* IRContext::KillInst(Instruction* inst) {
   return next_instruction;
 }
 
-void IRContext::CollectNonSemanticTree(
-    Instruction* inst, std::unordered_set<Instruction*>* to_kill) {
+void IRContext::KillNonSemanticInfo(Instruction* inst) {
   if (!inst->HasResultId()) return;
-  // Debug[No]Line result id is not used, so we are done
-  if (inst->IsDebugLineInst()) return;
   std::vector<Instruction*> work_list;
+  std::vector<Instruction*> to_kill;
   std::unordered_set<Instruction*> seen;
   work_list.push_back(inst);
 
@@ -230,12 +225,16 @@ void IRContext::CollectNonSemanticTree(
     auto* i = work_list.back();
     work_list.pop_back();
     get_def_use_mgr()->ForEachUser(
-        i, [&work_list, to_kill, &seen](Instruction* user) {
+        i, [&work_list, &to_kill, &seen](Instruction* user) {
           if (user->IsNonSemanticInstruction() && seen.insert(user).second) {
             work_list.push_back(user);
-            to_kill->insert(user);
+            to_kill.push_back(user);
           }
         });
+  }
+
+  for (auto* dead : to_kill) {
+    KillInst(dead);
   }
 }
 
@@ -442,7 +441,8 @@ void IRContext::KillOperandFromDebugInstructions(Instruction* inst) {
   if (opcode == SpvOpVariable || IsConstantInst(opcode)) {
     for (auto it = module()->ext_inst_debuginfo_begin();
          it != module()->ext_inst_debuginfo_end(); ++it) {
-      if (it->GetCommonDebugOpcode() != CommonDebugInfoDebugGlobalVariable)
+      if (it->GetOpenCL100DebugOpcode() !=
+          OpenCLDebugInfo100DebugGlobalVariable)
         continue;
       auto& operand = it->GetOperand(kDebugGlobalVariableOperandVariableIndex);
       if (operand.words[0] == id) {
@@ -934,7 +934,7 @@ void IRContext::EmitErrorMessage(std::string message, Instruction* inst) {
   while (line_inst != nullptr) {  // Stop at the beginning of the basic block.
     if (!line_inst->dbg_line_insts().empty()) {
       line_inst = &line_inst->dbg_line_insts().back();
-      if (line_inst->IsNoLine()) {
+      if (line_inst->opcode() == SpvOpNoLine) {
         line_inst = nullptr;
       }
       break;
@@ -1037,12 +1037,6 @@ bool IRContext::CheckCFG() {
   }
 
   return true;
-}
-
-bool IRContext::IsReachable(const opt::BasicBlock& bb) {
-  auto enclosing_function = bb.GetParent();
-  return GetDominatorAnalysis(enclosing_function)
-      ->Dominates(enclosing_function->entry().get(), &bb);
 }
 }  // namespace opt
 }  // namespace spvtools

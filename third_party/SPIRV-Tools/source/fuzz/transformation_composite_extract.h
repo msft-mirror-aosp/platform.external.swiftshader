@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationCompositeExtract : public Transformation {
  public:
   explicit TransformationCompositeExtract(
-      protobufs::TransformationCompositeExtract message);
+      const protobufs::TransformationCompositeExtract& message);
 
   TransformationCompositeExtract(
       const protobufs::InstructionDescriptor& instruction_to_insert_before,

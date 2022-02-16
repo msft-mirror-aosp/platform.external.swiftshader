@@ -43,14 +43,11 @@ namespace fuzz {
 FuzzerPass::FuzzerPass(opt::IRContext* ir_context,
                        TransformationContext* transformation_context,
                        FuzzerContext* fuzzer_context,
-                       protobufs::TransformationSequence* transformations,
-                       bool ignore_inapplicable_transformations)
+                       protobufs::TransformationSequence* transformations)
     : ir_context_(ir_context),
       transformation_context_(transformation_context),
       fuzzer_context_(fuzzer_context),
-      transformations_(transformations),
-      ignore_inapplicable_transformations_(
-          ignore_inapplicable_transformations) {}
+      transformations_(transformations) {}
 
 FuzzerPass::~FuzzerPass() = default;
 
@@ -114,8 +111,10 @@ void FuzzerPass::ForEachInstructionWithInstructionDescriptor(
   // module.
   std::vector<opt::BasicBlock*> reachable_blocks;
 
+  const auto* dominator_analysis =
+      GetIRContext()->GetDominatorAnalysis(function);
   for (auto& block : *function) {
-    if (GetIRContext()->IsReachable(block)) {
+    if (dominator_analysis->IsReachable(&block)) {
       reachable_blocks.push_back(&block);
     }
   }
@@ -183,49 +182,6 @@ void FuzzerPass::ForEachInstructionWithInstructionDescriptor(
           action(&function, block, inst_it, instruction_descriptor);
         });
   }
-}
-
-void FuzzerPass::ApplyTransformation(const Transformation& transformation) {
-  if (ignore_inapplicable_transformations_) {
-    // If an applicable-by-construction transformation turns out to be
-    // inapplicable, this is a bug in the fuzzer. However, when deploying the
-    // fuzzer at scale for finding bugs in SPIR-V processing tools it is
-    // desirable to silently ignore such bugs. This code path caters for that
-    // scenario.
-    if (!transformation.IsApplicable(GetIRContext(),
-                                     *GetTransformationContext())) {
-      return;
-    }
-  } else {
-    // This code path caters for debugging bugs in the fuzzer, where an
-    // applicable-by-construction transformation turns out to be inapplicable.
-    assert(transformation.IsApplicable(GetIRContext(),
-                                       *GetTransformationContext()) &&
-           "Transformation should be applicable by construction.");
-  }
-  transformation.Apply(GetIRContext(), GetTransformationContext());
-  auto transformation_message = transformation.ToMessage();
-  assert(transformation_message.transformation_case() !=
-             protobufs::Transformation::TRANSFORMATION_NOT_SET &&
-         "Bad transformation.");
-  *GetTransformations()->add_transformation() =
-      std::move(transformation_message);
-}
-
-bool FuzzerPass::MaybeApplyTransformation(
-    const Transformation& transformation) {
-  if (transformation.IsApplicable(GetIRContext(),
-                                  *GetTransformationContext())) {
-    transformation.Apply(GetIRContext(), GetTransformationContext());
-    auto transformation_message = transformation.ToMessage();
-    assert(transformation_message.transformation_case() !=
-               protobufs::Transformation::TRANSFORMATION_NOT_SET &&
-           "Bad transformation.");
-    *GetTransformations()->add_transformation() =
-        std::move(transformation_message);
-    return true;
-  }
-  return false;
 }
 
 uint32_t FuzzerPass::FindOrCreateBoolType() {

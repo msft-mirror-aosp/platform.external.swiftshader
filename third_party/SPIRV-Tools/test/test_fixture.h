@@ -46,7 +46,7 @@ class TextToBinaryTestBase : public T {
     text = {textStr, strlen(textStr)};
   }
 
-  ~TextToBinaryTestBase() override {
+  virtual ~TextToBinaryTestBase() {
     DestroyBinary();
     if (diagnostic) spvDiagnosticDestroy(diagnostic);
   }
