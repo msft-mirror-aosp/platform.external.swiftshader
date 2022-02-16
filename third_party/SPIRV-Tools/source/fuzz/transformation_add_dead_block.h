@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationAddDeadBlock : public Transformation {
  public:
   explicit TransformationAddDeadBlock(
-      protobufs::TransformationAddDeadBlock message);
+      const protobufs::TransformationAddDeadBlock& message);
 
   TransformationAddDeadBlock(uint32_t fresh_id, uint32_t existing_block,
                              bool condition_value);

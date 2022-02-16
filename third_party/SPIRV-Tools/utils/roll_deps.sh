@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2021 Google LLC
+# Copyright (c) 2019 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
 
 # Attempts to roll all entries in DEPS to tip-of-tree and create a commit.
 #
-# Depends on roll-dep from depot_tools
-# (https://chromium.googlesource.com/chromium/tools/depot_tools) being in PATH.
-
-set -eo pipefail
+# Depends on roll-dep from depot_path being in PATH.
 
 effcee_dir="external/effcee/"
 effcee_trunk="origin/main"
@@ -47,4 +44,3 @@ roll-dep --ignore-dirty-tree --roll-to="${re2_trunk}" "${re2_dir}"
 roll-dep --ignore-dirty-tree --roll-to="${spirv_headers_trunk}" "${spirv_headers_dir}"
 
 git rebase --interactive "${old_head}"
-

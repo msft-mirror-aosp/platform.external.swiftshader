@@ -23,8 +23,8 @@ namespace fuzz {
 
 TransformationReplaceParameterWithGlobal::
     TransformationReplaceParameterWithGlobal(
-        protobufs::TransformationReplaceParameterWithGlobal message)
-    : message_(std::move(message)) {}
+        const protobufs::TransformationReplaceParameterWithGlobal& message)
+    : message_(message) {}
 
 TransformationReplaceParameterWithGlobal::
     TransformationReplaceParameterWithGlobal(

@@ -21,8 +21,9 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationSwapCommutableOperands::TransformationSwapCommutableOperands(
-    protobufs::TransformationSwapCommutableOperands message)
-    : message_(std::move(message)) {}
+    const spvtools::fuzz::protobufs::TransformationSwapCommutableOperands&
+        message)
+    : message_(message) {}
 
 TransformationSwapCommutableOperands::TransformationSwapCommutableOperands(
     const protobufs::InstructionDescriptor& instruction_descriptor) {
