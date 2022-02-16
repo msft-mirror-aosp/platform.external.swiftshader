@@ -85,7 +85,7 @@ SpirvShader::EmitResult SpirvShader::EmitMatrixTimesMatrix(InsnIterator insn, Em
 
 	auto numColumns = type.definition.word(3);
 	auto numRows = getType(type.definition.word(2)).definition.word(3);
-	auto numAdds = getObjectType(insn.word(3)).definition.word(3);
+	auto numAdds = getType(getObject(insn.word(3))).definition.word(3);
 
 	for(auto row = 0u; row < numRows; row++)
 	{
@@ -154,11 +154,11 @@ SpirvShader::EmitResult SpirvShader::EmitUnaryOp(InsnIterator insn, EmitState *s
 	{
 		switch(insn.opcode())
 		{
-		case spv::OpNot:
-		case spv::OpLogicalNot:  // logical not == bitwise not due to all-bits boolean representation
-			dst.move(i, ~src.UInt(i));
-			break;
-		case spv::OpBitFieldInsert:
+			case spv::OpNot:
+			case spv::OpLogicalNot:  // logical not == bitwise not due to all-bits boolean representation
+				dst.move(i, ~src.UInt(i));
+				break;
+			case spv::OpBitFieldInsert:
 			{
 				auto insert = Operand(this, state, insn.word(4)).UInt(i);
 				auto offset = Operand(this, state, insn.word(5)).UInt(0);
@@ -167,10 +167,10 @@ SpirvShader::EmitResult SpirvShader::EmitUnaryOp(InsnIterator insn, EmitState *s
 				auto v = src.UInt(i);
 				auto mask = Bitmask32(offset + count) ^ Bitmask32(offset);
 				dst.move(i, (v & ~mask) | ((insert << offset) & mask));
+				break;
 			}
-			break;
-		case spv::OpBitFieldSExtract:
-		case spv::OpBitFieldUExtract:
+			case spv::OpBitFieldSExtract:
+			case spv::OpBitFieldUExtract:
 			{
 				auto offset = Operand(this, state, insn.word(4)).UInt(0);
 				auto count = Operand(this, state, insn.word(5)).UInt(0);
@@ -184,9 +184,9 @@ SpirvShader::EmitResult SpirvShader::EmitUnaryOp(InsnIterator insn, EmitState *s
 					out |= sext;
 				}
 				dst.move(i, out);
+				break;
 			}
-			break;
-		case spv::OpBitReverse:
+			case spv::OpBitReverse:
 			{
 				// TODO: Add an intrinsic to reactor. Even if there isn't a
 				// single vector instruction, there may be target-dependent
@@ -199,55 +199,55 @@ SpirvShader::EmitResult SpirvShader::EmitUnaryOp(InsnIterator insn, EmitState *s
 				v = ((v >> 8) & SIMD::UInt(0x00FF00FF)) | ((v & SIMD::UInt(0x00FF00FF)) << 8);
 				v = (v >> 16) | (v << 16);
 				dst.move(i, v);
+				break;
 			}
-			break;
-		case spv::OpBitCount:
-			dst.move(i, CountBits(src.UInt(i)));
-			break;
-		case spv::OpSNegate:
-			dst.move(i, -src.Int(i));
-			break;
-		case spv::OpFNegate:
-			dst.move(i, -src.Float(i));
-			break;
-		case spv::OpConvertFToU:
-			dst.move(i, SIMD::UInt(src.Float(i)));
-			break;
-		case spv::OpConvertFToS:
-			dst.move(i, SIMD::Int(src.Float(i)));
-			break;
-		case spv::OpConvertSToF:
-			dst.move(i, SIMD::Float(src.Int(i)));
-			break;
-		case spv::OpConvertUToF:
-			dst.move(i, SIMD::Float(src.UInt(i)));
-			break;
-		case spv::OpBitcast:
-			dst.move(i, src.Float(i));
-			break;
-		case spv::OpIsInf:
-			dst.move(i, IsInf(src.Float(i)));
-			break;
-		case spv::OpIsNan:
-			dst.move(i, IsNan(src.Float(i)));
-			break;
-		case spv::OpDPdx:
-		case spv::OpDPdxCoarse:
-			// Derivative instructions: FS invocations are laid out like so:
-			//    0 1
-			//    2 3
-			static_assert(SIMD::Width == 4, "All cross-lane instructions will need care when using a different width");
-			dst.move(i, SIMD::Float(Extract(src.Float(i), 1) - Extract(src.Float(i), 0)));
-			break;
-		case spv::OpDPdy:
-		case spv::OpDPdyCoarse:
-			dst.move(i, SIMD::Float(Extract(src.Float(i), 2) - Extract(src.Float(i), 0)));
-			break;
-		case spv::OpFwidth:
-		case spv::OpFwidthCoarse:
-			dst.move(i, SIMD::Float(Abs(Extract(src.Float(i), 1) - Extract(src.Float(i), 0)) + Abs(Extract(src.Float(i), 2) - Extract(src.Float(i), 0))));
-			break;
-		case spv::OpDPdxFine:
+			case spv::OpBitCount:
+				dst.move(i, CountBits(src.UInt(i)));
+				break;
+			case spv::OpSNegate:
+				dst.move(i, -src.Int(i));
+				break;
+			case spv::OpFNegate:
+				dst.move(i, -src.Float(i));
+				break;
+			case spv::OpConvertFToU:
+				dst.move(i, SIMD::UInt(src.Float(i)));
+				break;
+			case spv::OpConvertFToS:
+				dst.move(i, SIMD::Int(src.Float(i)));
+				break;
+			case spv::OpConvertSToF:
+				dst.move(i, SIMD::Float(src.Int(i)));
+				break;
+			case spv::OpConvertUToF:
+				dst.move(i, SIMD::Float(src.UInt(i)));
+				break;
+			case spv::OpBitcast:
+				dst.move(i, src.Float(i));
+				break;
+			case spv::OpIsInf:
+				dst.move(i, IsInf(src.Float(i)));
+				break;
+			case spv::OpIsNan:
+				dst.move(i, IsNan(src.Float(i)));
+				break;
+			case spv::OpDPdx:
+			case spv::OpDPdxCoarse:
+				// Derivative instructions: FS invocations are laid out like so:
+				//    0 1
+				//    2 3
+				static_assert(SIMD::Width == 4, "All cross-lane instructions will need care when using a different width");
+				dst.move(i, SIMD::Float(Extract(src.Float(i), 1) - Extract(src.Float(i), 0)));
+				break;
+			case spv::OpDPdy:
+			case spv::OpDPdyCoarse:
+				dst.move(i, SIMD::Float(Extract(src.Float(i), 2) - Extract(src.Float(i), 0)));
+				break;
+			case spv::OpFwidth:
+			case spv::OpFwidthCoarse:
+				dst.move(i, SIMD::Float(Abs(Extract(src.Float(i), 1) - Extract(src.Float(i), 0)) + Abs(Extract(src.Float(i), 2) - Extract(src.Float(i), 0))));
+				break;
+			case spv::OpDPdxFine:
 			{
 				auto firstRow = Extract(src.Float(i), 1) - Extract(src.Float(i), 0);
 				auto secondRow = Extract(src.Float(i), 3) - Extract(src.Float(i), 2);
@@ -255,9 +255,9 @@ SpirvShader::EmitResult SpirvShader::EmitUnaryOp(InsnIterator insn, EmitState *s
 				v = Insert(v, secondRow, 2);
 				v = Insert(v, secondRow, 3);
 				dst.move(i, v);
+				break;
 			}
-			break;
-		case spv::OpDPdyFine:
+			case spv::OpDPdyFine:
 			{
 				auto firstColumn = Extract(src.Float(i), 2) - Extract(src.Float(i), 0);
 				auto secondColumn = Extract(src.Float(i), 3) - Extract(src.Float(i), 1);
@@ -265,9 +265,9 @@ SpirvShader::EmitResult SpirvShader::EmitUnaryOp(InsnIterator insn, EmitState *s
 				v = Insert(v, secondColumn, 1);
 				v = Insert(v, secondColumn, 3);
 				dst.move(i, v);
+				break;
 			}
-			break;
-		case spv::OpFwidthFine:
+			case spv::OpFwidthFine:
 			{
 				auto firstRow = Extract(src.Float(i), 1) - Extract(src.Float(i), 0);
 				auto secondRow = Extract(src.Float(i), 3) - Extract(src.Float(i), 2);
@@ -280,9 +280,9 @@ SpirvShader::EmitResult SpirvShader::EmitUnaryOp(InsnIterator insn, EmitState *s
 				dpdy = Insert(dpdy, secondColumn, 1);
 				dpdy = Insert(dpdy, secondColumn, 3);
 				dst.move(i, Abs(dpdx) + Abs(dpdy));
+				break;
 			}
-			break;
-		case spv::OpQuantizeToF16:
+			case spv::OpQuantizeToF16:
 			{
 				// Note: keep in sync with the specialization constant version in EvalSpecConstantUnaryOp
 				auto abs = Abs(src.Float(i));
@@ -296,10 +296,10 @@ SpirvShader::EmitResult SpirvShader::EmitUnaryOp(InsnIterator insn, EmitState *s
 				v = sign | (isInfOrNan & SIMD::Int(0x7F800000)) | (~isInfOrNan & v);
 				v |= isNaN & SIMD::Int(0x400000);
 				dst.move(i, v);
+				break;
 			}
-			break;
-		default:
-			UNREACHABLE("%s", OpcodeName(insn.opcode()));
+			default:
+				UNREACHABLE("%s", OpcodeName(insn.opcode()));
 		}
 	}
 
@@ -310,7 +310,7 @@ SpirvShader::EmitResult SpirvShader::EmitBinaryOp(InsnIterator insn, EmitState *
 {
 	auto &type = getType(insn.resultTypeId());
 	auto &dst = state->createIntermediate(insn.resultId(), type.componentCount);
-	auto &lhsType = getObjectType(insn.word(3));
+	auto &lhsType = getType(getObject(insn.word(3)));
 	auto lhs = Operand(this, state, insn.word(3));
 	auto rhs = Operand(this, state, insn.word(4));
 
@@ -318,40 +318,40 @@ SpirvShader::EmitResult SpirvShader::EmitBinaryOp(InsnIterator insn, EmitState *
 	{
 		switch(insn.opcode())
 		{
-		case spv::OpIAdd:
-			dst.move(i, lhs.Int(i) + rhs.Int(i));
-			break;
-		case spv::OpISub:
-			dst.move(i, lhs.Int(i) - rhs.Int(i));
-			break;
-		case spv::OpIMul:
-			dst.move(i, lhs.Int(i) * rhs.Int(i));
-			break;
-		case spv::OpSDiv:
+			case spv::OpIAdd:
+				dst.move(i, lhs.Int(i) + rhs.Int(i));
+				break;
+			case spv::OpISub:
+				dst.move(i, lhs.Int(i) - rhs.Int(i));
+				break;
+			case spv::OpIMul:
+				dst.move(i, lhs.Int(i) * rhs.Int(i));
+				break;
+			case spv::OpSDiv:
 			{
 				SIMD::Int a = lhs.Int(i);
 				SIMD::Int b = rhs.Int(i);
 				b = b | CmpEQ(b, SIMD::Int(0));                                       // prevent divide-by-zero
 				a = a | (CmpEQ(a, SIMD::Int(0x80000000)) & CmpEQ(b, SIMD::Int(-1)));  // prevent integer overflow
 				dst.move(i, a / b);
+				break;
 			}
-			break;
-		case spv::OpUDiv:
+			case spv::OpUDiv:
 			{
 				auto zeroMask = As<SIMD::UInt>(CmpEQ(rhs.Int(i), SIMD::Int(0)));
 				dst.move(i, lhs.UInt(i) / (rhs.UInt(i) | zeroMask));
+				break;
 			}
-			break;
-		case spv::OpSRem:
+			case spv::OpSRem:
 			{
 				SIMD::Int a = lhs.Int(i);
 				SIMD::Int b = rhs.Int(i);
 				b = b | CmpEQ(b, SIMD::Int(0));                                       // prevent divide-by-zero
 				a = a | (CmpEQ(a, SIMD::Int(0x80000000)) & CmpEQ(b, SIMD::Int(-1)));  // prevent integer overflow
 				dst.move(i, a % b);
+				break;
 			}
-			break;
-		case spv::OpSMod:
+			case spv::OpSMod:
 			{
 				SIMD::Int a = lhs.Int(i);
 				SIMD::Int b = rhs.Int(i);
@@ -367,142 +367,142 @@ SpirvShader::EmitResult SpirvShader::EmitBinaryOp(InsnIterator insn, EmitState *
 				auto signDiff = CmpNEQ(CmpGE(a, SIMD::Int(0)), CmpGE(b, SIMD::Int(0)));
 				auto fixedMod = mod + (b & CmpNEQ(mod, SIMD::Int(0)) & signDiff);
 				dst.move(i, As<SIMD::Float>(fixedMod));
+				break;
 			}
-			break;
-		case spv::OpUMod:
+			case spv::OpUMod:
 			{
 				auto zeroMask = As<SIMD::UInt>(CmpEQ(rhs.Int(i), SIMD::Int(0)));
 				dst.move(i, lhs.UInt(i) % (rhs.UInt(i) | zeroMask));
+				break;
 			}
-			break;
-		case spv::OpIEqual:
-		case spv::OpLogicalEqual:
-			dst.move(i, CmpEQ(lhs.Int(i), rhs.Int(i)));
-			break;
-		case spv::OpINotEqual:
-		case spv::OpLogicalNotEqual:
-			dst.move(i, CmpNEQ(lhs.Int(i), rhs.Int(i)));
-			break;
-		case spv::OpUGreaterThan:
-			dst.move(i, CmpGT(lhs.UInt(i), rhs.UInt(i)));
-			break;
-		case spv::OpSGreaterThan:
-			dst.move(i, CmpGT(lhs.Int(i), rhs.Int(i)));
-			break;
-		case spv::OpUGreaterThanEqual:
-			dst.move(i, CmpGE(lhs.UInt(i), rhs.UInt(i)));
-			break;
-		case spv::OpSGreaterThanEqual:
-			dst.move(i, CmpGE(lhs.Int(i), rhs.Int(i)));
-			break;
-		case spv::OpULessThan:
-			dst.move(i, CmpLT(lhs.UInt(i), rhs.UInt(i)));
-			break;
-		case spv::OpSLessThan:
-			dst.move(i, CmpLT(lhs.Int(i), rhs.Int(i)));
-			break;
-		case spv::OpULessThanEqual:
-			dst.move(i, CmpLE(lhs.UInt(i), rhs.UInt(i)));
-			break;
-		case spv::OpSLessThanEqual:
-			dst.move(i, CmpLE(lhs.Int(i), rhs.Int(i)));
-			break;
-		case spv::OpFAdd:
-			dst.move(i, lhs.Float(i) + rhs.Float(i));
-			break;
-		case spv::OpFSub:
-			dst.move(i, lhs.Float(i) - rhs.Float(i));
-			break;
-		case spv::OpFMul:
-			dst.move(i, lhs.Float(i) * rhs.Float(i));
-			break;
-		case spv::OpFDiv:
-			dst.move(i, lhs.Float(i) / rhs.Float(i));
-			break;
-		case spv::OpFMod:
-			// TODO(b/126873455): inaccurate for values greater than 2^24
-			dst.move(i, lhs.Float(i) - rhs.Float(i) * Floor(lhs.Float(i) / rhs.Float(i)));
-			break;
-		case spv::OpFRem:
-			dst.move(i, lhs.Float(i) % rhs.Float(i));
-			break;
-		case spv::OpFOrdEqual:
-			dst.move(i, CmpEQ(lhs.Float(i), rhs.Float(i)));
-			break;
-		case spv::OpFUnordEqual:
-			dst.move(i, CmpUEQ(lhs.Float(i), rhs.Float(i)));
-			break;
-		case spv::OpFOrdNotEqual:
-			dst.move(i, CmpNEQ(lhs.Float(i), rhs.Float(i)));
-			break;
-		case spv::OpFUnordNotEqual:
-			dst.move(i, CmpUNEQ(lhs.Float(i), rhs.Float(i)));
-			break;
-		case spv::OpFOrdLessThan:
-			dst.move(i, CmpLT(lhs.Float(i), rhs.Float(i)));
-			break;
-		case spv::OpFUnordLessThan:
-			dst.move(i, CmpULT(lhs.Float(i), rhs.Float(i)));
-			break;
-		case spv::OpFOrdGreaterThan:
-			dst.move(i, CmpGT(lhs.Float(i), rhs.Float(i)));
-			break;
-		case spv::OpFUnordGreaterThan:
-			dst.move(i, CmpUGT(lhs.Float(i), rhs.Float(i)));
-			break;
-		case spv::OpFOrdLessThanEqual:
-			dst.move(i, CmpLE(lhs.Float(i), rhs.Float(i)));
-			break;
-		case spv::OpFUnordLessThanEqual:
-			dst.move(i, CmpULE(lhs.Float(i), rhs.Float(i)));
-			break;
-		case spv::OpFOrdGreaterThanEqual:
-			dst.move(i, CmpGE(lhs.Float(i), rhs.Float(i)));
-			break;
-		case spv::OpFUnordGreaterThanEqual:
-			dst.move(i, CmpUGE(lhs.Float(i), rhs.Float(i)));
-			break;
-		case spv::OpShiftRightLogical:
-			dst.move(i, lhs.UInt(i) >> rhs.UInt(i));
-			break;
-		case spv::OpShiftRightArithmetic:
-			dst.move(i, lhs.Int(i) >> rhs.Int(i));
-			break;
-		case spv::OpShiftLeftLogical:
-			dst.move(i, lhs.UInt(i) << rhs.UInt(i));
-			break;
-		case spv::OpBitwiseOr:
-		case spv::OpLogicalOr:
-			dst.move(i, lhs.UInt(i) | rhs.UInt(i));
-			break;
-		case spv::OpBitwiseXor:
-			dst.move(i, lhs.UInt(i) ^ rhs.UInt(i));
-			break;
-		case spv::OpBitwiseAnd:
-		case spv::OpLogicalAnd:
-			dst.move(i, lhs.UInt(i) & rhs.UInt(i));
-			break;
-		case spv::OpSMulExtended:
-			// Extended ops: result is a structure containing two members of the same type as lhs & rhs.
-			// In our flat view then, component i is the i'th component of the first member;
-			// component i + N is the i'th component of the second member.
-			dst.move(i, lhs.Int(i) * rhs.Int(i));
-			dst.move(i + lhsType.componentCount, MulHigh(lhs.Int(i), rhs.Int(i)));
-			break;
-		case spv::OpUMulExtended:
-			dst.move(i, lhs.UInt(i) * rhs.UInt(i));
-			dst.move(i + lhsType.componentCount, MulHigh(lhs.UInt(i), rhs.UInt(i)));
-			break;
-		case spv::OpIAddCarry:
-			dst.move(i, lhs.UInt(i) + rhs.UInt(i));
-			dst.move(i + lhsType.componentCount, CmpLT(dst.UInt(i), lhs.UInt(i)) >> 31);
-			break;
-		case spv::OpISubBorrow:
-			dst.move(i, lhs.UInt(i) - rhs.UInt(i));
-			dst.move(i + lhsType.componentCount, CmpLT(lhs.UInt(i), rhs.UInt(i)) >> 31);
-			break;
-		default:
-			UNREACHABLE("%s", OpcodeName(insn.opcode()));
+			case spv::OpIEqual:
+			case spv::OpLogicalEqual:
+				dst.move(i, CmpEQ(lhs.Int(i), rhs.Int(i)));
+				break;
+			case spv::OpINotEqual:
+			case spv::OpLogicalNotEqual:
+				dst.move(i, CmpNEQ(lhs.Int(i), rhs.Int(i)));
+				break;
+			case spv::OpUGreaterThan:
+				dst.move(i, CmpGT(lhs.UInt(i), rhs.UInt(i)));
+				break;
+			case spv::OpSGreaterThan:
+				dst.move(i, CmpGT(lhs.Int(i), rhs.Int(i)));
+				break;
+			case spv::OpUGreaterThanEqual:
+				dst.move(i, CmpGE(lhs.UInt(i), rhs.UInt(i)));
+				break;
+			case spv::OpSGreaterThanEqual:
+				dst.move(i, CmpGE(lhs.Int(i), rhs.Int(i)));
+				break;
+			case spv::OpULessThan:
+				dst.move(i, CmpLT(lhs.UInt(i), rhs.UInt(i)));
+				break;
+			case spv::OpSLessThan:
+				dst.move(i, CmpLT(lhs.Int(i), rhs.Int(i)));
+				break;
+			case spv::OpULessThanEqual:
+				dst.move(i, CmpLE(lhs.UInt(i), rhs.UInt(i)));
+				break;
+			case spv::OpSLessThanEqual:
+				dst.move(i, CmpLE(lhs.Int(i), rhs.Int(i)));
+				break;
+			case spv::OpFAdd:
+				dst.move(i, lhs.Float(i) + rhs.Float(i));
+				break;
+			case spv::OpFSub:
+				dst.move(i, lhs.Float(i) - rhs.Float(i));
+				break;
+			case spv::OpFMul:
+				dst.move(i, lhs.Float(i) * rhs.Float(i));
+				break;
+			case spv::OpFDiv:
+				dst.move(i, lhs.Float(i) / rhs.Float(i));
+				break;
+			case spv::OpFMod:
+				// TODO(b/126873455): inaccurate for values greater than 2^24
+				dst.move(i, lhs.Float(i) - rhs.Float(i) * Floor(lhs.Float(i) / rhs.Float(i)));
+				break;
+			case spv::OpFRem:
+				dst.move(i, lhs.Float(i) % rhs.Float(i));
+				break;
+			case spv::OpFOrdEqual:
+				dst.move(i, CmpEQ(lhs.Float(i), rhs.Float(i)));
+				break;
+			case spv::OpFUnordEqual:
+				dst.move(i, CmpUEQ(lhs.Float(i), rhs.Float(i)));
+				break;
+			case spv::OpFOrdNotEqual:
+				dst.move(i, CmpNEQ(lhs.Float(i), rhs.Float(i)));
+				break;
+			case spv::OpFUnordNotEqual:
+				dst.move(i, CmpUNEQ(lhs.Float(i), rhs.Float(i)));
+				break;
+			case spv::OpFOrdLessThan:
+				dst.move(i, CmpLT(lhs.Float(i), rhs.Float(i)));
+				break;
+			case spv::OpFUnordLessThan:
+				dst.move(i, CmpULT(lhs.Float(i), rhs.Float(i)));
+				break;
+			case spv::OpFOrdGreaterThan:
+				dst.move(i, CmpGT(lhs.Float(i), rhs.Float(i)));
+				break;
+			case spv::OpFUnordGreaterThan:
+				dst.move(i, CmpUGT(lhs.Float(i), rhs.Float(i)));
+				break;
+			case spv::OpFOrdLessThanEqual:
+				dst.move(i, CmpLE(lhs.Float(i), rhs.Float(i)));
+				break;
+			case spv::OpFUnordLessThanEqual:
+				dst.move(i, CmpULE(lhs.Float(i), rhs.Float(i)));
+				break;
+			case spv::OpFOrdGreaterThanEqual:
+				dst.move(i, CmpGE(lhs.Float(i), rhs.Float(i)));
+				break;
+			case spv::OpFUnordGreaterThanEqual:
+				dst.move(i, CmpUGE(lhs.Float(i), rhs.Float(i)));
+				break;
+			case spv::OpShiftRightLogical:
+				dst.move(i, lhs.UInt(i) >> rhs.UInt(i));
+				break;
+			case spv::OpShiftRightArithmetic:
+				dst.move(i, lhs.Int(i) >> rhs.Int(i));
+				break;
+			case spv::OpShiftLeftLogical:
+				dst.move(i, lhs.UInt(i) << rhs.UInt(i));
+				break;
+			case spv::OpBitwiseOr:
+			case spv::OpLogicalOr:
+				dst.move(i, lhs.UInt(i) | rhs.UInt(i));
+				break;
+			case spv::OpBitwiseXor:
+				dst.move(i, lhs.UInt(i) ^ rhs.UInt(i));
+				break;
+			case spv::OpBitwiseAnd:
+			case spv::OpLogicalAnd:
+				dst.move(i, lhs.UInt(i) & rhs.UInt(i));
+				break;
+			case spv::OpSMulExtended:
+				// Extended ops: result is a structure containing two members of the same type as lhs & rhs.
+				// In our flat view then, component i is the i'th component of the first member;
+				// component i + N is the i'th component of the second member.
+				dst.move(i, lhs.Int(i) * rhs.Int(i));
+				dst.move(i + lhsType.componentCount, MulHigh(lhs.Int(i), rhs.Int(i)));
+				break;
+			case spv::OpUMulExtended:
+				dst.move(i, lhs.UInt(i) * rhs.UInt(i));
+				dst.move(i + lhsType.componentCount, MulHigh(lhs.UInt(i), rhs.UInt(i)));
+				break;
+			case spv::OpIAddCarry:
+				dst.move(i, lhs.UInt(i) + rhs.UInt(i));
+				dst.move(i + lhsType.componentCount, CmpLT(dst.UInt(i), lhs.UInt(i)) >> 31);
+				break;
+			case spv::OpISubBorrow:
+				dst.move(i, lhs.UInt(i) - rhs.UInt(i));
+				dst.move(i + lhsType.componentCount, CmpLT(lhs.UInt(i), rhs.UInt(i)) >> 31);
+				break;
+			default:
+				UNREACHABLE("%s", OpcodeName(insn.opcode()));
 		}
 	}
 
@@ -518,7 +518,7 @@ SpirvShader::EmitResult SpirvShader::EmitDot(InsnIterator insn, EmitState *state
 	auto &type = getType(insn.resultTypeId());
 	ASSERT(type.componentCount == 1);
 	auto &dst = state->createIntermediate(insn.resultId(), type.componentCount);
-	auto &lhsType = getObjectType(insn.word(3));
+	auto &lhsType = getType(getObject(insn.word(3)));
 	auto lhs = Operand(this, state, insn.word(3));
 	auto rhs = Operand(this, state, insn.word(4));
 

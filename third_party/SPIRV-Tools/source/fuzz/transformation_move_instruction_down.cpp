@@ -38,8 +38,8 @@ std::string GetExtensionSet(opt::IRContext* ir_context,
 }  // namespace
 
 TransformationMoveInstructionDown::TransformationMoveInstructionDown(
-    protobufs::TransformationMoveInstructionDown message)
-    : message_(std::move(message)) {}
+    const protobufs::TransformationMoveInstructionDown& message)
+    : message_(message) {}
 
 TransformationMoveInstructionDown::TransformationMoveInstructionDown(
     const protobufs::InstructionDescriptor& instruction) {

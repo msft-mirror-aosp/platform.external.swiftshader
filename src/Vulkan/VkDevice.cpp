@@ -105,22 +105,13 @@ void Device::SamplerIndexer::remove(const SamplerState &samplerState)
 	}
 }
 
-const SamplerState *Device::SamplerIndexer::find(uint32_t id)
-{
-	marl::lock lock(mutex);
-
-	auto it = std::find_if(std::begin(map), std::end(map),
-	                       [&id](auto &&p) { return p.second.id == id; });
-
-	return (it != std::end(map)) ? &(it->first) : nullptr;
-}
-
 Device::Device(const VkDeviceCreateInfo *pCreateInfo, void *mem, PhysicalDevice *physicalDevice, const VkPhysicalDeviceFeatures *enabledFeatures, const std::shared_ptr<marl::Scheduler> &scheduler)
     : physicalDevice(physicalDevice)
     , queues(reinterpret_cast<Queue *>(mem))
     , enabledExtensionCount(pCreateInfo->enabledExtensionCount)
-    , enabledFeatures(enabledFeatures ? *enabledFeatures : VkPhysicalDeviceFeatures{})  // "Setting pEnabledFeatures to NULL and not including a VkPhysicalDeviceFeatures2 in the pNext member of VkDeviceCreateInfo is equivalent to setting all members of the structure to VK_FALSE."
-    , scheduler(scheduler)
+    , enabledFeatures(enabledFeatures ? *enabledFeatures : VkPhysicalDeviceFeatures{})
+    ,  // "Setting pEnabledFeatures to NULL and not including a VkPhysicalDeviceFeatures2 in the pNext member of VkDeviceCreateInfo is equivalent to setting all members of the structure to VK_FALSE."
+    scheduler(scheduler)
 {
 	for(uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
 	{
@@ -192,7 +183,7 @@ void Device::destroy(const VkAllocationCallbacks *pAllocator)
 		queues[i].~Queue();
 	}
 
-	vk::freeHostMemory(queues, pAllocator);
+	vk::deallocate(queues, pAllocator);
 }
 
 size_t Device::ComputeRequiredAllocationSize(const VkDeviceCreateInfo *pCreateInfo)
@@ -404,11 +395,6 @@ void Device::removeSampler(const SamplerState &samplerState)
 	samplerIndexer->remove(samplerState);
 }
 
-const SamplerState *Device::findSampler(uint32_t samplerId) const
-{
-	return samplerIndexer->find(samplerId);
-}
-
 VkResult Device::setDebugUtilsObjectName(const VkDebugUtilsObjectNameInfoEXT *pNameInfo)
 {
 	// Optionally maps user-friendly name to an object
@@ -457,7 +443,7 @@ void Device::prepareForSampling(ImageView *imageView)
 	}
 }
 
-void Device::contentsChanged(ImageView *imageView, Image::ContentsChangedContext context)
+void Device::contentsChanged(ImageView *imageView)
 {
 	if(imageView != nullptr)
 	{
@@ -466,7 +452,7 @@ void Device::contentsChanged(ImageView *imageView, Image::ContentsChangedContext
 		auto it = imageViewSet.find(imageView);
 		if(it != imageViewSet.end())
 		{
-			imageView->contentsChanged(context);
+			imageView->contentsChanged();
 		}
 	}
 }

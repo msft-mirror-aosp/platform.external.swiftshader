@@ -18,16 +18,15 @@ set(ROOT_PROJECT_COMPILE_OPTIONS
 )
 
 set(REACTOR_SRC_FILES
-    Assert.cpp
-    Assert.hpp
     Debug.cpp
     Debug.hpp
+    EmulatedIntrinsics.cpp
+    EmulatedIntrinsics.hpp
     ExecutableMemory.cpp
     ExecutableMemory.hpp
     Nucleus.hpp
-    Pragma.cpp
-    Pragma.hpp
-    PragmaInternals.hpp
+    OptimalIntrinsics.cpp
+    OptimalIntrinsics.hpp
     Print.hpp
     Reactor.cpp
     Reactor.hpp
@@ -110,6 +109,7 @@ target_link_libraries(ReactorSubzero
         marl
         ${REACTOR_PRIVATE_LINK_LIBRARIES}
 )
+
 
 # ReactorLLVM library
 

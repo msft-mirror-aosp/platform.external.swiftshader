@@ -39,16 +39,23 @@ static const VkPresentModeKHR presentModes[] = {
 
 namespace vk {
 
-VkResult PresentImage::createImage(VkDevice device, const VkImageCreateInfo &createInfo)
+VkResult PresentImage::allocateImage(VkDevice device, const VkImageCreateInfo &createInfo)
 {
-	VkImage image;
-	VkResult status = vkCreateImage(device, &createInfo, nullptr, &image);
+	VkImage *vkImagePtr = reinterpret_cast<VkImage *>(allocate(sizeof(VkImage), REQUIRED_MEMORY_ALIGNMENT, DEVICE_MEMORY));
+	if(!vkImagePtr)
+	{
+		return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+	}
+
+	VkResult status = vkCreateImage(device, &createInfo, nullptr, vkImagePtr);
 	if(status != VK_SUCCESS)
 	{
+		deallocate(vkImagePtr, DEVICE_MEMORY);
 		return status;
 	}
 
-	this->image = Cast(image);
+	image = Cast(*vkImagePtr);
+	deallocate(vkImagePtr, DEVICE_MEMORY);
 
 	return status;
 }
@@ -57,22 +64,30 @@ VkResult PresentImage::allocateAndBindImageMemory(VkDevice device, const VkMemor
 {
 	ASSERT(image);
 
-	VkDeviceMemory deviceMemory;
-	VkResult status = vkAllocateMemory(device, &allocateInfo, nullptr, &deviceMemory);
+	VkDeviceMemory *vkDeviceMemoryPtr = reinterpret_cast<VkDeviceMemory *>(
+	    allocate(sizeof(VkDeviceMemory), REQUIRED_MEMORY_ALIGNMENT, DEVICE_MEMORY));
+	if(!vkDeviceMemoryPtr)
+	{
+		return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+	}
+
+	VkResult status = vkAllocateMemory(device, &allocateInfo, nullptr, vkDeviceMemoryPtr);
 	if(status != VK_SUCCESS)
 	{
-		release();
+		deallocate(vkDeviceMemoryPtr, DEVICE_MEMORY);
 		return status;
 	}
 
-	imageMemory = Cast(deviceMemory);
-	vkBindImageMemory(device, *image, deviceMemory, 0);
-	imageStatus = AVAILABLE;
+	imageMemory = Cast(*vkDeviceMemoryPtr);
+	vkBindImageMemory(device, *image, *vkDeviceMemoryPtr, 0);
 
-	return VK_SUCCESS;
+	imageStatus = AVAILABLE;
+	deallocate(vkDeviceMemoryPtr, DEVICE_MEMORY);
+
+	return status;
 }
 
-void PresentImage::release()
+void PresentImage::clear()
 {
 	if(imageMemory)
 	{
@@ -194,11 +209,9 @@ void SurfaceKHR::setCommonSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurface
 	pSurfaceCapabilities->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 	pSurfaceCapabilities->supportedUsageFlags =
 	    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-	    VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
 	    VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
 	    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-	    VK_IMAGE_USAGE_SAMPLED_BIT |
-	    VK_IMAGE_USAGE_STORAGE_BIT;
+	    VK_IMAGE_USAGE_SAMPLED_BIT;
 }
 
 }  // namespace vk

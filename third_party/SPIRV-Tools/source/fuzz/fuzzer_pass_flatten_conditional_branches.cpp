@@ -26,10 +26,12 @@ namespace fuzz {
 FuzzerPassFlattenConditionalBranches::FuzzerPassFlattenConditionalBranches(
     opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
-    protobufs::TransformationSequence* transformations,
-    bool ignore_inapplicable_transformations)
+    protobufs::TransformationSequence* transformations)
     : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations, ignore_inapplicable_transformations) {}
+                 transformations) {}
+
+FuzzerPassFlattenConditionalBranches::~FuzzerPassFlattenConditionalBranches() =
+    default;
 
 void FuzzerPassFlattenConditionalBranches::Apply() {
   for (auto& function : *GetIRContext()->module()) {
