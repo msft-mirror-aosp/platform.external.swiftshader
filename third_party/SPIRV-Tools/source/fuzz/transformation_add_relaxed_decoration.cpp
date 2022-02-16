@@ -20,8 +20,9 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationAddRelaxedDecoration::TransformationAddRelaxedDecoration(
-    protobufs::TransformationAddRelaxedDecoration message)
-    : message_(std::move(message)) {}
+    const spvtools::fuzz::protobufs::TransformationAddRelaxedDecoration&
+        message)
+    : message_(message) {}
 
 TransformationAddRelaxedDecoration::TransformationAddRelaxedDecoration(
     uint32_t result_id) {

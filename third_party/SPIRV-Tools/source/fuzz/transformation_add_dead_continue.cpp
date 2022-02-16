@@ -20,8 +20,8 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationAddDeadContinue::TransformationAddDeadContinue(
-    protobufs::TransformationAddDeadContinue message)
-    : message_(std::move(message)) {}
+    const spvtools::fuzz::protobufs::TransformationAddDeadContinue& message)
+    : message_(message) {}
 
 TransformationAddDeadContinue::TransformationAddDeadContinue(
     uint32_t from_block, bool continue_condition_value,
@@ -38,10 +38,9 @@ bool TransformationAddDeadContinue::IsApplicable(
     const TransformationContext& transformation_context) const {
   // First, we check that a constant with the same value as
   // |message_.continue_condition_value| is present.
-  const auto bool_id = fuzzerutil::MaybeGetBoolConstant(
-      ir_context, transformation_context, message_.continue_condition_value(),
-      false);
-  if (!bool_id) {
+  if (!fuzzerutil::MaybeGetBoolConstant(ir_context, transformation_context,
+                                        message_.continue_condition_value(),
+                                        false)) {
     // The required constant is not present, so the transformation cannot be
     // applied.
     return false;
@@ -83,7 +82,8 @@ bool TransformationAddDeadContinue::IsApplicable(
   auto continue_block =
       ir_context->cfg()->block(loop_header)->ContinueBlockId();
 
-  if (!ir_context->IsReachable(*ir_context->cfg()->block(continue_block))) {
+  if (!fuzzerutil::BlockIsReachableInItsFunction(
+          ir_context, ir_context->cfg()->block(continue_block))) {
     // If the loop's continue block is unreachable, we conservatively do not
     // allow adding a dead continue, to avoid the compilations that arise due to
     // the lack of sensible dominance information for unreachable blocks.
@@ -111,30 +111,25 @@ bool TransformationAddDeadContinue::IsApplicable(
   }
 
   // Adding the dead break is only valid if SPIR-V rules related to dominance
-  // hold.
-  return fuzzerutil::NewTerminatorPreservesDominationRules(
-      ir_context, message_.from_block(),
-      fuzzerutil::CreateUnreachableEdgeInstruction(
-          ir_context, message_.from_block(), continue_block, bool_id));
+  // hold.  Rather than checking these rules explicitly, we defer to the
+  // validator.  We make a clone of the module, apply the transformation to the
+  // clone, and check whether the transformed clone is valid.
+  //
+  // In principle some of the above checks could be removed, with more reliance
+  // being placed on the validator.  This should be revisited if we are sure
+  // the validator is complete with respect to checking structured control flow
+  // rules.
+  auto cloned_context = fuzzerutil::CloneIRContext(ir_context);
+  ApplyImpl(cloned_context.get(), transformation_context);
+  return fuzzerutil::IsValid(cloned_context.get(),
+                             transformation_context.GetValidatorOptions(),
+                             fuzzerutil::kSilentMessageConsumer);
 }
 
 void TransformationAddDeadContinue::Apply(
     opt::IRContext* ir_context,
     TransformationContext* transformation_context) const {
-  auto bb_from = ir_context->cfg()->block(message_.from_block());
-  auto continue_block =
-      bb_from->IsLoopHeader()
-          ? bb_from->ContinueBlockId()
-          : ir_context->GetStructuredCFGAnalysis()->LoopContinueBlock(
-                message_.from_block());
-  assert(continue_block && "message_.from_block must be in a loop.");
-  fuzzerutil::AddUnreachableEdgeAndUpdateOpPhis(
-      ir_context, bb_from, ir_context->cfg()->block(continue_block),
-      fuzzerutil::MaybeGetBoolConstant(ir_context, *transformation_context,
-                                       message_.continue_condition_value(),
-                                       false),
-      message_.phi_id());
-
+  ApplyImpl(ir_context, *transformation_context);
   // Invalidate all analyses
   ir_context->InvalidateAnalysesExceptFor(
       opt::IRContext::Analysis::kAnalysisNone);
@@ -144,6 +139,24 @@ protobufs::Transformation TransformationAddDeadContinue::ToMessage() const {
   protobufs::Transformation result;
   *result.mutable_add_dead_continue() = message_;
   return result;
+}
+
+void TransformationAddDeadContinue::ApplyImpl(
+    spvtools::opt::IRContext* ir_context,
+    const TransformationContext& transformation_context) const {
+  auto bb_from = ir_context->cfg()->block(message_.from_block());
+  auto continue_block =
+      bb_from->IsLoopHeader()
+          ? bb_from->ContinueBlockId()
+          : ir_context->GetStructuredCFGAnalysis()->LoopContinueBlock(
+                message_.from_block());
+  assert(continue_block && "message_.from_block must be in a loop.");
+  fuzzerutil::AddUnreachableEdgeAndUpdateOpPhis(
+      ir_context, bb_from, ir_context->cfg()->block(continue_block),
+      fuzzerutil::MaybeGetBoolConstant(ir_context, transformation_context,
+                                       message_.continue_condition_value(),
+                                       false),
+      message_.phi_id());
 }
 
 std::unordered_set<uint32_t> TransformationAddDeadContinue::GetFreshIds()

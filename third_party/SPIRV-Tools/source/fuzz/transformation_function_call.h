@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationFunctionCall : public Transformation {
  public:
   explicit TransformationFunctionCall(
-      protobufs::TransformationFunctionCall message);
+      const protobufs::TransformationFunctionCall& message);
 
   TransformationFunctionCall(
       uint32_t fresh_id, uint32_t callee_id,
