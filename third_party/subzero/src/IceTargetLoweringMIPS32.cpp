@@ -109,7 +109,8 @@ uint32_t applyStackAlignment(uint32_t Value) {
 
 } // end of anonymous namespace
 
-TargetMIPS32::TargetMIPS32(Cfg *Func) : TargetLowering(Func) {}
+TargetMIPS32::TargetMIPS32(Cfg *Func)
+    : TargetLowering(Func), NeedSandboxing(SandboxingType == ST_NaCl) {}
 
 void TargetMIPS32::assignVarStackSlots(VarList &SortedSpilledVariables,
                                        size_t SpillAreaPaddingBytes,
@@ -222,6 +223,7 @@ uint32_t TargetMIPS32::getStackAlignment() const {
 
 uint32_t TargetMIPS32::getCallStackArgumentsSizeBytes(const InstCall *Call) {
   TargetMIPS32::CallingConv CC;
+  RegNumT DummyReg;
   size_t OutArgsSizeBytes = 0;
   Variable *Dest = Call->getDest();
   bool PartialOnStack = false;
@@ -799,6 +801,19 @@ void TargetMIPS32::genTargetHelperCallFor(Inst *Instr) {
       Call->addArg(Intrinsic->getArg(0));
       Call->addArg(ValExt);
       Call->addArg(Intrinsic->getArg(2));
+      Instr->setDeleted();
+      return;
+    }
+    case Intrinsics::NaClReadTP: {
+      if (SandboxingType == ST_NaCl) {
+        return;
+      }
+      static constexpr SizeT MaxArgs = 0;
+      assert(SandboxingType != ST_Nonsfi);
+      Operand *TargetHelper =
+          Ctx->getRuntimeHelperFunc(RuntimeHelper::H_call_read_tp);
+      Context.insert<InstCall>(MaxArgs, Dest, TargetHelper, NoTailCall,
+                               IsTargetHelperCall);
       Instr->setDeleted();
       return;
     }
@@ -1617,8 +1632,7 @@ void TargetMIPS32::addProlog(CfgNode *Node) {
   // Generate "addiu sp, sp, -TotalStackSizeBytes"
   if (TotalStackSizeBytes) {
     // Use the scratch register if needed to legalize the immediate.
-    Variable *SP = getPhysicalRegister(RegMIPS32::Reg_SP);
-    _addiu(SP, SP, -TotalStackSizeBytes);
+    Sandboxer(this).addiu_sp(-TotalStackSizeBytes);
   }
 
   Ctx->statsUpdateFrameBytes(TotalStackSizeBytes);
@@ -1637,7 +1651,7 @@ void TargetMIPS32::addProlog(CfgNode *Node) {
       OperandMIPS32Mem *MemoryLocation = OperandMIPS32Mem::create(
           Func, RegType, SP,
           llvm::cast<ConstantInteger32>(Ctx->getConstantInt32(StackOffset)));
-      _sw(PhysicalRegister, MemoryLocation);
+      Sandboxer(this).sw(PhysicalRegister, MemoryLocation);
     }
   }
 
@@ -1741,7 +1755,7 @@ void TargetMIPS32::addEpilog(CfgNode *Node) {
     // use of SP before the assignment of SP=FP keeps previous SP adjustments
     // from being dead-code eliminated.
     Context.insert<InstFakeUse>(SP);
-    _mov(SP, FP);
+    Sandboxer(this).reset_sp(FP);
   }
 
   VarList::reverse_iterator RIter, END;
@@ -1766,8 +1780,19 @@ void TargetMIPS32::addEpilog(CfgNode *Node) {
   }
 
   if (TotalStackSizeBytes) {
-    _addiu(SP, SP, TotalStackSizeBytes);
+    Sandboxer(this).addiu_sp(TotalStackSizeBytes);
   }
+  if (!getFlags().getUseSandboxing())
+    return;
+
+  Variable *RA = getPhysicalRegister(RegMIPS32::Reg_RA);
+  Variable *RetValue = nullptr;
+  if (RI->getSrcSize())
+    RetValue = llvm::cast<Variable>(RI->getSrc(0));
+
+  Sandboxer(this).ret(RA, RetValue);
+
+  RI->setDeleted();
 }
 
 Variable *TargetMIPS32::PostLoweringLegalizer::newBaseRegister(
@@ -1817,7 +1842,7 @@ void TargetMIPS32::PostLoweringLegalizer::legalizeMovFp(
       SrcR = Target->makeReg(
           IceType_f32, RegMIPS32::get64PairSecondRegNum(SrcV->getRegNum()));
     }
-    Target->_sw(SrcR, Addr);
+    Sandboxer(Target).sw(SrcR, Addr);
     if (MovInstr->isDestRedefined()) {
       Target->_set_dest_redefined();
     }
@@ -1954,15 +1979,15 @@ void TargetMIPS32::PostLoweringLegalizer::legalizeMov(InstMIPS32Mov *MovInstr) {
     const bool IsSrcGPReg = RegMIPS32::isGPRReg(SrcR->getRegNum());
     if (SrcTy == IceType_f32 && IsSrcGPReg) {
       Variable *SrcGPR = Target->makeReg(IceType_i32, RegNum);
-      Target->_sw(SrcGPR, Addr);
+      Sandboxer(Target).sw(SrcGPR, Addr);
     } else if (SrcTy == IceType_f64 && IsSrcGPReg) {
       Variable *SrcGPRHi =
           Target->makeReg(IceType_i32, RegMIPS32::get64PairFirstRegNum(RegNum));
       Variable *SrcGPRLo = Target->makeReg(
           IceType_i32, RegMIPS32::get64PairSecondRegNum(RegNum));
-      Target->_sw(SrcGPRHi, Addr);
+      Sandboxer(Target).sw(SrcGPRHi, Addr);
       OperandMIPS32Mem *AddrHi = legalizeMemOperand(TAddrHi);
-      Target->_sw(SrcGPRLo, AddrHi);
+      Sandboxer(Target).sw(SrcGPRLo, AddrHi);
     } else if (DestTy == IceType_f64 && IsSrcGPReg) {
       const auto FirstReg =
           (llvm::cast<Variable>(MovInstr->getSrc(0)))->getRegNum();
@@ -1970,11 +1995,11 @@ void TargetMIPS32::PostLoweringLegalizer::legalizeMov(InstMIPS32Mov *MovInstr) {
           (llvm::cast<Variable>(MovInstr->getSrc(1)))->getRegNum();
       Variable *SrcGPRHi = Target->makeReg(IceType_i32, FirstReg);
       Variable *SrcGPRLo = Target->makeReg(IceType_i32, SecondReg);
-      Target->_sw(SrcGPRLo, Addr);
+      Sandboxer(Target).sw(SrcGPRLo, Addr);
       OperandMIPS32Mem *AddrHi = legalizeMemOperand(TAddrHi);
-      Target->_sw(SrcGPRHi, AddrHi);
+      Sandboxer(Target).sw(SrcGPRHi, AddrHi);
     } else {
-      Target->_sw(SrcR, Addr);
+      Sandboxer(Target).sw(SrcR, Addr);
     }
 
     Target->Context.insert<InstFakeDef>(Dest);
@@ -2022,9 +2047,9 @@ void TargetMIPS32::PostLoweringLegalizer::legalizeMov(InstMIPS32Mov *MovInstr) {
               Target->Func, IceType_i32, Base,
               llvm::cast<ConstantInteger32>(
                   Target->Ctx->getConstantInt32(Offset + 4)));
-          Target->_lw(Reg, AddrLo);
+          Sandboxer(Target).lw(Reg, AddrLo);
           Target->_mov(DestLo, Reg);
-          Target->_lw(Reg, AddrHi);
+          Sandboxer(Target).lw(Reg, AddrHi);
           Target->_mov(DestHi, Reg);
         } else {
           OperandMIPS32Mem *TAddr = OperandMIPS32Mem::create(
@@ -2041,15 +2066,15 @@ void TargetMIPS32::PostLoweringLegalizer::legalizeMov(InstMIPS32Mov *MovInstr) {
           // explicitly generate lw instead of lwc1.
           if (DestTy == IceType_f32 && IsDstGPReg) {
             Variable *DstGPR = Target->makeReg(IceType_i32, RegNum);
-            Target->_lw(DstGPR, Addr);
+            Sandboxer(Target).lw(DstGPR, Addr);
           } else if (DestTy == IceType_f64 && IsDstGPReg) {
             Variable *DstGPRHi = Target->makeReg(
                 IceType_i32, RegMIPS32::get64PairFirstRegNum(RegNum));
             Variable *DstGPRLo = Target->makeReg(
                 IceType_i32, RegMIPS32::get64PairSecondRegNum(RegNum));
-            Target->_lw(DstGPRHi, Addr);
+            Sandboxer(Target).lw(DstGPRHi, Addr);
             OperandMIPS32Mem *AddrHi = legalizeMemOperand(TAddrHi);
-            Target->_lw(DstGPRLo, AddrHi);
+            Sandboxer(Target).lw(DstGPRLo, AddrHi);
           } else if (DestTy == IceType_f64 && IsDstGPReg) {
             const auto FirstReg =
                 (llvm::cast<Variable>(MovInstr->getSrc(0)))->getRegNum();
@@ -2057,11 +2082,11 @@ void TargetMIPS32::PostLoweringLegalizer::legalizeMov(InstMIPS32Mov *MovInstr) {
                 (llvm::cast<Variable>(MovInstr->getSrc(1)))->getRegNum();
             Variable *DstGPRHi = Target->makeReg(IceType_i32, FirstReg);
             Variable *DstGPRLo = Target->makeReg(IceType_i32, SecondReg);
-            Target->_lw(DstGPRLo, Addr);
+            Sandboxer(Target).lw(DstGPRLo, Addr);
             OperandMIPS32Mem *AddrHi = legalizeMemOperand(TAddrHi);
-            Target->_lw(DstGPRHi, AddrHi);
+            Sandboxer(Target).lw(DstGPRHi, AddrHi);
           } else {
-            Target->_lw(Dest, Addr);
+            Sandboxer(Target).lw(Dest, Addr);
           }
         }
         Legalized = true;
@@ -2150,7 +2175,7 @@ void TargetMIPS32::postLowerLegalization() {
       }
       if (llvm::isa<InstMIPS32Sw>(CurInstr)) {
         if (auto *LegalMem = Legalizer.legalizeMemOperand(Src1M)) {
-          _sw(Src0V, LegalMem);
+          Sandboxer(this).sw(Src0V, LegalMem);
           CurInstr->setDeleted();
         }
         continue;
@@ -2171,7 +2196,7 @@ void TargetMIPS32::postLowerLegalization() {
       }
       if (llvm::isa<InstMIPS32Lw>(CurInstr)) {
         if (auto *LegalMem = Legalizer.legalizeMemOperand(Src0M)) {
-          _lw(Dst, LegalMem);
+          Sandboxer(this).lw(Dst, LegalMem);
           CurInstr->setDeleted();
         }
         continue;
@@ -2325,6 +2350,11 @@ SmallBitVector TargetMIPS32::getRegisterSet(RegSetMask Include,
 
 #undef X
 
+  if (NeedSandboxing) {
+    Registers[RegMIPS32::Reg_T6] = false;
+    Registers[RegMIPS32::Reg_T7] = false;
+    Registers[RegMIPS32::Reg_T8] = false;
+  }
   return Registers;
 }
 
@@ -2409,7 +2439,10 @@ void TargetMIPS32::lowerAlloca(const InstAlloca *Instr) {
     } else {
       _mov(Dest, T4);
     }
-    _mov(SP, Dest);
+    if (OptM1)
+      _mov(SP, Dest);
+    else
+      Sandboxer(this).reset_sp(Dest);
     return;
   }
 }
@@ -3503,7 +3536,7 @@ void TargetMIPS32::lowerCall(const InstCall *Instr) {
   // If variable alloca is used the extra 16 bytes for argument build area
   // will be allocated on stack before a call.
   if (VariableAllocaUsed)
-    _addiu(SP, SP, -MaxOutArgsSizeBytes);
+    Sandboxer(this).addiu_sp(-MaxOutArgsSizeBytes);
 
   Inst *NewCall;
 
@@ -3514,11 +3547,12 @@ void TargetMIPS32::lowerCall(const InstCall *Instr) {
     NewCall = InstMIPS32Call::create(Func, RetReg, CallTarget);
     Context.insert(NewCall);
   } else {
-    NewCall = Context.insert<InstMIPS32Call>(ReturnReg, CallTarget);
+    NewCall = Sandboxer(this, InstBundleLock::Opt_AlignToEnd)
+                  .jal(ReturnReg, CallTarget);
   }
 
   if (VariableAllocaUsed)
-    _addiu(SP, SP, MaxOutArgsSizeBytes);
+    Sandboxer(this).addiu_sp(MaxOutArgsSizeBytes);
 
   // Insert a fake use of stack pointer to avoid dead code elimination of addiu
   // instruction.
@@ -4540,10 +4574,10 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
       constexpr CfgNode *NoTarget = nullptr;
       _sync();
       Context.insert(Retry);
-      _ll(T1, Addr);
+      Sandboxer(this).ll(T1, Addr);
       _br(NoTarget, NoTarget, T1, getZero(), Exit, CondMIPS32::Cond::NE);
       _addiu(RegAt, getZero(), 0); // Loaded value is zero here, writeback zero
-      _sc(RegAt, Addr);
+      Sandboxer(this).sc(RegAt, Addr);
       _br(NoTarget, NoTarget, RegAt, getZero(), Retry, CondMIPS32::Cond::EQ);
       Context.insert(Exit);
       _sync();
@@ -4573,11 +4607,11 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
       _sllv(SrcMask, T5, T4); // Source mask
       auto *Addr = formMemoryOperand(T3, IceType_i32);
       Context.insert(Retry);
-      _ll(T6, Addr);
+      Sandboxer(this).ll(T6, Addr);
       _and(Tdest, T6, SrcMask);
       _br(NoTarget, NoTarget, T6, getZero(), Exit, CondMIPS32::Cond::NE);
       _addiu(RegAt, getZero(), 0); // Loaded value is zero here, writeback zero
-      _sc(RegAt, Addr);
+      Sandboxer(this).sc(RegAt, Addr);
       _br(NoTarget, NoTarget, RegAt, getZero(), Retry, CondMIPS32::Cond::EQ);
       Context.insert(Exit);
       auto *T7 = makeReg(IceType_i32);
@@ -4614,9 +4648,9 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
       auto *RegAt = getPhysicalRegister(RegMIPS32::Reg_AT);
       _sync();
       Context.insert(Retry);
-      _ll(T1, Addr);
+      Sandboxer(this).ll(T1, Addr);
       _mov(RegAt, Val);
-      _sc(RegAt, Addr);
+      Sandboxer(this).sc(RegAt, Addr);
       _br(NoTarget, NoTarget, RegAt, getZero(), Retry, CondMIPS32::Cond::EQ);
       Context.insert<InstFakeUse>(T1); // To keep LL alive
       _sync();
@@ -4648,10 +4682,10 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
       _nor(SrcMask, getZero(), T5);
       _and(DstMask, T6, T5);
       Context.insert(Retry);
-      _ll(RegAt, Addr);
+      Sandboxer(this).ll(RegAt, Addr);
       _and(RegAt, RegAt, SrcMask);
       _or(RegAt, RegAt, DstMask);
-      _sc(RegAt, Addr);
+      Sandboxer(this).sc(RegAt, Addr);
       _br(NoTarget, NoTarget, RegAt, getZero(), Retry, CondMIPS32::Cond::EQ);
       Context.insert<InstFakeUse>(SrcMask);
       Context.insert<InstFakeUse>(DstMask);
@@ -4712,12 +4746,12 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
       _sllv(T6, RegAt, T2);
       _sync();
       Context.insert(Retry);
-      _ll(T7, Addr);
+      Sandboxer(this).ll(T7, Addr);
       _and(T8, T7, T3);
       _br(NoTarget, NoTarget, T8, T5, Exit, CondMIPS32::Cond::NE);
       _and(RegAt, T7, T4);
       _or(T9, RegAt, T6);
-      _sc(T9, Addr);
+      Sandboxer(this).sc(T9, Addr);
       _br(NoTarget, NoTarget, getZero(), T9, Retry, CondMIPS32::Cond::EQ);
       Context.insert<InstFakeUse>(getZero());
       Context.insert(Exit);
@@ -4741,10 +4775,10 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
       auto *ActualAddressR = legalizeToReg(ActualAddress);
       _sync();
       Context.insert(Retry);
-      _ll(T1, formMemoryOperand(ActualAddressR, DestTy));
+      Sandboxer(this).ll(T1, formMemoryOperand(ActualAddressR, DestTy));
       _br(NoTarget, NoTarget, T1, ExpectedR, Exit, CondMIPS32::Cond::NE);
       _mov(T2, NewR);
-      _sc(T2, formMemoryOperand(ActualAddressR, DestTy));
+      Sandboxer(this).sc(T2, formMemoryOperand(ActualAddressR, DestTy));
       _br(NoTarget, NoTarget, T2, getZero(), Retry, CondMIPS32::Cond::EQ);
       Context.insert<InstFakeUse>(getZero());
       Context.insert(Exit);
@@ -4799,7 +4833,7 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
       _nor(T4, getZero(), T3);
       _sllv(T5, NewR, T2);
       Context.insert(Retry);
-      _ll(T6, formMemoryOperand(T1, DestTy));
+      Sandboxer(this).ll(T6, formMemoryOperand(T1, DestTy));
       if (Operation != Intrinsics::AtomicExchange) {
         createArithInst(Operation, RegAt, T6, T5);
         _and(RegAt, RegAt, T3);
@@ -4810,7 +4844,7 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
       } else {
         _or(RegAt, T7, RegAt);
       }
-      _sc(RegAt, formMemoryOperand(T1, DestTy));
+      Sandboxer(this).sc(RegAt, formMemoryOperand(T1, DestTy));
       _br(NoTarget, NoTarget, RegAt, getZero(), Retry, CondMIPS32::Cond::EQ);
       Context.insert<InstFakeUse>(getZero());
       _and(RegAt, T6, T3);
@@ -4828,13 +4862,13 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
       auto *ActualAddressR = legalizeToReg(ActualAddress);
       _sync();
       Context.insert(Retry);
-      _ll(T1, formMemoryOperand(ActualAddressR, DestTy));
+      Sandboxer(this).ll(T1, formMemoryOperand(ActualAddressR, DestTy));
       if (Operation == Intrinsics::AtomicExchange) {
         _mov(T2, NewR);
       } else {
         createArithInst(Operation, T2, T1, NewR);
       }
-      _sc(T2, formMemoryOperand(ActualAddressR, DestTy));
+      Sandboxer(this).sc(T2, formMemoryOperand(ActualAddressR, DestTy));
       _br(NoTarget, NoTarget, T2, getZero(), Retry, CondMIPS32::Cond::EQ);
       Context.insert<InstFakeUse>(getZero());
       _mov(Dest, T1);
@@ -5095,6 +5129,19 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
     llvm::report_fatal_error("memset should have been prelowered.");
     return;
   }
+  case Intrinsics::NaClReadTP: {
+    if (SandboxingType != ST_NaCl)
+      llvm::report_fatal_error("nacl-read-tp should have been prelowered.");
+    else {
+      auto *T8 = makeReg(IceType_i32, RegMIPS32::Reg_T8);
+      Context.insert<InstFakeDef>(T8);
+      Variable *TP = legalizeToReg(OperandMIPS32Mem::create(
+          Func, getPointerType(), T8,
+          llvm::cast<ConstantInteger32>(Ctx->getConstantZero(IceType_i32))));
+      _mov(Dest, TP);
+    }
+    return;
+  }
   case Intrinsics::Setjmp: {
     llvm::report_fatal_error("setjmp should have been prelowered.");
     return;
@@ -5109,7 +5156,8 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
       }
       _mov(Dest, T);
     } else {
-      UnimplementedLoweringError(this, Instr);
+      assert(getFlags().getApplicationBinaryInterface() != ::Ice::ABI_PNaCl);
+      UnimplementedLoweringError(this, Instr); // Not required for PNaCl
     }
     return;
   }
@@ -5119,9 +5167,8 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
     return;
   }
   case Intrinsics::Stackrestore: {
-    Variable *SP = getPhysicalRegister(RegMIPS32::Reg_SP);
     Variable *Val = legalizeToReg(Instr->getArg(0));
-    _mov(SP, Val);
+    Sandboxer(this).reset_sp(Val);
     return;
   }
   case Intrinsics::Trap: {
@@ -5130,11 +5177,11 @@ void TargetMIPS32::lowerIntrinsic(const InstIntrinsic *Instr) {
     return;
   }
   case Intrinsics::LoadSubVector: {
-    UnimplementedLoweringError(this, Instr);
+    UnimplementedLoweringError(this, Instr); // Not required for PNaCl
     return;
   }
   case Intrinsics::StoreSubVector: {
-    UnimplementedLoweringError(this, Instr);
+    UnimplementedLoweringError(this, Instr); // Not required for PNaCl
     return;
   }
   default: // UnknownIntrinsic
@@ -5665,7 +5712,7 @@ void TargetDataMIPS32::emitTargetRODataSections() {
 
 void TargetDataMIPS32::lowerGlobals(const VariableDeclarationList &Vars,
                                     const std::string &SectionSuffix) {
-  const bool IsPIC = false;
+  const bool IsPIC = getFlags().getUseNonsfi();
   switch (getFlags().getOutFileType()) {
   case FT_Elf: {
     ELFObjectWriter *Writer = Ctx->getObjectWriter();
@@ -5909,9 +5956,9 @@ Operand *TargetMIPS32::legalize(Operand *From, LegalMask Allowed,
         OperandMIPS32Mem *Addr =
             OperandMIPS32Mem::create(Func, Ty, TReg1, Offset);
         if (Ty == IceType_f32)
-          _lwc1(TReg, Addr, RO_Lo);
+          Sandboxer(this).lwc1(TReg, Addr, RO_Lo);
         else
-          _ldc1(TReg, Addr, RO_Lo);
+          Sandboxer(this).ldc1(TReg, Addr, RO_Lo);
       }
       return copyToReg(TReg, RegNum);
     }
@@ -6024,11 +6071,163 @@ void TargetHeaderMIPS32::lower() {
       << "nomips16\n";
   Str << "\t.set\t"
       << "noat\n";
+  if (getFlags().getUseSandboxing())
+    Str << "\t.bundle_align_mode 4\n";
 }
 
 SmallBitVector TargetMIPS32::TypeToRegisterSet[RCMIPS32_NUM];
 SmallBitVector TargetMIPS32::TypeToRegisterSetUnfiltered[RCMIPS32_NUM];
 SmallBitVector TargetMIPS32::RegisterAliases[RegMIPS32::Reg_NUM];
+
+TargetMIPS32::Sandboxer::Sandboxer(TargetMIPS32 *Target,
+                                   InstBundleLock::Option BundleOption)
+    : Target(Target), BundleOption(BundleOption) {}
+
+TargetMIPS32::Sandboxer::~Sandboxer() {}
+
+void TargetMIPS32::Sandboxer::createAutoBundle() {
+  Bundler = makeUnique<AutoBundle>(Target, BundleOption);
+}
+
+void TargetMIPS32::Sandboxer::addiu_sp(uint32_t StackOffset) {
+  Variable *SP = Target->getPhysicalRegister(RegMIPS32::Reg_SP);
+  if (!Target->NeedSandboxing) {
+    Target->_addiu(SP, SP, StackOffset);
+    return;
+  }
+  auto *T7 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T7);
+  Target->Context.insert<InstFakeDef>(T7);
+  createAutoBundle();
+  Target->_addiu(SP, SP, StackOffset);
+  Target->_and(SP, SP, T7);
+}
+
+void TargetMIPS32::Sandboxer::lw(Variable *Dest, OperandMIPS32Mem *Mem) {
+  Variable *Base = Mem->getBase();
+  if (Target->NeedSandboxing && (Target->getStackReg() != Base->getRegNum()) &&
+      (RegMIPS32::Reg_T8 != Base->getRegNum())) {
+    auto *T7 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T7);
+    Target->Context.insert<InstFakeDef>(T7);
+    createAutoBundle();
+    Target->_and(Base, Base, T7);
+  }
+  Target->_lw(Dest, Mem);
+  if (Target->NeedSandboxing && (Dest->getRegNum() == Target->getStackReg())) {
+    auto *T7 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T7);
+    Target->Context.insert<InstFakeDef>(T7);
+    Target->_and(Dest, Dest, T7);
+  }
+}
+
+void TargetMIPS32::Sandboxer::ll(Variable *Dest, OperandMIPS32Mem *Mem) {
+  Variable *Base = Mem->getBase();
+  if (Target->NeedSandboxing && (Target->getStackReg() != Base->getRegNum())) {
+    auto *T7 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T7);
+    Target->Context.insert<InstFakeDef>(T7);
+    createAutoBundle();
+    Target->_and(Base, Base, T7);
+  }
+  Target->_ll(Dest, Mem);
+  if (Target->NeedSandboxing && (Dest->getRegNum() == Target->getStackReg())) {
+    auto *T7 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T7);
+    Target->Context.insert<InstFakeDef>(T7);
+    Target->_and(Dest, Dest, T7);
+  }
+}
+
+void TargetMIPS32::Sandboxer::sc(Variable *Dest, OperandMIPS32Mem *Mem) {
+  Variable *Base = Mem->getBase();
+  if (Target->NeedSandboxing && (Target->getStackReg() != Base->getRegNum())) {
+    auto *T7 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T7);
+    Target->Context.insert<InstFakeDef>(T7);
+    createAutoBundle();
+    Target->_and(Base, Base, T7);
+  }
+  Target->_sc(Dest, Mem);
+}
+
+void TargetMIPS32::Sandboxer::sw(Variable *Dest, OperandMIPS32Mem *Mem) {
+  Variable *Base = Mem->getBase();
+  if (Target->NeedSandboxing && (Target->getStackReg() != Base->getRegNum())) {
+    auto *T7 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T7);
+    Target->Context.insert<InstFakeDef>(T7);
+    createAutoBundle();
+    Target->_and(Base, Base, T7);
+  }
+  Target->_sw(Dest, Mem);
+}
+
+void TargetMIPS32::Sandboxer::lwc1(Variable *Dest, OperandMIPS32Mem *Mem,
+                                   RelocOp Reloc) {
+  Variable *Base = Mem->getBase();
+  if (Target->NeedSandboxing && (Target->getStackReg() != Base->getRegNum())) {
+    auto *T7 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T7);
+    Target->Context.insert<InstFakeDef>(T7);
+    createAutoBundle();
+    Target->_and(Base, Base, T7);
+  }
+  Target->_lwc1(Dest, Mem, Reloc);
+  if (Target->NeedSandboxing && (Dest->getRegNum() == Target->getStackReg())) {
+    auto *T7 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T7);
+    Target->Context.insert<InstFakeDef>(T7);
+    Target->_and(Dest, Dest, T7);
+  }
+}
+
+void TargetMIPS32::Sandboxer::ldc1(Variable *Dest, OperandMIPS32Mem *Mem,
+                                   RelocOp Reloc) {
+  Variable *Base = Mem->getBase();
+  if (Target->NeedSandboxing && (Target->getStackReg() != Base->getRegNum())) {
+    auto *T7 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T7);
+    Target->Context.insert<InstFakeDef>(T7);
+    createAutoBundle();
+    Target->_and(Base, Base, T7);
+  }
+  Target->_ldc1(Dest, Mem, Reloc);
+  if (Target->NeedSandboxing && (Dest->getRegNum() == Target->getStackReg())) {
+    auto *T7 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T7);
+    Target->Context.insert<InstFakeDef>(T7);
+    Target->_and(Dest, Dest, T7);
+  }
+}
+
+void TargetMIPS32::Sandboxer::ret(Variable *RetAddr, Variable *RetValue) {
+  if (!Target->NeedSandboxing) {
+    Target->_ret(RetAddr, RetValue);
+  }
+  auto *T6 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T6);
+  Target->Context.insert<InstFakeDef>(T6);
+  createAutoBundle();
+  Target->_and(RetAddr, RetAddr, T6);
+  Target->_ret(RetAddr, RetValue);
+}
+
+void TargetMIPS32::Sandboxer::reset_sp(Variable *Src) {
+  Variable *SP = Target->getPhysicalRegister(RegMIPS32::Reg_SP);
+  if (!Target->NeedSandboxing) {
+    Target->_mov(SP, Src);
+    return;
+  }
+  auto *T7 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T7);
+  Target->Context.insert<InstFakeDef>(T7);
+  createAutoBundle();
+  Target->_mov(SP, Src);
+  Target->_and(SP, SP, T7);
+  Target->getContext().insert<InstFakeUse>(SP);
+}
+
+InstMIPS32Call *TargetMIPS32::Sandboxer::jal(Variable *ReturnReg,
+                                             Operand *CallTarget) {
+  if (Target->NeedSandboxing) {
+    createAutoBundle();
+    if (auto *CallTargetR = llvm::dyn_cast<Variable>(CallTarget)) {
+      auto *T6 = Target->makeReg(IceType_i32, RegMIPS32::Reg_T6);
+      Target->Context.insert<InstFakeDef>(T6);
+      Target->_and(CallTargetR, CallTargetR, T6);
+    }
+  }
+  return Target->Context.insert<InstMIPS32Call>(ReturnReg, CallTarget);
+}
 
 } // end of namespace MIPS32
 } // end of namespace Ice

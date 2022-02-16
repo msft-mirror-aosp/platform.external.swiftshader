@@ -23,8 +23,7 @@
 namespace vk {
 
 std::string Stringify(VkStructureType value);
-std::string Stringify(VkFormat format);
 
-}  // namespace vk
+}
 
 #endif

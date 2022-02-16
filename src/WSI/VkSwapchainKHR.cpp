@@ -41,8 +41,7 @@ void SwapchainKHR::destroy(const VkAllocationCallbacks *pAllocator)
 		if(currentImage.exists())
 		{
 			surface->detachImage(&currentImage);
-			currentImage.release();
-			surface->releaseImageMemory(&currentImage);
+			currentImage.clear();
 		}
 	}
 
@@ -51,7 +50,7 @@ void SwapchainKHR::destroy(const VkAllocationCallbacks *pAllocator)
 		surface->disassociateSwapchain();
 	}
 
-	vk::freeHostMemory(images, pAllocator);
+	vk::deallocate(images, pAllocator);
 }
 
 size_t SwapchainKHR::ComputeRequiredAllocationSize(const VkSwapchainCreateInfoKHR *pCreateInfo)
@@ -72,7 +71,7 @@ void SwapchainKHR::retire()
 			if(currentImage.isAvailable())
 			{
 				surface->detachImage(&currentImage);
-				currentImage.release();
+				currentImage.clear();
 			}
 		}
 	}
@@ -82,7 +81,7 @@ void SwapchainKHR::resetImages()
 {
 	for(uint32_t i = 0; i < imageCount; i++)
 	{
-		images[i].release();
+		images[i].clear();
 	}
 }
 
@@ -101,11 +100,6 @@ VkResult SwapchainKHR::createImages(VkDevice device, const VkSwapchainCreateInfo
 	if(pCreateInfo->flags & VK_SWAPCHAIN_CREATE_PROTECTED_BIT_KHR)
 	{
 		imageInfo.flags |= VK_IMAGE_CREATE_PROTECTED_BIT;
-	}
-
-	if(pCreateInfo->flags & VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR)
-	{
-		imageInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
 	}
 
 	imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -133,28 +127,17 @@ VkResult SwapchainKHR::createImages(VkDevice device, const VkSwapchainCreateInfo
 	{
 		PresentImage &currentImage = images[i];
 
-		status = currentImage.createImage(device, imageInfo);
+		status = currentImage.allocateImage(device, imageInfo);
 		if(status != VK_SUCCESS)
 		{
 			return status;
 		}
 
 		allocInfo.allocationSize = currentImage.getImage()->getMemoryRequirements().size;
-		void* memory = vk::Cast(pCreateInfo->surface)->allocateImageMemory(&currentImage, allocInfo);
-
-		VkImportMemoryHostPointerInfoEXT importMemoryHostPointerInfo = {};
-		if (memory)
-		{
-			importMemoryHostPointerInfo.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT;
-			importMemoryHostPointerInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT;
-			importMemoryHostPointerInfo.pHostPointer = memory;
-			allocInfo.pNext = &importMemoryHostPointerInfo;
-		}
 
 		status = currentImage.allocateAndBindImageMemory(device, allocInfo);
 		if(status != VK_SUCCESS)
 		{
-			vk::Cast(pCreateInfo->surface)->releaseImageMemory(&currentImage);
 			return status;
 		}
 
@@ -224,8 +207,7 @@ VkResult SwapchainKHR::present(uint32_t index)
 	if(retired)
 	{
 		surface->detachImage(&image);
-		image.release();
-		surface->releaseImageMemory(&image);
+		image.clear();
 	}
 
 	return result;

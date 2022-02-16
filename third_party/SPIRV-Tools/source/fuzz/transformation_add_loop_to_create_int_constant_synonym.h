@@ -22,7 +22,8 @@ namespace fuzz {
 class TransformationAddLoopToCreateIntConstantSynonym : public Transformation {
  public:
   explicit TransformationAddLoopToCreateIntConstantSynonym(
-      protobufs::TransformationAddLoopToCreateIntConstantSynonym message);
+      const protobufs::TransformationAddLoopToCreateIntConstantSynonym&
+          message);
 
   TransformationAddLoopToCreateIntConstantSynonym(
       uint32_t constant_id, uint32_t initial_val_id, uint32_t step_val_id,

@@ -24,10 +24,11 @@ namespace fuzz {
 FuzzerPassAddCompositeTypes::FuzzerPassAddCompositeTypes(
     opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
-    protobufs::TransformationSequence* transformations,
-    bool ignore_inapplicable_transformations)
+    protobufs::TransformationSequence* transformations)
     : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations, ignore_inapplicable_transformations) {}
+                 transformations) {}
+
+FuzzerPassAddCompositeTypes::~FuzzerPassAddCompositeTypes() = default;
 
 void FuzzerPassAddCompositeTypes::Apply() {
   MaybeAddMissingVectorTypes();
@@ -124,9 +125,7 @@ uint32_t FuzzerPassAddCompositeTypes::ChooseScalarOrCompositeType() {
         break;
       case SpvOpTypeStruct: {
         if (!fuzzerutil::MembersHaveBuiltInDecoration(GetIRContext(),
-                                                      inst.result_id()) &&
-            !fuzzerutil::HasBlockOrBufferBlockDecoration(GetIRContext(),
-                                                         inst.result_id())) {
+                                                      inst.result_id())) {
           candidates.push_back(inst.result_id());
         }
       } break;

@@ -30,8 +30,9 @@ class FuzzerPassAddParameters : public FuzzerPass {
   FuzzerPassAddParameters(opt::IRContext* ir_context,
                           TransformationContext* transformation_context,
                           FuzzerContext* fuzzer_context,
-                          protobufs::TransformationSequence* transformations,
-                          bool ignore_inapplicable_transformations);
+                          protobufs::TransformationSequence* transformations);
+
+  ~FuzzerPassAddParameters() override;
 
   void Apply() override;
 

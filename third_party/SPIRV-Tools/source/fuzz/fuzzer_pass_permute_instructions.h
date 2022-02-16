@@ -27,8 +27,9 @@ class FuzzerPassPermuteInstructions : public FuzzerPass {
   FuzzerPassPermuteInstructions(
       opt::IRContext* ir_context, TransformationContext* transformation_context,
       FuzzerContext* fuzzer_context,
-      protobufs::TransformationSequence* transformations,
-      bool ignore_inapplicable_transformations);
+      protobufs::TransformationSequence* transformations);
+
+  ~FuzzerPassPermuteInstructions() override;
 
   void Apply() override;
 };
