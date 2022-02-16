@@ -36,12 +36,12 @@ class BinaryToText : public ::testing::Test {
  public:
   BinaryToText()
       : context(spvContextCreate(SPV_ENV_UNIVERSAL_1_0)), binary(nullptr) {}
-  ~BinaryToText() override {
+  ~BinaryToText() {
     spvBinaryDestroy(binary);
     spvContextDestroy(context);
   }
 
-  void SetUp() override {
+  virtual void SetUp() {
     const char* textStr = R"(
       OpSource OpenCL_C 12
       OpMemoryModel Physical64 OpenCL
@@ -72,7 +72,7 @@ class BinaryToText : public ::testing::Test {
     ASSERT_EQ(SPV_SUCCESS, error);
   }
 
-  void TearDown() override {
+  virtual void TearDown() {
     spvBinaryDestroy(binary);
     binary = nullptr;
   }
@@ -386,7 +386,7 @@ INSTANTIATE_TEST_SUITE_P(
             ::testing::ValuesIn(std::vector<std::string>{
                 "OpExecutionModeId %1 SubgroupsPerWorkgroupId %2\n",
                 "OpExecutionModeId %1 LocalSizeId %2 %3 %4\n",
-                "OpExecutionModeId %1 LocalSizeHintId %2 %3 %4\n",
+                "OpExecutionModeId %1 LocalSizeHintId %2\n",
                 "OpDecorateId %1 AlignmentId %2\n",
                 "OpDecorateId %1 MaxByteOffsetId %2\n",
             })));

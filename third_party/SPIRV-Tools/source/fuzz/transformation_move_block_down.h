@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationMoveBlockDown : public Transformation {
  public:
   explicit TransformationMoveBlockDown(
-      protobufs::TransformationMoveBlockDown message);
+      const protobufs::TransformationMoveBlockDown& message);
 
   explicit TransformationMoveBlockDown(uint32_t id);
 

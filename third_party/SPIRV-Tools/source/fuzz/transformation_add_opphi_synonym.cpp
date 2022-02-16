@@ -19,8 +19,8 @@
 namespace spvtools {
 namespace fuzz {
 TransformationAddOpPhiSynonym::TransformationAddOpPhiSynonym(
-    protobufs::TransformationAddOpPhiSynonym message)
-    : message_(std::move(message)) {}
+    const protobufs::TransformationAddOpPhiSynonym& message)
+    : message_(message) {}
 
 TransformationAddOpPhiSynonym::TransformationAddOpPhiSynonym(
     uint32_t block_id, const std::map<uint32_t, uint32_t>& preds_to_ids,
