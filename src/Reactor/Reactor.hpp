@@ -16,6 +16,7 @@
 #define rr_Reactor_hpp
 
 #include "Nucleus.hpp"
+#include "Pragma.hpp"
 #include "Routine.hpp"
 #include "Traits.hpp"
 
@@ -66,23 +67,12 @@ int DebugPrintf(const char *format, ...);
 
 namespace rr {
 
-// These generally map to the precision types as specified by the Vulkan specification.
-// See https://www.khronos.org/registry/vulkan/specs/1.2/html/chap37.html#spirvenv-precision-operation
-enum class Precision
+struct Caps
 {
-	/*Exact,*/  // 0 ULP with correct rounding (i.e. Math.h)
-	Full,       // Single precision, but not relaxed
-	Relaxed,    // Single precision, relaxed
-	/*Half,*/   // Half precision
+	static std::string backendName();
+	static bool coroutinesSupported();  // Support for rr::Coroutine<F>
+	static bool fmaIsFast();            // rr::FMA() is faster than `x * y + z`
 };
-
-std::string BackendName();
-
-struct Capabilities
-{
-	bool CoroutinesSupported;  // Support for rr::Coroutine<F>
-};
-extern const Capabilities Caps;
 
 class Bool;
 class Byte;
@@ -213,6 +203,7 @@ public:
 	using reference_underlying_type = T;
 
 	explicit Reference(Value *pointer, int alignment = 1);
+	Reference(const Reference<T> &ref) = default;
 
 	RValue<T> operator=(RValue<T> rhs) const;
 	RValue<T> operator=(const Reference<T> &ref) const;
@@ -226,7 +217,7 @@ public:
 	int getAlignment() const;
 
 private:
-	Value *address;
+	Value *const address;
 
 	const int alignment;
 };
@@ -261,8 +252,14 @@ struct IntLiteral<UInt>
 	typedef unsigned int type;
 };
 
+template<class T>
+struct LongLiteral
+{
+	struct type;
+};
+
 template<>
-struct IntLiteral<Long>
+struct LongLiteral<Long>
 {
 	typedef int64_t type;
 };
@@ -291,6 +288,7 @@ public:
 	RValue(const T &lvalue);
 	RValue(typename BoolLiteral<T>::type i);
 	RValue(typename IntLiteral<T>::type i);
+	RValue(typename LongLiteral<T>::type i);
 	RValue(typename FloatLiteral<T>::type f);
 	RValue(const Reference<T> &rhs);
 
@@ -877,6 +875,7 @@ class Short4 : public LValue<Short4>
 public:
 	explicit Short4(RValue<Int> cast);
 	explicit Short4(RValue<Int4> cast);
+	explicit Short4(RValue<UInt4> cast);
 	//	explicit Short4(RValue<Float> cast);
 	explicit Short4(RValue<Float4> cast);
 
@@ -954,6 +953,7 @@ RValue<Short4> CmpEQ(RValue<Short4> x, RValue<Short4> y);
 class UShort4 : public LValue<UShort4>
 {
 public:
+	explicit UShort4(RValue<UInt4> cast);
 	explicit UShort4(RValue<Int4> cast);
 	explicit UShort4(RValue<Float4> cast, bool saturate = false);
 
@@ -2178,8 +2178,8 @@ RValue<Float> Rcp_pp(RValue<Float> val, bool exactAtPow2 = false);
 // Deprecated: use RcpSqrt
 // TODO(b/147516027): Remove when GLES frontend is removed
 RValue<Float> RcpSqrt_pp(RValue<Float> val);
-RValue<Float> Rcp(RValue<Float> x, Precision p = Precision::Full, bool finite = false, bool exactAtPow2 = false);
-RValue<Float> RcpSqrt(RValue<Float> x, Precision p = Precision::Full);
+RValue<Float> Rcp(RValue<Float> x, bool relaxedPrecision, bool exactAtPow2 = false);
+RValue<Float> RcpSqrt(RValue<Float> x, bool relaxedPrecision);
 RValue<Float> Sqrt(RValue<Float> x);
 
 //	RValue<Int4> IsInf(RValue<Float> x);
@@ -2339,6 +2339,11 @@ RValue<Float4> operator%=(Float4 &lhs, RValue<Float4> rhs);
 RValue<Float4> operator+(RValue<Float4> val);
 RValue<Float4> operator-(RValue<Float4> val);
 
+// Computes `x * y + z`, which may be fused into one operation to produce a higher-precision result.
+RValue<Float4> MulAdd(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z);
+// Computes a fused `x * y + z` operation. Caps::fmaIsFast indicates whether it emits an FMA instruction.
+RValue<Float4> FMA(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z);
+
 RValue<Float4> Abs(RValue<Float4> x);
 RValue<Float4> Max(RValue<Float4> x, RValue<Float4> y);
 RValue<Float4> Min(RValue<Float4> x, RValue<Float4> y);
@@ -2349,8 +2354,8 @@ RValue<Float4> Rcp_pp(RValue<Float4> val, bool exactAtPow2 = false);
 // Deprecated: use RcpSqrt
 // TODO(b/147516027): Remove when GLES frontend is removed
 RValue<Float4> RcpSqrt_pp(RValue<Float4> val);
-RValue<Float4> Rcp(RValue<Float4> x, Precision p = Precision::Full, bool finite = false, bool exactAtPow2 = false);
-RValue<Float4> RcpSqrt(RValue<Float4> x, Precision p = Precision::Full);
+RValue<Float4> Rcp(RValue<Float4> x, bool relaxedPrecision, bool exactAtPow2 = false);
+RValue<Float4> RcpSqrt(RValue<Float4> x, bool relaxedPrecision);
 RValue<Float4> Sqrt(RValue<Float4> x);
 RValue<Float4> Insert(RValue<Float4> val, RValue<Float> element, int i);
 RValue<Float> Extract(RValue<Float4> x, int i);
@@ -2403,12 +2408,11 @@ RValue<Float4> Floor(RValue<Float4> x);
 RValue<Float4> Ceil(RValue<Float4> x);
 
 // Trigonometric functions
-// TODO: Currently unimplemented for Subzero.
 RValue<Float4> Sin(RValue<Float4> x);
 RValue<Float4> Cos(RValue<Float4> x);
 RValue<Float4> Tan(RValue<Float4> x);
-RValue<Float4> Asin(RValue<Float4> x, Precision p);
-RValue<Float4> Acos(RValue<Float4> x, Precision p);
+RValue<Float4> Asin(RValue<Float4> x);
+RValue<Float4> Acos(RValue<Float4> x);
 RValue<Float4> Atan(RValue<Float4> x);
 RValue<Float4> Sinh(RValue<Float4> x);
 RValue<Float4> Cosh(RValue<Float4> x);
@@ -2419,7 +2423,6 @@ RValue<Float4> Atanh(RValue<Float4> x);
 RValue<Float4> Atan2(RValue<Float4> x, RValue<Float4> y);
 
 // Exponential functions
-// TODO: Currently unimplemented for Subzero.
 RValue<Float4> Pow(RValue<Float4> x, RValue<Float4> y);
 RValue<Float4> Exp(RValue<Float4> x);
 RValue<Float4> Log(RValue<Float4> x);
@@ -2475,11 +2478,11 @@ public:
 	RValue<Pointer<T>> operator=(const Reference<Pointer<T>> &rhs);
 	RValue<Pointer<T>> operator=(std::nullptr_t);
 
-	Reference<T> operator*();
-	Reference<T> operator[](int index);
-	Reference<T> operator[](unsigned int index);
-	Reference<T> operator[](RValue<Int> index);
-	Reference<T> operator[](RValue<UInt> index);
+	Reference<T> operator*() const;
+	Reference<T> operator[](int index) const;
+	Reference<T> operator[](unsigned int index) const;
+	Reference<T> operator[](RValue<Int> index) const;
+	Reference<T> operator[](RValue<UInt> index) const;
 
 	static Type *type();
 
@@ -2526,10 +2529,11 @@ RValue<T> Load(Pointer<T> pointer, unsigned int alignment, bool atomic, std::mem
 }
 
 // TODO: Use SIMD to template these.
-RValue<Float4> MaskedLoad(RValue<Pointer<Float4>> base, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes = false);
-RValue<Int4> MaskedLoad(RValue<Pointer<Int4>> base, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes = false);
-void MaskedStore(RValue<Pointer<Float4>> base, RValue<Float4> val, RValue<Int4> mask, unsigned int alignment);
-void MaskedStore(RValue<Pointer<Int4>> base, RValue<Int4> val, RValue<Int4> mask, unsigned int alignment);
+// TODO(b/155867273): These can be undeprecated if implemented for Subzero.
+[[deprecated]] RValue<Float4> MaskedLoad(RValue<Pointer<Float4>> base, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes = false);
+[[deprecated]] RValue<Int4> MaskedLoad(RValue<Pointer<Int4>> base, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes = false);
+[[deprecated]] void MaskedStore(RValue<Pointer<Float4>> base, RValue<Float4> val, RValue<Int4> mask, unsigned int alignment);
+[[deprecated]] void MaskedStore(RValue<Pointer<Int4>> base, RValue<Int4> val, RValue<Int4> mask, unsigned int alignment);
 
 RValue<Float4> Gather(RValue<Pointer<Float>> base, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes = false);
 RValue<Int4> Gather(RValue<Pointer<Int>> base, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes = false);
@@ -2696,9 +2700,9 @@ RValue<Pointer<T>> LValue<T>::operator&()
 
 template<class T>
 Reference<T>::Reference(Value *pointer, int alignment)
-    : alignment(alignment)
+    : address(pointer)
+    , alignment(alignment)
 {
-	address = pointer;
 }
 
 template<class T>
@@ -2774,6 +2778,13 @@ RValue<T>::RValue(typename BoolLiteral<T>::type i)
 template<class T>
 RValue<T>::RValue(typename IntLiteral<T>::type i)
     : val(Nucleus::createConstantInt(i))
+{
+	RR_DEBUG_INFO_EMIT_VAR(val);
+}
+
+template<class T>
+RValue<T>::RValue(typename LongLiteral<T>::type i)
+    : val(Nucleus::createConstantLong(i))
 {
 	RR_DEBUG_INFO_EMIT_VAR(val);
 }
@@ -3031,13 +3042,13 @@ RValue<Pointer<T>> Pointer<T>::operator=(std::nullptr_t)
 }
 
 template<class T>
-Reference<T> Pointer<T>::operator*()
+Reference<T> Pointer<T>::operator*() const
 {
 	return Reference<T>(this->loadValue(), alignment);
 }
 
 template<class T>
-Reference<T> Pointer<T>::operator[](int index)
+Reference<T> Pointer<T>::operator[](int index) const
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Value *element = Nucleus::createGEP(this->loadValue(), T::type(), Nucleus::createConstantInt(index), false);
@@ -3046,7 +3057,7 @@ Reference<T> Pointer<T>::operator[](int index)
 }
 
 template<class T>
-Reference<T> Pointer<T>::operator[](unsigned int index)
+Reference<T> Pointer<T>::operator[](unsigned int index) const
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Value *element = Nucleus::createGEP(this->loadValue(), T::type(), Nucleus::createConstantInt(index), true);
@@ -3055,7 +3066,7 @@ Reference<T> Pointer<T>::operator[](unsigned int index)
 }
 
 template<class T>
-Reference<T> Pointer<T>::operator[](RValue<Int> index)
+Reference<T> Pointer<T>::operator[](RValue<Int> index) const
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Value *element = Nucleus::createGEP(this->loadValue(), T::type(), index.value(), false);
@@ -3064,7 +3075,7 @@ Reference<T> Pointer<T>::operator[](RValue<Int> index)
 }
 
 template<class T>
-Reference<T> Pointer<T>::operator[](RValue<UInt> index)
+Reference<T> Pointer<T>::operator[](RValue<UInt> index) const
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Value *element = Nucleus::createGEP(this->loadValue(), T::type(), index.value(), true);
@@ -3203,7 +3214,7 @@ std::shared_ptr<Routine> Function<Return(Arguments...)>::operator()(const char *
 	vsnprintf(fullName, 1024, name, vararg);
 	va_end(vararg);
 
-	auto routine = core->acquireRoutine(fullName, Config::Edit::None);
+	auto routine = core->acquireRoutine(fullName, nullptr);
 	core.reset(nullptr);
 
 	return routine;
@@ -3219,7 +3230,7 @@ std::shared_ptr<Routine> Function<Return(Arguments...)>::operator()(const Config
 	vsnprintf(fullName, 1024, name, vararg);
 	va_end(vararg);
 
-	auto routine = core->acquireRoutine(fullName, cfg);
+	auto routine = core->acquireRoutine(fullName, &cfg);
 	core.reset(nullptr);
 
 	return routine;
@@ -3335,7 +3346,7 @@ inline ReactorTypeT<T> CastToReactor(const T &v)
 
 // Calls the static function pointer fptr with the given arguments args.
 template<typename Return, typename... CArgs, typename... RArgs>
-inline CToReactorT<Return> Call(Return(fptr)(CArgs...), RArgs &&... args)
+inline CToReactorT<Return> Call(Return(fptr)(CArgs...), RArgs &&...args)
 {
 	return CallHelper<Return(CArgs...)>::Call(fptr, CastToReactor(std::forward<RArgs>(args))...);
 }
@@ -3343,7 +3354,7 @@ inline CToReactorT<Return> Call(Return(fptr)(CArgs...), RArgs &&... args)
 // Calls the static function pointer fptr with the given arguments args.
 // Overload for calling functions with void return type.
 template<typename... CArgs, typename... RArgs>
-inline void Call(void(fptr)(CArgs...), RArgs &&... args)
+inline void Call(void(fptr)(CArgs...), RArgs &&...args)
 {
 	CallHelper<void(CArgs...)>::Call(fptr, CastToReactor(std::forward<RArgs>(args))...);
 }
@@ -3351,7 +3362,7 @@ inline void Call(void(fptr)(CArgs...), RArgs &&... args)
 // Calls the member function pointer fptr with the given arguments args.
 // object can be a Class*, or a Pointer<Byte>.
 template<typename Return, typename Class, typename C, typename... CArgs, typename... RArgs>
-inline CToReactorT<Return> Call(Return (Class::*fptr)(CArgs...), C &&object, RArgs &&... args)
+inline CToReactorT<Return> Call(Return (Class::*fptr)(CArgs...), C &&object, RArgs &&...args)
 {
 	using Helper = CallHelper<Return(Class *, void *, CArgs...)>;
 	using fptrTy = decltype(fptr);
@@ -3375,7 +3386,7 @@ inline CToReactorT<Return> Call(Return (Class::*fptr)(CArgs...), C &&object, RAr
 // Overload for calling functions with void return type.
 // object can be a Class*, or a Pointer<Byte>.
 template<typename Class, typename C, typename... CArgs, typename... RArgs>
-inline void Call(void (Class::*fptr)(CArgs...), C &&object, RArgs &&... args)
+inline void Call(void (Class::*fptr)(CArgs...), C &&object, RArgs &&...args)
 {
 	using Helper = CallHelper<void(Class *, void *, CArgs...)>;
 	using fptrTy = decltype(fptr);
@@ -3432,7 +3443,7 @@ using VoidFunctionReturnType = typename VoidFunction<F>::ReturnType;
 // Calls the Reactor function pointer fptr with the signature FUNCTION_SIGNATURE and arguments.
 // Overload for calling functions with non-void return type.
 template<typename FUNCTION_SIGNATURE, typename... RArgs>
-inline CToReactorT<NonVoidFunctionReturnType<FUNCTION_SIGNATURE>> Call(Pointer<Byte> fptr, RArgs &&... args)
+inline CToReactorT<NonVoidFunctionReturnType<FUNCTION_SIGNATURE>> Call(Pointer<Byte> fptr, RArgs &&...args)
 {
 	return CallHelper<FUNCTION_SIGNATURE>::Call(fptr, CastToReactor(std::forward<RArgs>(args))...);
 }
@@ -3440,7 +3451,7 @@ inline CToReactorT<NonVoidFunctionReturnType<FUNCTION_SIGNATURE>> Call(Pointer<B
 // Calls the Reactor function pointer fptr with the signature FUNCTION_SIGNATURE and arguments.
 // Overload for calling functions with void return type.
 template<typename FUNCTION_SIGNATURE, typename... RArgs>
-inline VoidFunctionReturnType<FUNCTION_SIGNATURE> Call(Pointer<Byte> fptr, RArgs &&... args)
+inline VoidFunctionReturnType<FUNCTION_SIGNATURE> Call(Pointer<Byte> fptr, RArgs &&...args)
 {
 	CallHelper<FUNCTION_SIGNATURE>::Call(fptr, CastToReactor(std::forward<RArgs>(args))...);
 }
