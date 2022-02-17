@@ -17,6 +17,8 @@
 
 #include "VkImageView.hpp"
 #include "VkSampler.hpp"
+#include "Device/Blitter.hpp"
+#include "Pipeline/Constants.hpp"
 #include "Reactor/Routine.hpp"
 #include "System/LRUCache.hpp"
 
@@ -30,9 +32,6 @@
 
 namespace marl {
 class Scheduler;
-}
-namespace sw {
-class Blitter;
 }
 
 namespace vk {
@@ -72,7 +71,7 @@ public:
 	void registerImageView(ImageView *imageView);
 	void unregisterImageView(ImageView *imageView);
 	void prepareForSampling(ImageView *imageView);
-	void contentsChanged(ImageView *imageView);
+	void contentsChanged(ImageView *imageView, Image::ContentsChangedContext context);
 
 	class SamplingRoutineCache
 	{
@@ -141,6 +140,7 @@ public:
 
 		uint32_t index(const SamplerState &samplerState);
 		void remove(const SamplerState &samplerState);
+		const SamplerState *find(uint32_t id);
 
 	private:
 		struct Identifier
@@ -157,6 +157,7 @@ public:
 
 	uint32_t indexSampler(const SamplerState &samplerState);
 	void removeSampler(const SamplerState &samplerState);
+	const SamplerState *findSampler(uint32_t samplerId) const;
 
 	std::shared_ptr<vk::dbg::Context> getDebuggerContext() const
 	{
@@ -173,6 +174,8 @@ public:
 #ifdef SWIFTSHADER_DEVICE_MEMORY_REPORT
 	void emitDeviceMemoryReport(VkDeviceMemoryReportEventTypeEXT type, uint64_t memoryObjectId, VkDeviceSize size, VkObjectType objectType, uint64_t objectHandle, uint32_t heapIndex = 0);
 #endif  // SWIFTSHADER_DEVICE_MEMORY_REPORT
+
+	const sw::Constants constants;
 
 private:
 	PhysicalDevice *const physicalDevice = nullptr;
