@@ -417,11 +417,13 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME, VK_KHR_TIMELINE_SEMAPHORE_SPEC_VERSION } },
 	// Vulkan 1.3 promoted extensions
 	{ { VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME, VK_EXT_EXTENDED_DYNAMIC_STATE_SPEC_VERSION } },
+	{ { VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME, VK_EXT_INLINE_UNIFORM_BLOCK_SPEC_VERSION } },
 	{ { VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_SPEC_VERSION } },
 	{ { VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_FEEDBACK_SPEC_VERSION } },
 	{ { VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME, VK_EXT_SUBGROUP_SIZE_CONTROL_SPEC_VERSION } },
 	{ { VK_EXT_TOOLING_INFO_EXTENSION_NAME, VK_EXT_TOOLING_INFO_SPEC_VERSION } },
 	{ { VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME, VK_KHR_COPY_COMMANDS_2_SPEC_VERSION } },
+	{ { VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_SPEC_VERSION } },
 	{ { VK_KHR_FORMAT_FEATURE_FLAGS_2_EXTENSION_NAME, VK_KHR_FORMAT_FEATURE_FLAGS_2_SPEC_VERSION } },
 	{ { VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SYNCHRONIZATION_2_SPEC_VERSION } },
 	// Additional extension
@@ -797,6 +799,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 				}
 			}
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES:
+			{
+				const VkPhysicalDeviceDynamicRenderingFeatures *dynamicRenderingFeatures = reinterpret_cast<const VkPhysicalDeviceDynamicRenderingFeatures *>(extensionCreateInfo);
+
+				// Dynamic rendering is supported
+				(void)(dynamicRenderingFeatures->dynamicRendering);
+			}
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES_KHR:
 			{
 				const VkPhysicalDeviceSeparateDepthStencilLayoutsFeaturesKHR *shaderDrawParametersFeatures = reinterpret_cast<const VkPhysicalDeviceSeparateDepthStencilLayoutsFeaturesKHR *>(extensionCreateInfo);
@@ -949,6 +959,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 			{
 				const auto *subgroupSizeControlFeatures = reinterpret_cast<const VkPhysicalDeviceSubgroupSizeControlFeatures *>(extensionCreateInfo);
 				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(subgroupSizeControlFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INLINE_UNIFORM_BLOCK_FEATURES:
+			{
+				const auto *uniformBlockFeatures = reinterpret_cast<const VkPhysicalDeviceInlineUniformBlockFeatures *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(uniformBlockFeatures);
 				if(!hasFeatures)
 				{
 					return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -2300,7 +2320,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDescriptorPool(VkDevice device, const VkD
 	auto extInfo = reinterpret_cast<VkBaseInStructure const *>(pCreateInfo->pNext);
 	while(extInfo)
 	{
-		UNSUPPORTED("pCreateInfo->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
+		switch(extInfo->sType)
+		{
+		case VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_INLINE_UNIFORM_BLOCK_CREATE_INFO:
+			break;
+		default:
+			UNSUPPORTED("pCreateInfo->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
+			break;
+		}
 		extInfo = extInfo->pNext;
 	}
 
@@ -3153,6 +3180,22 @@ VKAPI_ATTR void VKAPI_CALL vkCmdExecuteCommands(VkCommandBuffer commandBuffer, u
 	vk::Cast(commandBuffer)->executeCommands(commandBufferCount, pCommandBuffers);
 }
 
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *pRenderingInfo)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, const VkRenderingInfo* pRenderingInfo = %p)",
+	      commandBuffer, pRenderingInfo);
+
+	vk::Cast(commandBuffer)->beginRendering(pRenderingInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdEndRendering(VkCommandBuffer commandBuffer)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p)",
+	      commandBuffer);
+
+	vk::Cast(commandBuffer)->endRendering();
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceVersion(uint32_t *pApiVersion)
 {
 	TRACE("(uint32_t* pApiVersion = %p)", pApiVersion);
@@ -3432,10 +3475,6 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 				vk::Cast(physicalDevice)->getProperties(properties);
 			}
 			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLE_LOCATIONS_PROPERTIES_EXT:
-			// Explicitly ignored, since VK_EXT_sample_locations is not supported
-			ASSERT(!hasDeviceExtension(VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME));
-			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT:
 			{
 				auto properties = reinterpret_cast<VkPhysicalDeviceExternalMemoryHostPropertiesEXT *>(extensionProperties);
@@ -3528,13 +3567,17 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 				vk::Cast(physicalDevice)->getProperties(properties);
 			}
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INLINE_UNIFORM_BLOCK_PROPERTIES:
+			{
+				auto properties = reinterpret_cast<VkPhysicalDeviceInlineUniformBlockProperties *>(extensionProperties);
+				vk::Cast(physicalDevice)->getProperties(properties);
+			}
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXEL_BUFFER_ALIGNMENT_PROPERTIES:
 			{
 				auto properties = reinterpret_cast<VkPhysicalDeviceTexelBufferAlignmentProperties *>(extensionProperties);
 				vk::Cast(physicalDevice)->getProperties(properties);
 			}
-			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES_KHR:
 			break;
 		default:
 			// "the [driver] must skip over, without processing (other than reading the sType and pNext members) any structures in the chain with sType values not defined by [supported extenions]"
@@ -3946,7 +3989,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSamplerYcbcrConversion(VkDevice device, c
 	auto extInfo = reinterpret_cast<VkBaseInStructure const *>(pCreateInfo->pNext);
 	while(extInfo)
 	{
-		UNSUPPORTED("pCreateInfo->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
+		switch(extInfo->sType)
+		{
+#ifdef __ANDROID__
+		case VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID:
+			break;
+#endif
+		default:
+			UNSUPPORTED("pCreateInfo->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
+			break;
+		}
 		extInfo = extInfo->pNext;
 	}
 
@@ -4061,18 +4113,6 @@ VKAPI_ATTR void VKAPI_CALL vkGetPrivateData(VkDevice device, VkObjectType object
 {
 	TRACE("(VkDevice device = %p, VkObjectType objectType = %d, uint64_t objectHandle = %" PRIu64 ", VkPrivateDataSlot privateDataSlot = %p, uint64_t data = %p)",
 	      device, objectType, objectHandle, static_cast<void *>(privateDataSlot), pData);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *pRenderingInfo)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, const VkRenderingInfo* pRenderingInfo = %p)",
-	      commandBuffer, pRenderingInfo);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdEndRendering(VkCommandBuffer commandBuffer)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p)",
-	      commandBuffer);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkGetDeviceBufferMemoryRequirements(VkDevice device, const VkDeviceBufferMemoryRequirements *pInfo, VkMemoryRequirements2 *pMemoryRequirements)
