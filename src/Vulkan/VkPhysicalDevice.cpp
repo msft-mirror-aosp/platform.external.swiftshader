@@ -338,6 +338,11 @@ static void getPhysicalDeviceDepthClipEnableFeaturesExt(T *features)
 	features->depthClipEnable = VK_TRUE;
 }
 
+static void getPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures(VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures *features)
+{
+	features->shaderZeroInitializeWorkgroupMemory = VK_TRUE;
+}
+
 static void getPhysicalDeviceCustomBorderColorFeaturesExt(VkPhysicalDeviceCustomBorderColorFeaturesEXT *features)
 {
 	features->customBorderColors = VK_TRUE;
@@ -470,6 +475,9 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT:
 			getPhysicalDeviceDepthClipEnableFeaturesExt(reinterpret_cast<VkPhysicalDeviceDepthClipEnableFeaturesEXT *>(curExtension));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_WORKGROUP_MEMORY_FEATURES:
+			getPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures(reinterpret_cast<VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT:
 			getPhysicalDeviceCustomBorderColorFeaturesExt(reinterpret_cast<VkPhysicalDeviceCustomBorderColorFeaturesEXT *>(curExtension));
@@ -684,9 +692,20 @@ static void getMaintenance3Properties(T *properties)
 	properties->maxPerSetDescriptors = 1024;
 }
 
+template<typename T>
+static void getMaintenance4Properties(T *properties)
+{
+	properties->maxBufferSize = MAX_MEMORY_ALLOCATION_SIZE;
+}
+
 void PhysicalDevice::getProperties(VkPhysicalDeviceMaintenance3Properties *properties) const
 {
 	getMaintenance3Properties(properties);
+}
+
+void PhysicalDevice::getProperties(VkPhysicalDeviceMaintenance4Properties *properties) const
+{
+	getMaintenance4Properties(properties);
 }
 
 template<typename T>
@@ -1087,9 +1106,7 @@ void PhysicalDevice::getProperties(VkPhysicalDeviceCustomBorderColorPropertiesEX
 
 void PhysicalDevice::getProperties(VkPhysicalDeviceBlendOperationAdvancedPropertiesEXT *properties) const
 {
-	// Note: advancedBlendMaxColorAttachments could already support sw::MAX_COLOR_BUFFERS as is,
-	//       but using a value of 1 is enough for ANGLE to implement GL_KHR_blend_equation_advanced
-	properties->advancedBlendMaxColorAttachments = 1;
+	properties->advancedBlendMaxColorAttachments = sw::MAX_COLOR_BUFFERS;
 	properties->advancedBlendIndependentBlend = VK_FALSE;
 	properties->advancedBlendNonPremultipliedSrcColor = VK_FALSE;
 	properties->advancedBlendNonPremultipliedDstColor = VK_FALSE;
@@ -1322,6 +1339,12 @@ bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceSubgroupSizeContr
 	       CheckFeature(requested, supported, computeFullSubgroups);
 }
 
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, shaderZeroInitializeWorkgroupMemory);
+}
 #undef CheckFeature
 
 void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFormatProperties)
