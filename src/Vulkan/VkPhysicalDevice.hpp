@@ -47,10 +47,12 @@ public:
 	bool hasExtendedFeatures(const VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *features) const;
 	bool hasExtendedFeatures(const VkPhysicalDeviceSubgroupSizeControlFeatures *requested) const;
 	bool hasExtendedFeatures(const VkPhysicalDeviceInlineUniformBlockFeatures *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures *requested) const;
 
 	const VkPhysicalDeviceProperties &getProperties() const;
 	void getProperties(VkPhysicalDeviceIDProperties *properties) const;
 	void getProperties(VkPhysicalDeviceMaintenance3Properties *properties) const;
+	void getProperties(VkPhysicalDeviceMaintenance4Properties *properties) const;
 	void getProperties(VkPhysicalDeviceMultiviewProperties *properties) const;
 	void getProperties(VkPhysicalDevicePointClippingProperties *properties) const;
 	void getProperties(VkPhysicalDeviceProtectedMemoryProperties *properties) const;
