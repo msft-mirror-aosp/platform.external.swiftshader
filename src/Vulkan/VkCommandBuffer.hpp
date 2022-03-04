@@ -46,6 +46,43 @@ class PipelineLayout;
 class QueryPool;
 class RenderPass;
 
+struct DynamicRendering
+{
+	DynamicRendering(const VkRenderingInfo *pRenderingInfo);
+
+	void getAttachments(Attachments *attachments) const;
+	VkRect2D getRenderArea() const { return renderArea; }
+	uint32_t getLayerCount() const { return layerCount; }
+	uint32_t getViewMask() const { return viewMask; }
+	uint32_t getColorAttachmentCount() const { return colorAttachmentCount; }
+	const VkRenderingAttachmentInfo *getColorAttachment(uint32_t i) const
+	{
+		return (i < colorAttachmentCount) ? &(colorAttachments[i]) : nullptr;
+	}
+	const VkRenderingAttachmentInfo &getDepthAttachment() const
+	{
+		return depthAttachment;
+	}
+	const VkRenderingAttachmentInfo &getStencilAttachment() const
+	{
+		return stencilAttachment;
+	}
+	bool suspend() const { return flags & VK_RENDERING_SUSPENDING_BIT; }
+	bool resume() const { return flags & VK_RENDERING_RESUMING_BIT; }
+
+private:
+	VkRect2D renderArea = {};
+	uint32_t layerCount = 0;
+	uint32_t viewMask = 0;
+	uint32_t colorAttachmentCount = 0;
+	VkRenderingAttachmentInfo colorAttachments[sw::MAX_COLOR_BUFFERS] = { {} };
+	bool hasDepthAttachment = false;
+	VkRenderingAttachmentInfo depthAttachment = {};
+	bool hasStencilAttachment = false;
+	VkRenderingAttachmentInfo stencilAttachment = {};
+	VkRenderingFlags flags = VkRenderingFlags(0);
+};
+
 class CommandBuffer
 {
 public:
@@ -65,6 +102,8 @@ public:
 	void nextSubpass(VkSubpassContents contents);
 	void endRenderPass();
 	void executeCommands(uint32_t commandBufferCount, const VkCommandBuffer *pCommandBuffers);
+	void beginRendering(const VkRenderingInfo *pRenderingInfo);
+	void endRendering();
 
 	void setDeviceMask(uint32_t deviceMask);
 	void dispatchBase(uint32_t baseGroupX, uint32_t baseGroupY, uint32_t baseGroupZ,
@@ -73,7 +112,8 @@ public:
 	void pipelineBarrier(const VkDependencyInfo &pDependencyInfo);
 	void bindPipeline(VkPipelineBindPoint pipelineBindPoint, Pipeline *pipeline);
 	void bindVertexBuffers(uint32_t firstBinding, uint32_t bindingCount,
-	                       const VkBuffer *pBuffers, const VkDeviceSize *pOffsets);
+	                       const VkBuffer *pBuffers, const VkDeviceSize *pOffsets,
+	                       const VkDeviceSize *pSizes, const VkDeviceSize *pStrides);
 
 	void beginQuery(QueryPool *queryPool, uint32_t query, VkQueryControlFlags flags);
 	void endQuery(QueryPool *queryPool, uint32_t query);
@@ -93,6 +133,20 @@ public:
 	void setStencilCompareMask(VkStencilFaceFlags faceMask, uint32_t compareMask);
 	void setStencilWriteMask(VkStencilFaceFlags faceMask, uint32_t writeMask);
 	void setStencilReference(VkStencilFaceFlags faceMask, uint32_t reference);
+	void setCullMode(VkCullModeFlags cullMode);
+	void setDepthBoundsTestEnable(VkBool32 depthBoundsTestEnable);
+	void setDepthCompareOp(VkCompareOp depthCompareOp);
+	void setDepthTestEnable(VkBool32 depthTestEnable);
+	void setDepthWriteEnable(VkBool32 depthWriteEnable);
+	void setFrontFace(VkFrontFace frontFace);
+	void setPrimitiveTopology(VkPrimitiveTopology primitiveTopology);
+	void setScissorWithCount(uint32_t scissorCount, const VkRect2D *pScissors);
+	void setStencilOp(VkStencilFaceFlags faceMask, VkStencilOp failOp, VkStencilOp passOp, VkStencilOp depthFailOp, VkCompareOp compareOp);
+	void setStencilTestEnable(VkBool32 stencilTestEnable);
+	void setViewportWithCount(uint32_t viewportCount, const VkViewport *pViewports);
+	void setRasterizerDiscardEnable(VkBool32 rasterizerDiscardEnable);
+	void setDepthBiasEnable(VkBool32 depthBiasEnable);
+	void setPrimitiveRestartEnable(VkBool32 primitiveRestartEnable);
 	void bindDescriptorSets(VkPipelineBindPoint pipelineBindPoint, const PipelineLayout *layout,
 	                        uint32_t firstSet, uint32_t descriptorSetCount, const VkDescriptorSet *pDescriptorSets,
 	                        uint32_t dynamicOffsetCount, const uint32_t *pDynamicOffsets);
@@ -141,6 +195,7 @@ public:
 		sw::CountedEvent *events = nullptr;
 		RenderPass *renderPass = nullptr;
 		Framebuffer *renderPassFramebuffer = nullptr;
+		DynamicRendering *dynamicRendering = nullptr;
 
 		// VK_PIPELINE_BIND_POINT_GRAPHICS = 0
 		// VK_PIPELINE_BIND_POINT_COMPUTE = 1
@@ -158,6 +213,8 @@ public:
 
 		void bindAttachments(Attachments *attachments);
 
+		VkRect2D getRenderArea() const;
+		uint32_t getLayerMask() const;
 		uint32_t viewCount() const;
 	};
 

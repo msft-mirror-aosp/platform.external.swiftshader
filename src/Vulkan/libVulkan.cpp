@@ -416,12 +416,19 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME, VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_SPEC_VERSION } },
 	{ { VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME, VK_KHR_TIMELINE_SEMAPHORE_SPEC_VERSION } },
 	// Vulkan 1.3 promoted extensions
+	{ { VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME, VK_EXT_EXTENDED_DYNAMIC_STATE_SPEC_VERSION } },
+	{ { VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME, VK_EXT_INLINE_UNIFORM_BLOCK_SPEC_VERSION } },
 	{ { VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_SPEC_VERSION } },
 	{ { VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_FEEDBACK_SPEC_VERSION } },
+	{ { VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME, VK_EXT_SUBGROUP_SIZE_CONTROL_SPEC_VERSION } },
 	{ { VK_EXT_TOOLING_INFO_EXTENSION_NAME, VK_EXT_TOOLING_INFO_SPEC_VERSION } },
 	{ { VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME, VK_KHR_COPY_COMMANDS_2_SPEC_VERSION } },
+	{ { VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_SPEC_VERSION } },
 	{ { VK_KHR_FORMAT_FEATURE_FLAGS_2_EXTENSION_NAME, VK_KHR_FORMAT_FEATURE_FLAGS_2_SPEC_VERSION } },
+	{ { VK_KHR_MAINTENANCE_4_EXTENSION_NAME, VK_KHR_MAINTENANCE_4_SPEC_VERSION } },
+	{ { VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, VK_KHR_SHADER_NON_SEMANTIC_INFO_SPEC_VERSION } },
 	{ { VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SYNCHRONIZATION_2_SPEC_VERSION } },
+	{ { VK_KHR_ZERO_INITIALIZE_WORKGROUP_MEMORY_EXTENSION_NAME, VK_KHR_ZERO_INITIALIZE_WORKGROUP_MEMORY_SPEC_VERSION } },
 	// Additional extension
 	{ { VK_GOOGLE_DECORATE_STRING_EXTENSION_NAME, VK_GOOGLE_DECORATE_STRING_SPEC_VERSION } },
 	{ { VK_GOOGLE_HLSL_FUNCTIONALITY_1_EXTENSION_NAME, VK_GOOGLE_HLSL_FUNCTIONALITY_1_SPEC_VERSION } },
@@ -795,6 +802,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 				}
 			}
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES:
+			{
+				const VkPhysicalDeviceDynamicRenderingFeatures *dynamicRenderingFeatures = reinterpret_cast<const VkPhysicalDeviceDynamicRenderingFeatures *>(extensionCreateInfo);
+
+				// Dynamic rendering is supported
+				(void)(dynamicRenderingFeatures->dynamicRendering);
+			}
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES_KHR:
 			{
 				const VkPhysicalDeviceSeparateDepthStencilLayoutsFeaturesKHR *shaderDrawParametersFeatures = reinterpret_cast<const VkPhysicalDeviceSeparateDepthStencilLayoutsFeaturesKHR *>(extensionCreateInfo);
@@ -927,6 +942,46 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 			{
 				const auto *blendOpFeatures = reinterpret_cast<const VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT *>(extensionCreateInfo);
 				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(blendOpFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT:
+			{
+				const auto *dynamicStateFeatures = reinterpret_cast<const VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(dynamicStateFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES:
+			{
+				const auto *subgroupSizeControlFeatures = reinterpret_cast<const VkPhysicalDeviceSubgroupSizeControlFeatures *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(subgroupSizeControlFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INLINE_UNIFORM_BLOCK_FEATURES:
+			{
+				const auto *uniformBlockFeatures = reinterpret_cast<const VkPhysicalDeviceInlineUniformBlockFeatures *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(uniformBlockFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_WORKGROUP_MEMORY_FEATURES:
+			{
+				const auto *zeroInitializeWorkgroupMemoryFeatures = reinterpret_cast<const VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(zeroInitializeWorkgroupMemoryFeatures);
 				if(!hasFeatures)
 				{
 					return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -2278,7 +2333,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDescriptorPool(VkDevice device, const VkD
 	auto extInfo = reinterpret_cast<VkBaseInStructure const *>(pCreateInfo->pNext);
 	while(extInfo)
 	{
-		UNSUPPORTED("pCreateInfo->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
+		switch(extInfo->sType)
+		{
+		case VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_INLINE_UNIFORM_BLOCK_CREATE_INFO:
+			break;
+		default:
+			UNSUPPORTED("pCreateInfo->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
+			break;
+		}
 		extInfo = extInfo->pNext;
 	}
 
@@ -2611,7 +2673,127 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers(VkCommandBuffer commandBuffer,
 	TRACE("(VkCommandBuffer commandBuffer = %p, uint32_t firstBinding = %d, uint32_t bindingCount = %d, const VkBuffer* pBuffers = %p, const VkDeviceSize* pOffsets = %p)",
 	      commandBuffer, int(firstBinding), int(bindingCount), pBuffers, pOffsets);
 
-	vk::Cast(commandBuffer)->bindVertexBuffers(firstBinding, bindingCount, pBuffers, pOffsets);
+	vk::Cast(commandBuffer)->bindVertexBuffers(firstBinding, bindingCount, pBuffers, pOffsets, nullptr, nullptr);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers2(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount, const VkBuffer *pBuffers, const VkDeviceSize *pOffsets, const VkDeviceSize *pSizes, const VkDeviceSize *pStrides)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, uint32_t firstBinding = %d, uint32_t bindingCount = %d, const VkBuffer* pBuffers = %p, const VkDeviceSize* pOffsets = %p, const VkDeviceSize *pSizes = %p, const VkDeviceSize *pStrides = %p)",
+	      commandBuffer, int(firstBinding), int(bindingCount), pBuffers, pOffsets, pSizes, pStrides);
+
+	vk::Cast(commandBuffer)->bindVertexBuffers(firstBinding, bindingCount, pBuffers, pOffsets, pSizes, pStrides);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetCullMode(VkCommandBuffer commandBuffer, VkCullModeFlags cullMode)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, VkCullModeFlags cullMode = %d)",
+	      commandBuffer, int(cullMode));
+
+	vk::Cast(commandBuffer)->setCullMode(cullMode);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthBoundsTestEnable(VkCommandBuffer commandBuffer, VkBool32 depthBoundsTestEnable)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 depthBoundsTestEnable = %d)",
+	      commandBuffer, int(depthBoundsTestEnable));
+
+	vk::Cast(commandBuffer)->setDepthBoundsTestEnable(depthBoundsTestEnable);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthCompareOp(VkCommandBuffer commandBuffer, VkCompareOp depthCompareOp)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, VkCompareOp depthCompareOp = %d)",
+	      commandBuffer, int(depthCompareOp));
+
+	vk::Cast(commandBuffer)->setDepthCompareOp(depthCompareOp);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthTestEnable(VkCommandBuffer commandBuffer, VkBool32 depthTestEnable)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 depthTestEnable = %d)",
+	      commandBuffer, int(depthTestEnable));
+
+	vk::Cast(commandBuffer)->setDepthTestEnable(depthTestEnable);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthWriteEnable(VkCommandBuffer commandBuffer, VkBool32 depthWriteEnable)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 depthWriteEnable = %d)",
+	      commandBuffer, int(depthWriteEnable));
+
+	vk::Cast(commandBuffer)->setDepthWriteEnable(depthWriteEnable);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetFrontFace(VkCommandBuffer commandBuffer, VkFrontFace frontFace)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, VkFrontFace frontFace = %d)",
+	      commandBuffer, int(frontFace));
+
+	vk::Cast(commandBuffer)->setFrontFace(frontFace);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetPrimitiveTopology(VkCommandBuffer commandBuffer, VkPrimitiveTopology primitiveTopology)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, VkPrimitiveTopology primitiveTopology = %d)",
+	      commandBuffer, int(primitiveTopology));
+
+	vk::Cast(commandBuffer)->setPrimitiveTopology(primitiveTopology);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetScissorWithCount(VkCommandBuffer commandBuffer, uint32_t scissorCount, const VkRect2D *pScissors)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, uint32_t scissorCount = %d, const VkRect2D *pScissors = %p)",
+	      commandBuffer, scissorCount, pScissors);
+
+	vk::Cast(commandBuffer)->setScissorWithCount(scissorCount, pScissors);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetStencilOp(VkCommandBuffer commandBuffer, VkStencilFaceFlags faceMask, VkStencilOp failOp, VkStencilOp passOp, VkStencilOp depthFailOp, VkCompareOp compareOp)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, VkStencilFaceFlags faceMask = %d, VkStencilOp failOp = %d, VkStencilOp passOp = %d, VkStencilOp depthFailOp = %d, VkCompareOp compareOp = %d)",
+	      commandBuffer, int(faceMask), int(failOp), int(passOp), int(depthFailOp), int(compareOp));
+
+	vk::Cast(commandBuffer)->setStencilOp(faceMask, failOp, passOp, depthFailOp, compareOp);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetStencilTestEnable(VkCommandBuffer commandBuffer, VkBool32 stencilTestEnable)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 stencilTestEnable = %d)",
+	      commandBuffer, int(stencilTestEnable));
+
+	vk::Cast(commandBuffer)->setStencilTestEnable(stencilTestEnable);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetViewportWithCount(VkCommandBuffer commandBuffer, uint32_t viewportCount, const VkViewport *pViewports)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, uint32_t viewportCount = %d, const VkViewport *pViewports = %p)",
+	      commandBuffer, viewportCount, pViewports);
+
+	vk::Cast(commandBuffer)->setViewportWithCount(viewportCount, pViewports);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetRasterizerDiscardEnable(VkCommandBuffer commandBuffer, VkBool32 rasterizerDiscardEnable)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 rasterizerDiscardEnable = %d)",
+	      commandBuffer, rasterizerDiscardEnable);
+
+	vk::Cast(commandBuffer)->setRasterizerDiscardEnable(rasterizerDiscardEnable);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthBiasEnable(VkCommandBuffer commandBuffer, VkBool32 depthBiasEnable)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 depthBiasEnable = %d)",
+	      commandBuffer, depthBiasEnable);
+
+	vk::Cast(commandBuffer)->setDepthBiasEnable(depthBiasEnable);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetPrimitiveRestartEnable(VkCommandBuffer commandBuffer, VkBool32 primitiveRestartEnable)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 primitiveRestartEnable = %d)",
+	      commandBuffer, primitiveRestartEnable);
+
+	vk::Cast(commandBuffer)->setPrimitiveRestartEnable(primitiveRestartEnable);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance)
@@ -3011,6 +3193,22 @@ VKAPI_ATTR void VKAPI_CALL vkCmdExecuteCommands(VkCommandBuffer commandBuffer, u
 	vk::Cast(commandBuffer)->executeCommands(commandBufferCount, pCommandBuffers);
 }
 
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *pRenderingInfo)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, const VkRenderingInfo* pRenderingInfo = %p)",
+	      commandBuffer, pRenderingInfo);
+
+	vk::Cast(commandBuffer)->beginRendering(pRenderingInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdEndRendering(VkCommandBuffer commandBuffer)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p)",
+	      commandBuffer);
+
+	vk::Cast(commandBuffer)->endRendering();
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceVersion(uint32_t *pApiVersion)
 {
 	TRACE("(uint32_t* pApiVersion = %p)", pApiVersion);
@@ -3149,33 +3347,7 @@ VKAPI_ATTR void VKAPI_CALL vkGetImageMemoryRequirements2(VkDevice device, const 
 		extInfo = extInfo->pNext;
 	}
 
-	VkBaseOutStructure *extensionRequirements = reinterpret_cast<VkBaseOutStructure *>(pMemoryRequirements->pNext);
-	while(extensionRequirements)
-	{
-		switch(extensionRequirements->sType)
-		{
-		case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS:
-			{
-				auto requirements = reinterpret_cast<VkMemoryDedicatedRequirements *>(extensionRequirements);
-				vk::Cast(device)->getRequirements(requirements);
-#if SWIFTSHADER_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER
-				if(vk::Cast(pInfo->image)->getSupportedExternalMemoryHandleTypes() == VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID)
-				{
-					requirements->prefersDedicatedAllocation = VK_TRUE;
-					requirements->requiresDedicatedAllocation = VK_TRUE;
-				}
-#endif
-			}
-			break;
-		default:
-			UNSUPPORTED("pMemoryRequirements->pNext sType = %s", vk::Stringify(extensionRequirements->sType).c_str());
-			break;
-		}
-
-		extensionRequirements = extensionRequirements->pNext;
-	}
-
-	vkGetImageMemoryRequirements(device, pInfo->image, &(pMemoryRequirements->memoryRequirements));
+	vk::Cast(pInfo->image)->getMemoryRequirements(pMemoryRequirements);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkGetBufferMemoryRequirements2(VkDevice device, const VkBufferMemoryRequirementsInfo2 *pInfo, VkMemoryRequirements2 *pMemoryRequirements)
@@ -3266,6 +3438,12 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 				vk::Cast(physicalDevice)->getProperties(properties);
 			}
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_PROPERTIES:
+			{
+				auto properties = reinterpret_cast<VkPhysicalDeviceMaintenance4Properties *>(extensionProperties);
+				vk::Cast(physicalDevice)->getProperties(properties);
+			}
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PROPERTIES:
 			{
 				auto properties = reinterpret_cast<VkPhysicalDeviceMultiviewProperties *>(extensionProperties);
@@ -3289,10 +3467,6 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 				auto properties = reinterpret_cast<VkPhysicalDeviceSubgroupProperties *>(extensionProperties);
 				vk::Cast(physicalDevice)->getProperties(properties);
 			}
-			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLE_LOCATIONS_PROPERTIES_EXT:
-			// Explicitly ignored, since VK_EXT_sample_locations is not supported
-			ASSERT(!hasDeviceExtension(VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT:
 			{
@@ -3380,7 +3554,23 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 				vk::Cast(physicalDevice)->getProperties(properties);
 			}
 			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES_KHR:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES:
+			{
+				auto properties = reinterpret_cast<VkPhysicalDeviceSubgroupSizeControlProperties *>(extensionProperties);
+				vk::Cast(physicalDevice)->getProperties(properties);
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INLINE_UNIFORM_BLOCK_PROPERTIES:
+			{
+				auto properties = reinterpret_cast<VkPhysicalDeviceInlineUniformBlockProperties *>(extensionProperties);
+				vk::Cast(physicalDevice)->getProperties(properties);
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXEL_BUFFER_ALIGNMENT_PROPERTIES:
+			{
+				auto properties = reinterpret_cast<VkPhysicalDeviceTexelBufferAlignmentProperties *>(extensionProperties);
+				vk::Cast(physicalDevice)->getProperties(properties);
+			}
 			break;
 		default:
 			// "the [driver] must skip over, without processing (other than reading the sType and pNext members) any structures in the chain with sType values not defined by [supported extenions]"
@@ -3792,7 +3982,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSamplerYcbcrConversion(VkDevice device, c
 	auto extInfo = reinterpret_cast<VkBaseInStructure const *>(pCreateInfo->pNext);
 	while(extInfo)
 	{
-		UNSUPPORTED("pCreateInfo->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
+		switch(extInfo->sType)
+		{
+#ifdef __ANDROID__
+		case VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID:
+			break;
+#endif
+		default:
+			UNSUPPORTED("pCreateInfo->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
+			break;
+		}
 		extInfo = extInfo->pNext;
 	}
 
@@ -3909,124 +4108,46 @@ VKAPI_ATTR void VKAPI_CALL vkGetPrivateData(VkDevice device, VkObjectType object
 	      device, objectType, objectHandle, static_cast<void *>(privateDataSlot), pData);
 }
 
-VKAPI_ATTR void VKAPI_CALL vkCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *pRenderingInfo)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, const VkRenderingInfo* pRenderingInfo = %p)",
-	      commandBuffer, pRenderingInfo);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdEndRendering(VkCommandBuffer commandBuffer)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p)",
-	      commandBuffer);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetCullMode(VkCommandBuffer commandBuffer, VkCullModeFlags cullMode)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, VkCullModeFlags cullMode = %d)",
-	      commandBuffer, cullMode);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetFrontFace(VkCommandBuffer commandBuffer, VkFrontFace frontFace)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, VkFrontFace frontFace = %d)",
-	      commandBuffer, frontFace);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetPrimitiveTopology(VkCommandBuffer commandBuffer, VkPrimitiveTopology primitiveTopology)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, VkPrimitiveTopology primitiveTopology = %d)",
-	      commandBuffer, primitiveTopology);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetViewportWithCount(VkCommandBuffer commandBuffer, uint32_t viewportCount, const VkViewport *pViewports)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, uint32_t viewportCount = %d, const VkViewport* pViewports = %p)",
-	      commandBuffer, viewportCount, pViewports);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetScissorWithCount(VkCommandBuffer commandBuffer, uint32_t scissorCount, const VkRect2D *pScissors)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, uint32_t scissorCount = %d, const VkRect2D* pScissors = %p)",
-	      commandBuffer, scissorCount, pScissors);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers2(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount, const VkBuffer *pBuffers, const VkDeviceSize *pOffsets, const VkDeviceSize *pSizes, const VkDeviceSize *pStrides)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, uint32_t firstBinding = %d, uint32_t bindingCount = %d, const VkBuffer* pBuffers = %p, const VkDeviceSize* pOffsets = %p, const VkDeviceSize* pSizes = %p, const VkDeviceSize* pStrides = %p)",
-	      commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets, pSizes, pStrides);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthTestEnable(VkCommandBuffer commandBuffer, VkBool32 depthTestEnable)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 depthTestEnable = %d)",
-	      commandBuffer, depthTestEnable);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthWriteEnable(VkCommandBuffer commandBuffer, VkBool32 depthWriteEnable)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 depthWriteEnable = %d)",
-	      commandBuffer, depthWriteEnable);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthCompareOp(VkCommandBuffer commandBuffer, VkCompareOp depthCompareOp)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, VkCompareOp depthCompareOp = %d)",
-	      commandBuffer, depthCompareOp);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthBoundsTestEnable(VkCommandBuffer commandBuffer, VkBool32 depthBoundsTestEnable)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 depthBoundsTestEnable = %d)",
-	      commandBuffer, depthBoundsTestEnable);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetStencilTestEnable(VkCommandBuffer commandBuffer, VkBool32 stencilTestEnable)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 stencilTestEnable = %d)",
-	      commandBuffer, stencilTestEnable);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetStencilOp(VkCommandBuffer commandBuffer, VkStencilFaceFlags faceMask, VkStencilOp failOp, VkStencilOp passOp, VkStencilOp depthFailOp, VkCompareOp compareOp)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, VkStencilFaceFlags faceMask = %d, VkStencilOp failOp = %d, VkStencilOp passOp = %d, VkStencilOp depthFailOp = %d, VkCompareOp compareOp = %d)",
-	      commandBuffer, faceMask, failOp, passOp, depthFailOp, compareOp);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetRasterizerDiscardEnable(VkCommandBuffer commandBuffer, VkBool32 rasterizerDiscardEnable)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 rasterizerDiscardEnable = %d)",
-	      commandBuffer, rasterizerDiscardEnable);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthBiasEnable(VkCommandBuffer commandBuffer, VkBool32 depthBiasEnable)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 depthBiasEnable = %d)",
-	      commandBuffer, depthBiasEnable);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdSetPrimitiveRestartEnable(VkCommandBuffer commandBuffer, VkBool32 primitiveRestartEnable)
-{
-	TRACE("(VkCommandBuffer commandBuffer = %p, VkBool32 primitiveRestartEnable = %d)",
-	      commandBuffer, primitiveRestartEnable);
-}
-
 VKAPI_ATTR void VKAPI_CALL vkGetDeviceBufferMemoryRequirements(VkDevice device, const VkDeviceBufferMemoryRequirements *pInfo, VkMemoryRequirements2 *pMemoryRequirements)
 {
 	TRACE("(VkDevice device = %p, const VkDeviceBufferMemoryRequirements* pInfo = %p, VkMemoryRequirements2* pMemoryRequirements = %p)",
 	      device, pInfo, pMemoryRequirements);
+
+	pMemoryRequirements->memoryRequirements =
+	    vk::Buffer::GetMemoryRequirements(pInfo->pCreateInfo->size, pInfo->pCreateInfo->usage);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkGetDeviceImageMemoryRequirements(VkDevice device, const VkDeviceImageMemoryRequirements *pInfo, VkMemoryRequirements2 *pMemoryRequirements)
 {
 	TRACE("(VkDevice device = %p, const VkDeviceImageMemoryRequirements* pInfo = %p, VkMemoryRequirements2* pMemoryRequirements = %p)",
 	      device, pInfo, pMemoryRequirements);
+
+	auto extInfo = reinterpret_cast<VkBaseInStructure const *>(pInfo->pNext);
+	while(extInfo)
+	{
+		UNSUPPORTED("pInfo->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
+		extInfo = extInfo->pNext;
+	}
+
+	// Create a temporary image object to obtain the memory requirements.
+	// TODO(b/221299948): Reduce overhead by using a lightweight local proxy.
+	pMemoryRequirements->memoryRequirements = {};
+	const VkAllocationCallbacks *pAllocator = nullptr;
+	VkImage image = { VK_NULL_HANDLE };
+	VkResult result = vk::Image::Create(pAllocator, pInfo->pCreateInfo, &image, vk::Cast(device));
+	if(result == VK_SUCCESS)
+	{
+		vk::Cast(image)->getMemoryRequirements(pMemoryRequirements);
+	}
+	vk::destroy(image, pAllocator);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkGetDeviceImageSparseMemoryRequirements(VkDevice device, const VkDeviceImageMemoryRequirements *pInfo, uint32_t *pSparseMemoryRequirementCount, VkSparseImageMemoryRequirements2 *pSparseMemoryRequirements)
 {
 	TRACE("(VkDevice device = %p, const VkDeviceImageMemoryRequirements* pInfo = %p, uint32_t* pSparseMemoryRequirementCount = %p, VkSparseImageMemoryRequirements2* pSparseMemoryRequirements = %p)",
 	      device, pInfo, pSparseMemoryRequirementCount, pSparseMemoryRequirements);
+
+	*pSparseMemoryRequirementCount = 0;
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdSetLineStippleEXT(VkCommandBuffer commandBuffer, uint32_t lineStippleFactor, uint16_t lineStipplePattern)
