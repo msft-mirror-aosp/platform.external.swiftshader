@@ -426,6 +426,7 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_SPEC_VERSION } },
 	{ { VK_KHR_FORMAT_FEATURE_FLAGS_2_EXTENSION_NAME, VK_KHR_FORMAT_FEATURE_FLAGS_2_SPEC_VERSION } },
 	{ { VK_KHR_MAINTENANCE_4_EXTENSION_NAME, VK_KHR_MAINTENANCE_4_SPEC_VERSION } },
+	{ { VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME, VK_KHR_SHADER_INTEGER_DOT_PRODUCT_SPEC_VERSION } },
 	{ { VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, VK_KHR_SHADER_NON_SEMANTIC_INFO_SPEC_VERSION } },
 	{ { VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SYNCHRONIZATION_2_SPEC_VERSION } },
 	{ { VK_KHR_ZERO_INITIALIZE_WORKGROUP_MEMORY_EXTENSION_NAME, VK_KHR_ZERO_INITIALIZE_WORKGROUP_MEMORY_SPEC_VERSION } },
@@ -958,6 +959,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 				}
 			}
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXTURE_COMPRESSION_ASTC_HDR_FEATURES:
+			{
+				const auto *textureCompressionASTCHDRFeatures = reinterpret_cast<const VkPhysicalDeviceTextureCompressionASTCHDRFeatures *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(textureCompressionASTCHDRFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES:
 			{
 				const auto *subgroupSizeControlFeatures = reinterpret_cast<const VkPhysicalDeviceSubgroupSizeControlFeatures *>(extensionCreateInfo);
@@ -972,6 +983,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 			{
 				const auto *uniformBlockFeatures = reinterpret_cast<const VkPhysicalDeviceInlineUniformBlockFeatures *>(extensionCreateInfo);
 				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(uniformBlockFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES:
+			{
+				const auto *integerDotProductFeatures = reinterpret_cast<const VkPhysicalDeviceShaderIntegerDotProductFeatures *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(integerDotProductFeatures);
 				if(!hasFeatures)
 				{
 					return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -3569,6 +3590,12 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXEL_BUFFER_ALIGNMENT_PROPERTIES:
 			{
 				auto properties = reinterpret_cast<VkPhysicalDeviceTexelBufferAlignmentProperties *>(extensionProperties);
+				vk::Cast(physicalDevice)->getProperties(properties);
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES:
+			{
+				auto properties = reinterpret_cast<VkPhysicalDeviceShaderIntegerDotProductProperties *>(extensionProperties);
 				vk::Cast(physicalDevice)->getProperties(properties);
 			}
 			break;
