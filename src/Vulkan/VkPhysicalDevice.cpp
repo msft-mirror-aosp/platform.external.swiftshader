@@ -308,6 +308,12 @@ static void getPhysicalDeviceDynamicRenderingFeatures(T *features)
 }
 
 template<typename T>
+static void getPhysicalDeviceTextureCompressionASTCHDRFeatures(T *features)
+{
+	features->textureCompressionASTC_HDR = VK_FALSE;
+}
+
+template<typename T>
 static void getPhysicalDeviceVulkan12Features(T *features)
 {
 	features->samplerMirrorClampToEdge = VK_TRUE;
@@ -380,6 +386,11 @@ static void getPhysicalDevice4444FormatsFeaturesExt(VkPhysicalDevice4444FormatsF
 static void getPhysicalDeviceSynchronization2Features(VkPhysicalDeviceSynchronization2Features *features)
 {
 	features->synchronization2 = VK_TRUE;
+}
+
+static void getPhysicalDeviceShaderIntegerDotProductFeatures(VkPhysicalDeviceShaderIntegerDotProductFeatures *features)
+{
+	features->shaderIntegerDotProduct = VK_TRUE;
 }
 
 void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
@@ -488,6 +499,9 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT:
 			getPhysicalDeviceExtendedDynamicStateFeaturesExt(reinterpret_cast<VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *>(curExtension));
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXTURE_COMPRESSION_ASTC_HDR_FEATURES:
+			getPhysicalDeviceTextureCompressionASTCHDRFeatures(reinterpret_cast<VkPhysicalDeviceTextureCompressionASTCHDRFeatures *>(curExtension));
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES:
 			getPhysicalDeviceSubgroupSizeControlFeatures(reinterpret_cast<VkPhysicalDeviceSubgroupSizeControlFeatures *>(curExtension));
 			break;
@@ -500,6 +514,9 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES:
 			getPhysicalDeviceSynchronization2Features(reinterpret_cast<struct VkPhysicalDeviceSynchronization2Features *>(curExtension));
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES:
+			getPhysicalDeviceShaderIntegerDotProductFeatures(reinterpret_cast<struct VkPhysicalDeviceShaderIntegerDotProductFeatures *>(curExtension));
+			break;
 		// Unsupported extensions, but used by dEQP
 		// TODO(b/176893525): This may not be legal.
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONDITIONAL_RENDERING_FEATURES_EXT:
@@ -507,7 +524,6 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_EXT:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_FEATURES_EXT:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_2_FEATURES_EXT:
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES_KHR:
 			break;
 		default:
 			UNSUPPORTED("curExtension->sType: %s", vk::Stringify(curExtension->sType).c_str());
@@ -1142,6 +1158,40 @@ void PhysicalDevice::getProperties(VkPhysicalDeviceTexelBufferAlignmentPropertie
 	properties->uniformTexelBufferOffsetSingleTexelAlignment = VK_FALSE;
 }
 
+void PhysicalDevice::getProperties(VkPhysicalDeviceShaderIntegerDotProductProperties *properties) const
+{
+	properties->integerDotProduct8BitUnsignedAccelerated = VK_FALSE;
+	properties->integerDotProduct8BitSignedAccelerated = VK_FALSE;
+	properties->integerDotProduct8BitMixedSignednessAccelerated = VK_FALSE;
+	properties->integerDotProduct4x8BitPackedUnsignedAccelerated = VK_FALSE;
+	properties->integerDotProduct4x8BitPackedSignedAccelerated = VK_FALSE;
+	properties->integerDotProduct4x8BitPackedMixedSignednessAccelerated = VK_FALSE;
+	properties->integerDotProduct16BitUnsignedAccelerated = VK_FALSE;
+	properties->integerDotProduct16BitSignedAccelerated = VK_FALSE;
+	properties->integerDotProduct16BitMixedSignednessAccelerated = VK_FALSE;
+	properties->integerDotProduct32BitUnsignedAccelerated = VK_FALSE;
+	properties->integerDotProduct32BitSignedAccelerated = VK_FALSE;
+	properties->integerDotProduct32BitMixedSignednessAccelerated = VK_FALSE;
+	properties->integerDotProduct64BitUnsignedAccelerated = VK_FALSE;
+	properties->integerDotProduct64BitSignedAccelerated = VK_FALSE;
+	properties->integerDotProduct64BitMixedSignednessAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating8BitUnsignedAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating8BitSignedAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating8BitMixedSignednessAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating4x8BitPackedUnsignedAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating4x8BitPackedSignedAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating4x8BitPackedMixedSignednessAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating16BitUnsignedAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating16BitSignedAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating16BitMixedSignednessAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating32BitUnsignedAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating32BitSignedAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating32BitMixedSignednessAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating64BitUnsignedAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating64BitSignedAccelerated = VK_FALSE;
+	properties->integerDotProductAccumulatingSaturating64BitMixedSignednessAccelerated = VK_FALSE;
+}
+
 template<typename T>
 static void getSamplerFilterMinmaxProperties(T *properties)
 {
@@ -1324,11 +1374,25 @@ bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceInlineUniformBloc
 	       CheckFeature(requested, supported, descriptorBindingInlineUniformBlockUpdateAfterBind);
 }
 
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceShaderIntegerDotProductFeatures *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, shaderIntegerDotProduct);
+}
+
 bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *requested) const
 {
 	auto supported = getSupportedFeatures(requested);
 
 	return CheckFeature(requested, supported, extendedDynamicState);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceTextureCompressionASTCHDRFeatures *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, textureCompressionASTC_HDR);
 }
 
 bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceSubgroupSizeControlFeatures *requested) const
@@ -1370,8 +1434,8 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties3 *pFo
 	// Formats which can be sampled *and* filtered
 	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
 	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
-	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
-	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 	case VK_FORMAT_R5G6B5_UNORM_PACK16:
 	case VK_FORMAT_B5G6R5_UNORM_PACK16:
 	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
@@ -1504,6 +1568,7 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties3 *pFo
 	// YCbCr formats:
 	case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
 	case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
+	case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:
 		pFormatProperties->optimalTilingFeatures |=
 		    VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
 		    VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
@@ -1587,8 +1652,8 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties3 *pFo
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
 	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
-	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
-	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 	case VK_FORMAT_B5G6R5_UNORM_PACK16:
 	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
 	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:

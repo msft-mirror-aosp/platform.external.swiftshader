@@ -152,14 +152,6 @@ JITGlobals *JITGlobals::get()
 #endif
 #if LLVM_VERSION_MAJOR <= 12
 			"-warn-stack-size=524288"  // Warn when a function uses more than 512 KiB of stack memory
-#else
-		// TODO(b/191193823): TODO(ndesaulniers): Update this after
-		// go/compilers/fc018ebb608ee0c1239b405460e49f1835ab6175
-#	if LLVM_VERSION_MAJOR <= 15
-		// Resolve TODO
-#	elif LLVM_VERSION_MAJOR < 9999
-#		warning Implement stack size checks using the "warn-stack-size" function attribute.
-#	endif
 #endif
 		};
 
@@ -722,12 +714,21 @@ public:
 		// introduces RTDyldObjectLinkingLayer::registerJITEventListener().
 		// The current API does not appear to have any way to bind the
 		// rr::DebugInfo::NotifyFreeingObject event.
+#	if LLVM_VERSION_MAJOR >= 12
+		objectLayer.setNotifyLoaded([](llvm::orc::MaterializationResponsibility &R,
+		                               const llvm::object::ObjectFile &obj,
+		                               const llvm::RuntimeDyld::LoadedObjectInfo &l) {
+			static std::atomic<uint64_t> unique_key{ 0 };
+			rr::DebugInfo::NotifyObjectEmitted(unique_key++, obj, l);
+		});
+#	else
 		objectLayer.setNotifyLoaded([](llvm::orc::VModuleKey,
 		                               const llvm::object::ObjectFile &obj,
 		                               const llvm::RuntimeDyld::LoadedObjectInfo &l) {
 			static std::atomic<uint64_t> unique_key{ 0 };
 			rr::DebugInfo::NotifyObjectEmitted(unique_key++, obj, l);
 		});
+#	endif
 #endif  // ENABLE_RR_DEBUG_INFO
 
 		if(JITGlobals::get()->getTargetTriple().isOSBinFormatCOFF())
@@ -744,7 +745,7 @@ public:
 
 		for(size_t i = 0; i < count; i++)
 		{
-			auto func = funcs[i];
+			llvm::Function *func = funcs[i];
 
 			if(!func->hasName())
 			{

@@ -427,6 +427,10 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityStorageImageExtendedFormats: capabilities.StorageImageExtendedFormats = true; break;
 				case spv::CapabilityImageQuery: capabilities.ImageQuery = true; break;
 				case spv::CapabilityDerivativeControl: capabilities.DerivativeControl = true; break;
+				case spv::CapabilityDotProductInputAll: capabilities.DotProductInputAll = true; break;
+				case spv::CapabilityDotProductInput4x8Bit: capabilities.DotProductInput4x8Bit = true; break;
+				case spv::CapabilityDotProductInput4x8BitPacked: capabilities.DotProductInput4x8BitPacked = true; break;
+				case spv::CapabilityDotProduct: capabilities.DotProduct = true; break;
 				case spv::CapabilityInterpolationFunction: capabilities.InterpolationFunction = true; break;
 				case spv::CapabilityStorageImageWriteWithoutFormat: capabilities.StorageImageWriteWithoutFormat = true; break;
 				case spv::CapabilityGroupNonUniform: capabilities.GroupNonUniform = true; break;
@@ -651,6 +655,12 @@ SpirvShader::SpirvShader(
 		case spv::OpIAddCarry:
 		case spv::OpISubBorrow:
 		case spv::OpDot:
+		case spv::OpSDot:
+		case spv::OpUDot:
+		case spv::OpSUDot:
+		case spv::OpSDotAccSat:
+		case spv::OpUDotAccSat:
+		case spv::OpSUDotAccSat:
 		case spv::OpConvertFToU:
 		case spv::OpConvertFToS:
 		case spv::OpConvertSToF:
@@ -787,6 +797,7 @@ SpirvShader::SpirvShader(
 				if(!strcmp(ext, "SPV_KHR_multiview")) break;
 				if(!strcmp(ext, "SPV_EXT_shader_stencil_export")) break;
 				if(!strcmp(ext, "SPV_KHR_float_controls")) break;
+				if(!strcmp(ext, "SPV_KHR_integer_dot_product")) break;
 				if(!strcmp(ext, "SPV_KHR_non_semantic_info")) break;
 				if(!strcmp(ext, "SPV_KHR_vulkan_memory_model")) break;
 				if(!strcmp(ext, "SPV_GOOGLE_decorate_string")) break;
@@ -1177,8 +1188,7 @@ int SpirvShader::VisitInterfaceInner(Type::ID id, Decorations d, const Interface
 void SpirvShader::VisitInterface(Object::ID id, const InterfaceVisitor &f) const
 {
 	// Walk a variable definition and call f for each component in it.
-	Decorations d{};
-	ApplyDecorationsForId(&d, id);
+	Decorations d = GetDecorationsForId(id);
 
 	auto def = getObject(id).definition;
 	ASSERT(def.opcode() == spv::OpVariable);
@@ -1232,8 +1242,7 @@ SIMD::Pointer SpirvShader::WalkExplicitLayoutAccessChain(Object::ID baseId, uint
 
 	auto &baseObject = getObject(baseId);
 	Type::ID typeId = getType(baseObject).element;
-	Decorations d = {};
-	ApplyDecorationsForId(&d, baseObject.typeId());
+	Decorations d = GetDecorationsForId(baseObject.typeId());
 
 	Int arrayIndex = 0;
 	if(baseObject.kind == Object::Kind::DescriptorSet)
@@ -1595,11 +1604,21 @@ void SpirvShader::DescriptorDecorations::Apply(const sw::SpirvShader::Descriptor
 	}
 }
 
+SpirvShader::Decorations SpirvShader::GetDecorationsForId(TypeOrObjectID id) const
+{
+	Decorations d;
+	ApplyDecorationsForId(&d, id);
+
+	return d;
+}
+
 void SpirvShader::ApplyDecorationsForId(Decorations *d, TypeOrObjectID id) const
 {
 	auto it = decorations.find(id);
 	if(it != decorations.end())
+	{
 		d->Apply(it->second);
+	}
 }
 
 void SpirvShader::ApplyDecorationsForIdMember(Decorations *d, Type::ID id, uint32_t member) const
@@ -2020,6 +2039,12 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 		return EmitBinaryOp(insn, state);
 
 	case spv::OpDot:
+	case spv::OpSDot:
+	case spv::OpUDot:
+	case spv::OpSUDot:
+	case spv::OpSDotAccSat:
+	case spv::OpUDotAccSat:
+	case spv::OpSUDotAccSat:
 		return EmitDot(insn, state);
 
 	case spv::OpSelect:
@@ -2533,8 +2558,7 @@ SpirvShader::EmitResult SpirvShader::EmitArrayLength(InsnIterator insn, EmitStat
 	auto arrayBase = structBase + structDecorations.Offset;
 	auto arraySizeInBytes = SIMD::Int(arrayBase.limit()) - arrayBase.offsets();
 
-	Decorations arrayDecorations = {};
-	ApplyDecorationsForId(&arrayDecorations, arrayId);
+	Decorations arrayDecorations = GetDecorationsForId(arrayId);
 	ASSERT(arrayDecorations.HasArrayStride);
 	auto arrayLength = arraySizeInBytes / SIMD::Int(arrayDecorations.ArrayStride);
 

@@ -674,6 +674,10 @@ public:
 		bool StorageImageExtendedFormats : 1;
 		bool ImageQuery : 1;
 		bool DerivativeControl : 1;
+		bool DotProductInputAll : 1;
+		bool DotProductInput4x8Bit : 1;
+		bool DotProductInput4x8BitPacked : 1;
+		bool DotProduct : 1;
 		bool InterpolationFunction : 1;
 		bool StorageImageWriteWithoutFormat : 1;
 		bool GroupNonUniform : 1;
@@ -925,6 +929,7 @@ private:
 	void ProcessExecutionMode(InsnIterator it);
 
 	uint32_t ComputeTypeSize(InsnIterator insn);
+	Decorations GetDecorationsForId(TypeOrObjectID id) const;
 	void ApplyDecorationsForId(Decorations *d, TypeOrObjectID id) const;
 	void ApplyDecorationsForIdMember(Decorations *d, Type::ID id, uint32_t member) const;
 	void ApplyDecorationsForAccessChain(Decorations *d, DescriptorDecorations *dd, Object::ID baseId, uint32_t numIndexes, uint32_t const *indexIds) const;
@@ -1386,7 +1391,12 @@ private:
 	static bool HasTypeAndResult(spv::Op op);
 
 	// Helper as we often need to take dot products as part of doing other things.
-	SIMD::Float Dot(unsigned numComponents, Operand const &x, Operand const &y) const;
+	static SIMD::Float FDot(unsigned numComponents, Operand const &x, Operand const &y);
+	static SIMD::Int SDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum);
+	static SIMD::UInt UDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum);
+	static SIMD::Int SUDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum);
+	static SIMD::Int AddSat(RValue<SIMD::Int> a, RValue<SIMD::Int> b);
+	static SIMD::UInt AddSat(RValue<SIMD::UInt> a, RValue<SIMD::UInt> b);
 
 	// Splits x into a floating-point significand in the range [0.5, 1.0)
 	// and an integral exponent of two, such that:
@@ -1509,7 +1519,7 @@ public:
 	// Give careful consideration to the runtime performance loss before adding
 	// more state here.
 	std::array<SIMD::Int, 2> windowSpacePosition;
-	Int viewID;  // slice offset into input attachments for multiview, even if the shader doesn't use ViewIndex
+	Int layer;  // slice offset into input attachments for multiview, even if the shader doesn't use ViewIndex
 	Int instanceID;
 	SIMD::Int vertexIndex;
 	std::array<SIMD::Float, 4> fragCoord;
