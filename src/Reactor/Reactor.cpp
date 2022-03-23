@@ -29,7 +29,7 @@
 #include <cmath>
 
 // Define REACTOR_MATERIALIZE_LVALUES_ON_DEFINITION to non-zero to ensure all
-// variables have a stack location obtained throuch alloca().
+// variables have a stack location obtained through alloca().
 #ifndef REACTOR_MATERIALIZE_LVALUES_ON_DEFINITION
 #	define REACTOR_MATERIALIZE_LVALUES_ON_DEFINITION 0
 #endif
@@ -38,10 +38,11 @@ namespace rr {
 
 Config Config::Edit::apply(const Config &cfg) const
 {
+	auto newDebugCfg = debugCfgChanged ? debugCfg : cfg.debugCfg;
 	auto level = optLevelChanged ? optLevel : cfg.optimization.getLevel();
 	auto passes = cfg.optimization.getPasses();
 	apply(optPassEdits, passes);
-	return Config{ Optimization{ level, passes } };
+	return Config{ Optimization{ level, passes }, newDebugCfg };
 }
 
 template<typename T>
@@ -1060,6 +1061,13 @@ UShort::UShort(RValue<Int> cast)
 	storeValue(integer);
 }
 
+UShort::UShort(RValue<Byte> cast)
+{
+	Value *integer = Nucleus::createZExt(cast.value(), UShort::type());
+
+	storeValue(integer);
+}
+
 UShort::UShort(unsigned short x)
 {
 	storeValue(Nucleus::createConstantShort(x));
@@ -1328,6 +1336,11 @@ RValue<Byte4> Byte4::operator=(RValue<Byte4> rhs)
 RValue<Byte4> Byte4::operator=(const Byte4 &rhs)
 {
 	return store(rhs.load());
+}
+
+RValue<Byte4> Insert(RValue<Byte4> val, RValue<Byte> element, int i)
+{
+	return RValue<Byte4>(Nucleus::createInsertElement(val.value(), element.value(), i));
 }
 
 Byte8::Byte8(uint8_t x0, uint8_t x1, uint8_t x2, uint8_t x3, uint8_t x4, uint8_t x5, uint8_t x6, uint8_t x7)
@@ -1776,6 +1789,11 @@ Short4::Short4(RValue<Int> cast)
 	storeValue(swizzle);
 }
 
+Short4::Short4(RValue<UInt4> cast)
+    : Short4(As<Int4>(cast))
+{
+}
+
 //	Short4::Short4(RValue<Float> cast)
 //	{
 //	}
@@ -2005,6 +2023,11 @@ RValue<Short> Extract(RValue<Short4> val, int i)
 	return RValue<Short>(Nucleus::createExtractElement(val.value(), Short::type(), i));
 }
 
+UShort4::UShort4(RValue<UInt4> cast)
+    : UShort4(As<Int4>(cast))
+{
+}
+
 UShort4::UShort4(RValue<Int4> cast)
 {
 	*this = Short4(cast);
@@ -2125,6 +2148,11 @@ RValue<UShort4> operator>>=(UShort4 &lhs, unsigned char rhs)
 RValue<UShort4> operator~(RValue<UShort4> val)
 {
 	return RValue<UShort4>(Nucleus::createNot(val.value()));
+}
+
+RValue<UShort4> Insert(RValue<UShort4> val, RValue<UShort> element, int i)
+{
+	return RValue<UShort4>(Nucleus::createInsertElement(val.value(), element.value(), i));
 }
 
 Short8::Short8(short c)
@@ -3345,6 +3373,11 @@ Int4::Int4(const Reference<Int> &rhs)
     : XYZW(this)
 {
 	*this = RValue<Int>(rhs.loadValue());
+}
+
+RValue<Int4> Int4::operator=(int x)
+{
+	return *this = Int4(x, x, x, x);
 }
 
 RValue<Int4> Int4::operator=(RValue<Int4> rhs)
@@ -4651,10 +4684,10 @@ RValue<Float4> RcpApprox(RValue<Float4> x, bool exactAtPow2 = false);
 RValue<Float> RcpApprox(RValue<Float> x, bool exactAtPow2 = false);
 
 template<typename T>
-static RValue<T> DoRcp(RValue<T> x, Precision p, bool exactAtPow2)
+static RValue<T> DoRcp(RValue<T> x, bool relaxedPrecision, bool exactAtPow2)
 {
 #if defined(__i386__) || defined(__x86_64__)  // On x86, 1/x is fast enough, except for lower precision
-	bool approx = HasRcpApprox() && (p != Precision::Full);
+	bool approx = HasRcpApprox() && relaxedPrecision;
 #else
 	bool approx = HasRcpApprox();
 #endif
@@ -4665,7 +4698,7 @@ static RValue<T> DoRcp(RValue<T> x, Precision p, bool exactAtPow2)
 	{
 		rcp = RcpApprox(x, exactAtPow2);
 
-		if(p == Precision::Full)
+		if(!relaxedPrecision)
 		{
 			// Perform one more iteration of Newton-Rhapson division to increase precision
 			rcp = (rcp + rcp) - (x * rcp * rcp);
@@ -4679,16 +4712,16 @@ static RValue<T> DoRcp(RValue<T> x, Precision p, bool exactAtPow2)
 	return rcp;
 }
 
-RValue<Float4> Rcp(RValue<Float4> x, Precision p, bool exactAtPow2)
+RValue<Float4> Rcp(RValue<Float4> x, bool relaxedPrecision, bool exactAtPow2)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return DoRcp(x, p, exactAtPow2);
+	return DoRcp(x, relaxedPrecision, exactAtPow2);
 }
 
-RValue<Float> Rcp(RValue<Float> x, Precision p, bool exactAtPow2)
+RValue<Float> Rcp(RValue<Float> x, bool relaxedPrecision, bool exactAtPow2)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return DoRcp(x, p, exactAtPow2);
+	return DoRcp(x, relaxedPrecision, exactAtPow2);
 }
 
 // Functions implemented by backends
@@ -4718,10 +4751,10 @@ RValue<Int> CmpNEQ(RValue<Int> x, RValue<Int> y)
 }
 
 template<typename T>
-static RValue<T> DoRcpSqrt(RValue<T> x, Precision p)
+static RValue<T> DoRcpSqrt(RValue<T> x, bool relaxedPrecision)
 {
 #if defined(__i386__) || defined(__x86_64__)  // On x86, 1/x is fast enough, except for lower precision
-	bool approx = HasRcpApprox() && (p != Precision::Full);
+	bool approx = HasRcpApprox() && relaxedPrecision;
 #else
 	bool approx = HasRcpApprox();
 #endif
@@ -4732,7 +4765,7 @@ static RValue<T> DoRcpSqrt(RValue<T> x, Precision p)
 
 		T rsq = RcpSqrtApprox(x);
 
-		if(p == Precision::Full)
+		if(!relaxedPrecision)
 		{
 			rsq = rsq * (T(3.0f) - rsq * rsq * x) * T(0.5f);
 			rsq = As<T>(CmpNEQ(As<IntType>(x), IntType(0x7F800000)) & As<IntType>(rsq));
@@ -4746,14 +4779,14 @@ static RValue<T> DoRcpSqrt(RValue<T> x, Precision p)
 	}
 }
 
-RValue<Float4> RcpSqrt(RValue<Float4> x, Precision p)
+RValue<Float4> RcpSqrt(RValue<Float4> x, bool relaxedPrecision)
 {
-	return DoRcpSqrt(x, p);
+	return DoRcpSqrt(x, relaxedPrecision);
 }
 
-RValue<Float> RcpSqrt(RValue<Float> x, Precision p)
+RValue<Float> RcpSqrt(RValue<Float> x, bool relaxedPrecision)
 {
-	return DoRcpSqrt(x, p);
+	return DoRcpSqrt(x, relaxedPrecision);
 }
 
 }  // namespace rr

@@ -19,6 +19,7 @@
 #include "ShaderCore.hpp"
 #include "SpirvBinary.hpp"
 #include "SpirvID.hpp"
+#include "SpirvProfiler.hpp"
 #include "Device/Config.hpp"
 #include "Device/Sampler.hpp"
 #include "System/Debug.hpp"
@@ -169,9 +170,9 @@ public:
 	class InsnIterator
 	{
 	public:
-		InsnIterator(InsnIterator const &other) = default;
-
 		InsnIterator() = default;
+		InsnIterator(InsnIterator const &other) = default;
+		InsnIterator &operator=(const InsnIterator &other) = default;
 
 		explicit InsnIterator(SpirvBinary::const_iterator iter)
 		    : iter{ iter }
@@ -221,7 +222,7 @@ public:
 				// encoding scheme. The UTF-8 octets (8-bit bytes) are packed
 				// four per word, following the little-endian convention (i.e.,
 				// the first octet is in the lowest-order 8 bits of the word).
-				// The final word contains the string’s nul-termination
+				// The final word contains the string's nul-termination
 				// character (0), and all contents past the end of the string in
 				// the final word are padded with 0.
 				if(u8[3] == 0)
@@ -389,6 +390,7 @@ public:
 
 		Block() = default;
 		Block(const Block &other) = default;
+		Block &operator=(const Block &other) = default;
 		explicit Block(InsnIterator begin, InsnIterator end);
 
 		/* range-based-for interface */
@@ -470,7 +472,8 @@ public:
 		{
 			Unknown,
 			GLSLstd450,
-			OpenCLDebugInfo100
+			OpenCLDebugInfo100,
+			NonSemanticInfo,
 		};
 
 		Name name;
@@ -614,7 +617,8 @@ public:
 	            const vk::RenderPass *renderPass,
 	            uint32_t subpassIndex,
 	            bool robustBufferAccess,
-	            const std::shared_ptr<vk::dbg::Context> &dbgctx);
+	            const std::shared_ptr<vk::dbg::Context> &dbgctx,
+	            std::shared_ptr<SpirvProfiler> profiler);
 
 	~SpirvShader();
 
@@ -627,9 +631,10 @@ public:
 		bool DepthUnchanged : 1;
 
 		// Compute workgroup dimensions
-		int WorkgroupSizeX = 1;
-		int WorkgroupSizeY = 1;
-		int WorkgroupSizeZ = 1;
+		Object::ID WorkgroupSizeX = 1;
+		Object::ID WorkgroupSizeY = 1;
+		Object::ID WorkgroupSizeZ = 1;
+		bool useWorkgroupSizeId = false;
 	};
 
 	const ExecutionModes &getExecutionModes() const
@@ -669,6 +674,10 @@ public:
 		bool StorageImageExtendedFormats : 1;
 		bool ImageQuery : 1;
 		bool DerivativeControl : 1;
+		bool DotProductInputAll : 1;
+		bool DotProductInput4x8Bit : 1;
+		bool DotProductInput4x8BitPacked : 1;
+		bool DotProduct : 1;
 		bool InterpolationFunction : 1;
 		bool StorageImageWriteWithoutFormat : 1;
 		bool GroupNonUniform : 1;
@@ -875,6 +884,10 @@ public:
 	void emitEpilog(SpirvRoutine *routine) const;
 	void clearPhis(SpirvRoutine *routine) const;
 
+	uint32_t getWorkgroupSizeX() const;
+	uint32_t getWorkgroupSizeY() const;
+	uint32_t getWorkgroupSizeZ() const;
+
 	bool containsImageWrite() const { return imageWriteEmitted; }
 
 	using BuiltInHash = std::hash<std::underlying_type<spv::BuiltIn>::type>;
@@ -902,6 +915,13 @@ private:
 	HandleMap<Function> functions;
 	std::unordered_map<StringID, String> strings;
 
+	std::shared_ptr<SpirvProfiler> profiler;
+
+	bool IsProfilingEnabled() const
+	{
+		return profiler != nullptr;
+	}
+
 	// DeclareType creates a Type for the given OpTypeX instruction, storing
 	// it into the types map. It is called from the analysis pass (constructor).
 	void DeclareType(InsnIterator insn);
@@ -909,6 +929,7 @@ private:
 	void ProcessExecutionMode(InsnIterator it);
 
 	uint32_t ComputeTypeSize(InsnIterator insn);
+	Decorations GetDecorationsForId(TypeOrObjectID id) const;
 	void ApplyDecorationsForId(Decorations *d, TypeOrObjectID id) const;
 	void ApplyDecorationsForIdMember(Decorations *d, Type::ID id, uint32_t member) const;
 	void ApplyDecorationsForAccessChain(Decorations *d, DescriptorDecorations *dd, Object::ID baseId, uint32_t numIndexes, uint32_t const *indexIds) const;
@@ -1008,19 +1029,14 @@ private:
 		          RValue<SIMD::Int> activeLaneMask,
 		          RValue<SIMD::Int> storesAndAtomicsMask,
 		          const vk::DescriptorSet::Bindings &descriptorSets,
-		          bool robustBufferAccess,
-		          unsigned int multiSampleCount,
-		          spv::ExecutionModel executionModel)
+		          unsigned int multiSampleCount)
 		    : routine(routine)
 		    , function(function)
 		    , activeLaneMaskValue(activeLaneMask.value())
 		    , storesAndAtomicsMaskValue(storesAndAtomicsMask.value())
 		    , descriptorSets(descriptorSets)
-		    , robustBufferAccess(robustBufferAccess)
 		    , multiSampleCount(multiSampleCount)
-		    , executionModel(executionModel)
 		{
-			ASSERT(executionModel != spv::ExecutionModelMax);  // Must parse OpEntryPoint before emitting.
 		}
 
 		// Returns the mask describing the active lanes as updated by dynamic
@@ -1077,8 +1093,6 @@ private:
 
 		const vk::DescriptorSet::Bindings &descriptorSets;
 
-		OutOfBoundsBehavior getOutOfBoundsBehavior(spv::StorageClass storageClass) const;
-
 		unsigned int getMultiSampleCount() const { return multiSampleCount; }
 
 		Intermediate &createIntermediate(Object::ID id, uint32_t componentCount)
@@ -1114,9 +1128,7 @@ private:
 		std::unordered_map<Object::ID, Intermediate> intermediates;
 		std::unordered_map<Object::ID, SIMD::Pointer> pointers;
 
-		const bool robustBufferAccess;  // Emit robustBufferAccess safe code.
 		const unsigned int multiSampleCount;
-		const spv::ExecutionModel executionModel;
 	};
 
 	// EmitResult is an enumerator of result values from the Emit functions.
@@ -1237,6 +1249,8 @@ private:
 	//  - InterfaceVariable
 	// Calling GetPointerToData with objects of any other kind will assert.
 	SIMD::Pointer GetPointerToData(Object::ID id, Int arrayIndex, EmitState const *state) const;
+
+	OutOfBoundsBehavior getOutOfBoundsBehavior(Object::ID pointerId, EmitState const *state) const;
 
 	SIMD::Pointer WalkExplicitLayoutAccessChain(Object::ID id, uint32_t numIndexes, uint32_t const *indexIds, EmitState const *state) const;
 	SIMD::Pointer WalkAccessChain(Object::ID id, uint32_t numIndexes, uint32_t const *indexIds, EmitState const *state) const;
@@ -1377,7 +1391,12 @@ private:
 	static bool HasTypeAndResult(spv::Op op);
 
 	// Helper as we often need to take dot products as part of doing other things.
-	SIMD::Float Dot(unsigned numComponents, Operand const &x, Operand const &y) const;
+	static SIMD::Float FDot(unsigned numComponents, Operand const &x, Operand const &y);
+	static SIMD::Int SDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum);
+	static SIMD::UInt UDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum);
+	static SIMD::Int SUDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum);
+	static SIMD::Int AddSat(RValue<SIMD::Int> a, RValue<SIMD::Int> b);
+	static SIMD::UInt AddSat(RValue<SIMD::UInt> a, RValue<SIMD::UInt> b);
 
 	// Splits x into a floating-point significand in the range [0.5, 1.0)
 	// and an integral exponent of two, such that:
@@ -1482,8 +1501,8 @@ public:
 
 	std::unordered_map<SpirvShader::Object::ID, Variable> variables;
 	std::unordered_map<uint32_t, SamplerCache> samplerCache;  // Indexed by the instruction position, in words.
-	Variable inputs = Variable{ MAX_INTERFACE_COMPONENTS };
-	Variable outputs = Variable{ MAX_INTERFACE_COMPONENTS };
+	SIMD::Float inputs[MAX_INTERFACE_COMPONENTS];
+	SIMD::Float outputs[MAX_INTERFACE_COMPONENTS];
 	InterpolationData interpolationData;
 
 	Pointer<Byte> device;
@@ -1500,7 +1519,7 @@ public:
 	// Give careful consideration to the runtime performance loss before adding
 	// more state here.
 	std::array<SIMD::Int, 2> windowSpacePosition;
-	Int viewID;  // slice offset into input attachments for multiview, even if the shader doesn't use ViewIndex
+	Int layer;  // slice offset into input attachments for multiview, even if the shader doesn't use ViewIndex
 	Int instanceID;
 	SIMD::Int vertexIndex;
 	std::array<SIMD::Float, 4> fragCoord;
@@ -1553,12 +1572,13 @@ public:
 	}
 
 private:
-	// The phis are only accessible to SpirvShader as they are only used and
-	// exist between calls to SpirvShader::emitProlog() and
-	// SpirvShader::emitEpilog().
+	// The phis and the profile data are only accessible to SpirvShader
+	// as they are only used and exist between calls to
+	// SpirvShader::emitProlog() and SpirvShader::emitEpilog().
 	friend class SpirvShader;
 
 	std::unordered_map<SpirvShader::Object::ID, Variable> phis;
+	std::unique_ptr<SpirvProfileData> profData;
 };
 
 }  // namespace sw

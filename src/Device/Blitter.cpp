@@ -467,13 +467,13 @@ Float4 Blitter::readFloat4(Pointer<Byte> element, const State &state)
 		c.z = Float(Int((*Pointer<UShort>(element) & UShort(0x00F0)) >> UShort(4)));
 		c.w = Float(Int(*Pointer<UShort>(element) & UShort(0x000F)));
 		break;
-	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 		c.w = Float(Int((*Pointer<UShort>(element) & UShort(0xF000)) >> UShort(12)));
 		c.z = Float(Int((*Pointer<UShort>(element) & UShort(0x0F00)) >> UShort(8)));
 		c.y = Float(Int((*Pointer<UShort>(element) & UShort(0x00F0)) >> UShort(4)));
 		c.x = Float(Int(*Pointer<UShort>(element) & UShort(0x000F)));
 		break;
-	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
 		c.w = Float(Int((*Pointer<UShort>(element) & UShort(0xF000)) >> UShort(12)));
 		c.x = Float(Int((*Pointer<UShort>(element) & UShort(0x0F00)) >> UShort(8)));
 		c.y = Float(Int((*Pointer<UShort>(element) & UShort(0x00F0)) >> UShort(4)));
@@ -602,7 +602,7 @@ void Blitter::write(Float4 &c, Pointer<Byte> element, const State &state)
 			                            (UShort(PackFields(RoundInt(c) & Int4(0xF), { 4, 8, 12, 0 })) & UShort(mask));
 		}
 		break;
-	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
 		if(writeRGBA)
 		{
 			*Pointer<UShort>(element) = UShort(PackFields(RoundInt(c) & Int4(0xF), { 8, 4, 0, 12 }));
@@ -618,7 +618,7 @@ void Blitter::write(Float4 &c, Pointer<Byte> element, const State &state)
 			                            (UShort(PackFields(RoundInt(c) & Int4(0xF), { 8, 4, 0, 12 })) & UShort(mask));
 		}
 		break;
-	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 		if(writeRGBA)
 		{
 			*Pointer<UShort>(element) = UShort(PackFields(RoundInt(c) & Int4(0xF), { 0, 4, 8, 12 }));
@@ -1486,8 +1486,8 @@ Int Blitter::ComputeOffset(Int &x, Int &y, Int &z, Int &sliceB, Int &pitchB, int
 
 Float4 Blitter::LinearToSRGB(const Float4 &c)
 {
-	Float4 lc = Min(c, Float4(0.0031308f)) * Float4(12.92f);
-	Float4 ec = Float4(1.055f) * power(c, Float4(1.0f / 2.4f)) - Float4(0.055f);
+	Float4 lc = Min(c, 0.0031308f) * 12.92f;
+	Float4 ec = Float4(1.055f) * Pow<Mediump>(c, (1.0f / 2.4f)) - 0.055f;  // TODO(b/149574741): Use a custom approximation.
 
 	Float4 s = c;
 	s.xyz = Max(lc, ec);
@@ -1497,10 +1497,10 @@ Float4 Blitter::LinearToSRGB(const Float4 &c)
 
 Float4 Blitter::sRGBtoLinear(const Float4 &c)
 {
-	Float4 lc = c * Float4(1.0f / 12.92f);
-	Float4 ec = power((c + Float4(0.055f)) * Float4(1.0f / 1.055f), Float4(2.4f));
+	Float4 lc = c * (1.0f / 12.92f);
+	Float4 ec = Pow<Mediump>((c + 0.055f) * (1.0f / 1.055f), 2.4f);  // TODO(b/149574741): Use a custom approximation.
 
-	Int4 linear = CmpLT(c, Float4(0.04045f));
+	Int4 linear = CmpLT(c, 0.04045f);
 
 	Float4 s = c;
 	s.xyz = As<Float4>((linear & As<Int4>(lc)) | (~linear & As<Int4>(ec)));  // TODO: IfThenElse()
@@ -1964,9 +1964,9 @@ void Blitter::blit(const vk::Image *src, vk::Image *dst, VkImageBlit2KHR region,
 	dst->contentsChanged(dstSubresRange);
 }
 
-static void resolveDepth(const vk::ImageView *src, vk::ImageView *dst, const VkSubpassDescriptionDepthStencilResolve &dsrDesc)
+static void resolveDepth(const vk::ImageView *src, vk::ImageView *dst, const VkResolveModeFlagBits depthResolveMode)
 {
-	if(dsrDesc.depthResolveMode == VK_RESOLVE_MODE_NONE)
+	if(depthResolveMode == VK_RESOLVE_MODE_NONE)
 	{
 		return;
 	}
@@ -1984,7 +1984,7 @@ static void resolveDepth(const vk::ImageView *src, vk::ImageView *dst, const VkS
 
 	size_t formatSize = format.bytes();
 	// TODO(b/167558951) support other resolve modes.
-	ASSERT(dsrDesc.depthResolveMode == VK_RESOLVE_MODE_SAMPLE_ZERO_BIT);
+	ASSERT(depthResolveMode == VK_RESOLVE_MODE_SAMPLE_ZERO_BIT);
 	for(int y = 0; y < height; y++)
 	{
 		memcpy(dest, source, formatSize * width);
@@ -1996,9 +1996,9 @@ static void resolveDepth(const vk::ImageView *src, vk::ImageView *dst, const VkS
 	dst->contentsChanged(vk::Image::DIRECT_MEMORY_ACCESS);
 }
 
-static void resolveStencil(const vk::ImageView *src, vk::ImageView *dst, const VkSubpassDescriptionDepthStencilResolve &dsrDesc)
+static void resolveStencil(const vk::ImageView *src, vk::ImageView *dst, const VkResolveModeFlagBits stencilResolveMode)
 {
-	if(dsrDesc.stencilResolveMode == VK_RESOLVE_MODE_NONE)
+	if(stencilResolveMode == VK_RESOLVE_MODE_NONE)
 	{
 		return;
 	}
@@ -2014,7 +2014,7 @@ static void resolveStencil(const vk::ImageView *src, vk::ImageView *dst, const V
 	uint8_t *dest = reinterpret_cast<uint8_t *>(dst->getOffsetPointer({ 0, 0, 0 }, VK_IMAGE_ASPECT_STENCIL_BIT, 0, 0));
 
 	// TODO(b/167558951) support other resolve modes.
-	ASSERT(dsrDesc.stencilResolveMode == VK_RESOLVE_MODE_SAMPLE_ZERO_BIT);
+	ASSERT(stencilResolveMode == VK_RESOLVE_MODE_SAMPLE_ZERO_BIT);
 	for(int y = 0; y < height; y++)
 	{
 		// Stencil is always 8 bits, so the width of the resource we're resolving is
@@ -2028,7 +2028,7 @@ static void resolveStencil(const vk::ImageView *src, vk::ImageView *dst, const V
 	dst->contentsChanged(vk::Image::DIRECT_MEMORY_ACCESS);
 }
 
-void Blitter::resolveDepthStencil(const vk::ImageView *src, vk::ImageView *dst, const VkSubpassDescriptionDepthStencilResolve &dsrDesc)
+void Blitter::resolveDepthStencil(const vk::ImageView *src, vk::ImageView *dst, VkResolveModeFlagBits depthResolveMode, VkResolveModeFlagBits stencilResolveMode)
 {
 	VkImageSubresourceRange srcRange = src->getSubresourceRange();
 	VkImageSubresourceRange dstRange = src->getSubresourceRange();
@@ -2038,11 +2038,11 @@ void Blitter::resolveDepthStencil(const vk::ImageView *src, vk::ImageView *dst, 
 
 	if(srcRange.aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT)
 	{
-		resolveDepth(src, dst, dsrDesc);
+		resolveDepth(src, dst, depthResolveMode);
 	}
 	if(srcRange.aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT)
 	{
-		resolveStencil(src, dst, dsrDesc);
+		resolveStencil(src, dst, stencilResolveMode);
 	}
 }
 

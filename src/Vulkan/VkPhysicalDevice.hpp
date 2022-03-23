@@ -44,10 +44,18 @@ public:
 	bool hasExtendedFeatures(const VkPhysicalDeviceVulkan12Features *features) const;
 	bool hasExtendedFeatures(const VkPhysicalDeviceDepthClipEnableFeaturesEXT *features) const;
 	bool hasExtendedFeatures(const VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDevicePrivateDataFeatures *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceTextureCompressionASTCHDRFeatures *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceSubgroupSizeControlFeatures *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceInlineUniformBlockFeatures *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceShaderIntegerDotProductFeatures *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures *requested) const;
 
 	const VkPhysicalDeviceProperties &getProperties() const;
 	void getProperties(VkPhysicalDeviceIDProperties *properties) const;
 	void getProperties(VkPhysicalDeviceMaintenance3Properties *properties) const;
+	void getProperties(VkPhysicalDeviceMaintenance4Properties *properties) const;
 	void getProperties(VkPhysicalDeviceMultiviewProperties *properties) const;
 	void getProperties(VkPhysicalDevicePointClippingProperties *properties) const;
 	void getProperties(VkPhysicalDeviceProtectedMemoryProperties *properties) const;
@@ -74,10 +82,14 @@ public:
 	void getProperties(VkPhysicalDeviceDepthStencilResolveProperties *properties) const;
 	void getProperties(VkPhysicalDeviceCustomBorderColorPropertiesEXT *properties) const;
 	void getProperties(VkPhysicalDeviceBlendOperationAdvancedPropertiesEXT *properties) const;
+	void getProperties(VkPhysicalDeviceSubgroupSizeControlProperties *properties) const;
+	void getProperties(VkPhysicalDeviceInlineUniformBlockProperties *properties) const;
+	void getProperties(VkPhysicalDeviceTexelBufferAlignmentProperties *properties) const;
+	void getProperties(VkPhysicalDeviceShaderIntegerDotProductProperties *properties) const;
 	void getProperties(VkPhysicalDeviceVulkan11Properties *properties) const;
 
 	static void GetFormatProperties(Format format, VkFormatProperties *pFormatProperties);
-	static void GetFormatProperties(Format format, VkFormatProperties3KHR *pFormatProperties);
+	static void GetFormatProperties(Format format, VkFormatProperties3 *pFormatProperties);
 	void getImageFormatProperties(Format format, VkImageType type, VkImageTiling tiling,
 	                              VkImageUsageFlags usage, VkImageCreateFlags flags,
 	                              VkImageFormatProperties *pImageFormatProperties) const;

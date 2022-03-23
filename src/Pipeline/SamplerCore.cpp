@@ -480,8 +480,8 @@ Vector4s SamplerCore::sampleQuad2D(Pointer<Byte> &texture, Float4 &u, Float4 &v,
 		if(!gather)  // Blend
 		{
 			// Fractions
-			UShort4 f0u = As<UShort4>(uuuu0) * UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, width)));
-			UShort4 f0v = As<UShort4>(vvvv0) * UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, height)));
+			UShort4 f0u = As<UShort4>(uuuu0) * UShort4(*Pointer<UInt4>(mipmap + OFFSET(Mipmap, width)));
+			UShort4 f0v = As<UShort4>(vvvv0) * UShort4(*Pointer<UInt4>(mipmap + OFFSET(Mipmap, height)));
 
 			UShort4 f1u = ~f0u;
 			UShort4 f1v = ~f0v;
@@ -687,9 +687,9 @@ Vector4s SamplerCore::sample3D(Pointer<Byte> &texture, Float4 &u_, Float4 &v_, F
 		}
 
 		// Fractions
-		UShort4 f0u = As<UShort4>(u[0][0][0]) * UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, width)));
-		UShort4 f0v = As<UShort4>(v[0][0][0]) * UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, height)));
-		UShort4 f0s = As<UShort4>(s[0][0][0]) * UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, depth)));
+		UShort4 f0u = As<UShort4>(u[0][0][0]) * UShort4(*Pointer<UInt4>(mipmap + OFFSET(Mipmap, width)));
+		UShort4 f0v = As<UShort4>(v[0][0][0]) * UShort4(*Pointer<UInt4>(mipmap + OFFSET(Mipmap, height)));
+		UShort4 f0s = As<UShort4>(s[0][0][0]) * UShort4(*Pointer<UInt4>(mipmap + OFFSET(Mipmap, depth)));
 
 		UShort4 f1u = ~f0u;
 		UShort4 f1v = ~f0v;
@@ -906,7 +906,7 @@ Vector4f SamplerCore::sampleFloat2D(Pointer<Byte> &texture, Float4 &u, Float4 &v
 	address(u, x0, x1, fu, mipmap, offset.x, filter, OFFSET(Mipmap, width), state.addressingModeU);
 	address(v, y0, y1, fv, mipmap, offset.y, filter, OFFSET(Mipmap, height), state.addressingModeV);
 
-	Int4 pitchP = *Pointer<Int4>(mipmap + OFFSET(Mipmap, pitchP), 16);
+	Int4 pitchP = As<Int4>(*Pointer<UInt4>(mipmap + OFFSET(Mipmap, pitchP), 16));
 	y0 *= pitchP;
 
 	Int4 z;
@@ -999,8 +999,8 @@ Vector4f SamplerCore::sampleFloat3D(Pointer<Byte> &texture, Float4 &u, Float4 &v
 	address(v, y0, y1, fv, mipmap, offset.y, filter, OFFSET(Mipmap, height), state.addressingModeV);
 	address(w, z0, z1, fw, mipmap, offset.z, filter, OFFSET(Mipmap, depth), state.addressingModeW);
 
-	Int4 pitchP = *Pointer<Int4>(mipmap + OFFSET(Mipmap, pitchP), 16);
-	Int4 sliceP = *Pointer<Int4>(mipmap + OFFSET(Mipmap, sliceP), 16);
+	Int4 pitchP = As<Int4>(*Pointer<UInt4>(mipmap + OFFSET(Mipmap, pitchP), 16));
+	Int4 sliceP = As<Int4>(*Pointer<UInt4>(mipmap + OFFSET(Mipmap, sliceP), 16));
 	y0 *= pitchP;
 	z0 *= sliceP;
 
@@ -1144,12 +1144,12 @@ void SamplerCore::computeLod2D(Pointer<Byte> &texture, Float &lod, Float &anisot
 		uDelta = As<Float4>((As<Int4>(dudx) & mask) | ((As<Int4>(dudy) & ~mask)));
 		vDelta = As<Float4>((As<Int4>(dvdx) & mask) | ((As<Int4>(dvdy) & ~mask)));
 
-		anisotropy = lod * Rcp(det, Precision::Relaxed);
+		anisotropy = lod * Rcp(det, true /* relaxedPrecision */);
 		anisotropy = Min(anisotropy, state.maxAnisotropy);
 
 		// TODO(b/151263485): While we always need `lod` above, when there's only
 		// a single mipmap level the following calculations could be skipped.
-		lod *= Rcp(anisotropy * anisotropy, Precision::Relaxed);
+		lod *= Rcp(anisotropy * anisotropy, true /* relaxedPrecision */);
 	}
 
 	lod = log2sqrt(lod);  // log2(sqrt(lod))
@@ -1315,22 +1315,22 @@ Short4 SamplerCore::applyOffset(Short4 &uvw, Int4 &offset, const Int4 &whd, Addr
 
 void SamplerCore::computeIndices(UInt index[4], Short4 uuuu, Short4 vvvv, Short4 wwww, const Short4 &layerIndex, Vector4i &offset, const Int4 &sample, const Pointer<Byte> &mipmap)
 {
-	uuuu = MulHigh(As<UShort4>(uuuu), UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, width))));
+	uuuu = MulHigh(As<UShort4>(uuuu), UShort4(*Pointer<UInt4>(mipmap + OFFSET(Mipmap, width))));
 
 	if(function.offset)
 	{
-		uuuu = applyOffset(uuuu, offset.x, *Pointer<Int4>(mipmap + OFFSET(Mipmap, width)), state.addressingModeU);
+		uuuu = applyOffset(uuuu, offset.x, *Pointer<UInt4>(mipmap + OFFSET(Mipmap, width)), state.addressingModeU);
 	}
 
 	UInt4 indices = Int4(uuuu);
 
 	if(state.is2D() || state.is3D() || state.isCube())
 	{
-		vvvv = MulHigh(As<UShort4>(vvvv), UShort4(*Pointer<Int4>(mipmap + OFFSET(Mipmap, height))));
+		vvvv = MulHigh(As<UShort4>(vvvv), UShort4(*Pointer<UInt4>(mipmap + OFFSET(Mipmap, height))));
 
 		if(function.offset)
 		{
-			vvvv = applyOffset(vvvv, offset.y, *Pointer<Int4>(mipmap + OFFSET(Mipmap, height)), state.addressingModeV);
+			vvvv = applyOffset(vvvv, offset.y, *Pointer<UInt4>(mipmap + OFFSET(Mipmap, height)), state.addressingModeV);
 		}
 
 		Short4 uv0uv1 = As<Short4>(UnpackLow(uuuu, vvvv));
@@ -1448,13 +1448,13 @@ Vector4s SamplerCore::sampleTexel(UInt index[4], Pointer<Byte> buffer)
 			c.y = (c.x << 4) & Short4(0xF000u);
 			c.x = (c.x << 8) & Short4(0xF000u);
 			break;
-		case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+		case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
 			c.w = (c.x) & Short4(0xF000u);
 			c.z = (c.x << 12) & Short4(0xF000u);
 			c.y = (c.x << 8) & Short4(0xF000u);
 			c.x = (c.x << 4) & Short4(0xF000u);
 			break;
-		case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+		case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 			c.w = (c.x) & Short4(0xF000u);
 			c.z = (c.x << 4) & Short4(0xF000u);
 			c.y = (c.x << 8) & Short4(0xF000u);
@@ -1727,54 +1727,93 @@ Vector4s SamplerCore::sampleTexel(Short4 &uuuu, Short4 &vvvv, Short4 &wwww, cons
 
 	if(isYcbcrFormat())
 	{
+		// Generates 15-bit output.
+
 		// Pointers to the planes of YCbCr images are stored in consecutive mipmap levels.
 		Pointer<Byte> bufferY = buffer;                                                                         // *Pointer<Pointer<Byte>>(mipmap + 0 * sizeof(Mipmap) + OFFSET(Mipmap, buffer));
 		Pointer<Byte> bufferU = *Pointer<Pointer<Byte>>(mipmap + 1 * sizeof(Mipmap) + OFFSET(Mipmap, buffer));  // U/V for 2-plane interleaved formats.
 		Pointer<Byte> bufferV = *Pointer<Pointer<Byte>>(mipmap + 2 * sizeof(Mipmap) + OFFSET(Mipmap, buffer));
 
-		// Luminance
-		Int c0 = Int(bufferY[index[0]]);
-		Int c1 = Int(bufferY[index[1]]);
-		Int c2 = Int(bufferY[index[2]]);
-		Int c3 = Int(bufferY[index[3]]);
-		c0 = c0 | (c1 << 8) | (c2 << 16) | (c3 << 24);
-		UShort4 Y = As<UShort4>(Unpack(As<Byte4>(c0)));
+		// Luminance (either 8-bit or 10-bit in bottom bits).
+		UShort4 Y;
+		{
+			switch(state.textureFormat)
+			{
+			case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
+			case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
+				{
+					Y = Insert(Y, UShort(bufferY[index[0]]), 0);
+					Y = Insert(Y, UShort(bufferY[index[1]]), 1);
+					Y = Insert(Y, UShort(bufferY[index[2]]), 2);
+					Y = Insert(Y, UShort(bufferY[index[3]]), 3);
+				}
+				break;
+			case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:
+				{
+					Y = Insert(Y, Pointer<UShort>(bufferY)[index[0]], 0);
+					Y = Insert(Y, Pointer<UShort>(bufferY)[index[1]], 1);
+					Y = Insert(Y, Pointer<UShort>(bufferY)[index[2]], 2);
+					Y = Insert(Y, Pointer<UShort>(bufferY)[index[3]], 3);
+					// Top 10 bits of each 16 bits:
+					Y = (Y & UShort4(0xFFC0u)) >> 6;
+				}
+				break;
+			default:
+				UNSUPPORTED("state.textureFormat %d", (int)state.textureFormat);
+				break;
+			}
+		}
 
+		// Chroma (either 8-bit or 10-bit in bottom bits).
 		UShort4 Cb, Cr;
-
-		// Chroma
 		{
 			computeIndices(index, uuuu, vvvv, wwww, layerIndex, offset, sample, mipmap + sizeof(Mipmap));
 			UShort4 U, V;
 
-			if(state.textureFormat == VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM)
+			switch(state.textureFormat)
 			{
-				c0 = Int(bufferU[index[0]]);
-				c1 = Int(bufferU[index[1]]);
-				c2 = Int(bufferU[index[2]]);
-				c3 = Int(bufferU[index[3]]);
-				c0 = c0 | (c1 << 8) | (c2 << 16) | (c3 << 24);
-				U = As<UShort4>(Unpack(As<Byte4>(c0)));
+			case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
+				{
+					U = Insert(U, UShort(bufferU[index[0]]), 0);
+					U = Insert(U, UShort(bufferU[index[1]]), 1);
+					U = Insert(U, UShort(bufferU[index[2]]), 2);
+					U = Insert(U, UShort(bufferU[index[3]]), 3);
 
-				c0 = Int(bufferV[index[0]]);
-				c1 = Int(bufferV[index[1]]);
-				c2 = Int(bufferV[index[2]]);
-				c3 = Int(bufferV[index[3]]);
-				c0 = c0 | (c1 << 8) | (c2 << 16) | (c3 << 24);
-				V = As<UShort4>(Unpack(As<Byte4>(c0)));
-			}
-			else if(state.textureFormat == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM)
-			{
-				Short4 UV;
-				UV = Insert(UV, Pointer<Short>(bufferU)[index[0]], 0);  // TODO: Insert(UShort4, UShort)
-				UV = Insert(UV, Pointer<Short>(bufferU)[index[1]], 1);
-				UV = Insert(UV, Pointer<Short>(bufferU)[index[2]], 2);
-				UV = Insert(UV, Pointer<Short>(bufferU)[index[3]], 3);
-				U = (UV & Short4(0x00FFu)) | (UV << 8);
-				V = (UV & Short4(0xFF00u)) | As<Short4>(As<UShort4>(UV) >> 8);
-			}
-			else
+					V = Insert(V, UShort(bufferV[index[0]]), 0);
+					V = Insert(V, UShort(bufferV[index[1]]), 1);
+					V = Insert(V, UShort(bufferV[index[2]]), 2);
+					V = Insert(V, UShort(bufferV[index[3]]), 3);
+				}
+				break;
+			case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
+				{
+					UShort4 UV;
+					UV = Insert(UV, Pointer<UShort>(bufferU)[index[0]], 0);
+					UV = Insert(UV, Pointer<UShort>(bufferU)[index[1]], 1);
+					UV = Insert(UV, Pointer<UShort>(bufferU)[index[2]], 2);
+					UV = Insert(UV, Pointer<UShort>(bufferU)[index[3]], 3);
+
+					U = (UV & UShort4(0x00FFu));
+					V = (UV & UShort4(0xFF00u)) >> 8;
+				}
+				break;
+			case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:
+				{
+					UInt4 UV;
+					UV = Insert(UV, Pointer<UInt>(bufferU)[index[0]], 0);
+					UV = Insert(UV, Pointer<UInt>(bufferU)[index[1]], 1);
+					UV = Insert(UV, Pointer<UInt>(bufferU)[index[2]], 2);
+					UV = Insert(UV, Pointer<UInt>(bufferU)[index[3]], 3);
+					// Top 10 bits of first 16-bits:
+					U = UShort4((UV & UInt4(0x0000FFC0u)) >> 6);
+					// Top 10 bits of second 16-bits:
+					V = UShort4((UV & UInt4(0xFFC00000u)) >> 22);
+				}
+				break;
+			default:
 				UNSUPPORTED("state.textureFormat %d", (int)state.textureFormat);
+				break;
+			}
 
 			if(!state.swappedChroma)
 			{
@@ -1788,31 +1827,65 @@ Vector4s SamplerCore::sampleTexel(Short4 &uuuu, Short4 &vvvv, Short4 &wwww, cons
 			}
 		}
 
+		uint8_t lumaBits = 8;
+		uint8_t chromaBits = 8;
+		switch(state.textureFormat)
+		{
+		case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
+		case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
+			lumaBits = 8;
+			chromaBits = 8;
+			break;
+		case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:
+			lumaBits = 10;
+			chromaBits = 10;
+			break;
+		default:
+			UNSUPPORTED("state.textureFormat %d", (int)state.textureFormat);
+			break;
+		}
+
 		if(state.ycbcrModel == VK_SAMPLER_YCBCR_MODEL_CONVERSION_RGB_IDENTITY)
 		{
-			// YCbCr formats are treated as signed 15-bit.
-			c.x = Cr >> 1;
-			c.y = Y >> 1;
-			c.z = Cb >> 1;
+			// Scale to the output 15-bit.
+			c.x = Cr << (15 - chromaBits);
+			c.y = Y << (15 - lumaBits);
+			c.z = Cb << (15 - chromaBits);
 		}
 		else
 		{
-			// Scaling and bias for studio-swing range: Y = [16 .. 235], U/V = [16 .. 240]
-			// Scale down by 0x0101 to normalize the 8.8 samples, and up by 0x7FFF for signed 15-bit output.
-			float yOffset = static_cast<float>(state.studioSwing ? 16 * 0x0101 : 0);
-			float uvOffset = static_cast<float>(128 * 0x0101);
-			float yFactor = static_cast<float>(0x7FFF) / static_cast<float>(state.studioSwing ? 219 * 0x0101 : 255 * 0x0101);
-			float uvFactor = static_cast<float>(0x7FFF) / static_cast<float>(state.studioSwing ? 224 * 0x0101 : 255 * 0x0101);
+			const float twoPowLumaBits = static_cast<float>(0x1u << lumaBits);
+			const float twoPowLumaBitsMinus8 = static_cast<float>(0x1u << (lumaBits - 8));
+			const float twoPowChromaBits = static_cast<float>(0x1u << chromaBits);
+			const float twoPowChromaBitsMinus1 = static_cast<float>(0x1u << (chromaBits - 1));
+			const float twoPowChromaBitsMinus8 = static_cast<float>(0x1u << (chromaBits - 8));
 
-			Float4 y = (Float4(Y) - Float4(yOffset)) * Float4(yFactor);
-			Float4 u = (Float4(Cb) - Float4(uvOffset)) * Float4(uvFactor);
-			Float4 v = (Float4(Cr) - Float4(uvOffset)) * Float4(uvFactor);
+			Float4 y = Float4(Y);
+			Float4 u = Float4(Cb);
+			Float4 v = Float4(Cr);
+
+			if(state.studioSwing)
+			{
+				// See https://www.khronos.org/registry/DataFormat/specs/1.3/dataformat.1.3.html#QUANTIZATION_NARROW
+				y = ((y / Float4(twoPowLumaBitsMinus8)) - Float4(16.0f)) / Float4(219.0f);
+				u = ((u / Float4(twoPowChromaBitsMinus8)) - Float4(128.0f)) / Float4(224.0f);
+				v = ((v / Float4(twoPowChromaBitsMinus8)) - Float4(128.0f)) / Float4(224.0f);
+			}
+			else
+			{
+				// See https://www.khronos.org/registry/DataFormat/specs/1.3/dataformat.1.3.html#QUANTIZATION_FULL
+				y = y / Float4(twoPowLumaBits - 1.0f);
+				u = (u - Float4(twoPowChromaBitsMinus1)) / Float4(twoPowChromaBits - 1.0f);
+				v = (v - Float4(twoPowChromaBitsMinus1)) / Float4(twoPowChromaBits - 1.0f);
+			}
+
+			// Now, `y` is in [0, 1] and `u` and `v` are in [-0.5, 0.5].
 
 			if(state.ycbcrModel == VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_IDENTITY)
 			{
-				c.x = Short4(v);
-				c.y = Short4(y);
-				c.z = Short4(u);
+				c.x = Short4(v * static_cast<float>(0x7FFF));
+				c.y = Short4(y * static_cast<float>(0x7FFF));
+				c.z = Short4(u * static_cast<float>(0x7FFF));
 			}
 			else
 			{
@@ -1853,9 +1926,9 @@ Vector4s SamplerCore::sampleTexel(Short4 &uuuu, Short4 &vvvv, Short4 &wwww, cons
 				Float4 g = y + Float4(Gb) * u + Float4(Gr) * v;
 				Float4 b = y + Float4(Bb) * u;
 
-				c.x = Short4(r);
-				c.y = Short4(g);
-				c.z = Short4(b);
+				c.x = Short4(r * static_cast<float>(0x7FFF));
+				c.y = Short4(g * static_cast<float>(0x7FFF));
+				c.z = Short4(b * static_cast<float>(0x7FFF));
 			}
 		}
 	}
@@ -2245,7 +2318,7 @@ void SamplerCore::address(const Float4 &uvw, Int4 &xyz0, Int4 &xyz1, Float4 &f, 
 		return;
 	}
 
-	Int4 dim = *Pointer<Int4>(mipmap + whd, 16);
+	Int4 dim = As<Int4>(*Pointer<UInt4>(mipmap + whd, 16));
 	Int4 maxXYZ = dim - Int4(1);
 
 	if(function == Fetch)  // Unnormalized coordinates
@@ -2574,6 +2647,7 @@ sw::float4 SamplerCore::getComponentScale() const
 	{
 	case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
 	case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
+	case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:
 		return sw::float4(0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF);
 	default:
 		break;
