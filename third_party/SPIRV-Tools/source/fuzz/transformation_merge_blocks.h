@@ -26,12 +26,11 @@ namespace fuzz {
 class TransformationMergeBlocks : public Transformation {
  public:
   explicit TransformationMergeBlocks(
-      protobufs::TransformationMergeBlocks message);
+      const protobufs::TransformationMergeBlocks& message);
 
   TransformationMergeBlocks(uint32_t block_id);
 
   // - |message_.block_id| must be the id of a block, b
-  // - b must be statically reachable in the control flow graph of its function
   // - b must have a single predecessor, a
   // - b must be the sole successor of a
   // - Replacing a with the merge of a and b (and removing b) must lead to a

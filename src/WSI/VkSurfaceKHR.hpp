@@ -38,9 +38,9 @@ class SwapchainKHR;
 class PresentImage
 {
 public:
-	VkResult createImage(VkDevice device, const VkImageCreateInfo &createInfo);
+	VkResult allocateImage(VkDevice device, const VkImageCreateInfo &createInfo);
 	VkResult allocateAndBindImageMemory(VkDevice device, const VkMemoryAllocateInfo &allocateInfo);
-	void release();
+	void clear();
 	VkImage asVkImage() const;
 
 	const Image *getImage() const { return image; }
@@ -87,8 +87,6 @@ public:
 
 	VkResult getPresentRectangles(uint32_t *pRectCount, VkRect2D *pRects) const;
 
-	virtual void* allocateImageMemory(PresentImage *image, const VkMemoryAllocateInfo &allocateInfo) { return nullptr; }
-	virtual void releaseImageMemory(PresentImage *image) {}
 	virtual void attachImage(PresentImage *image) = 0;
 	virtual void detachImage(PresentImage *image) = 0;
 	virtual VkResult present(PresentImage *image) = 0;
@@ -111,4 +109,4 @@ static inline SurfaceKHR *Cast(VkSurfaceKHR object)
 
 }  // namespace vk
 
-#endif  // SWIFTSHADER_VKSURFACEKHR_HPP_
+#endif  //SWIFTSHADER_VKSURFACEKHR_HPP_

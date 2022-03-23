@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationSetMemoryOperandsMask : public Transformation {
  public:
   explicit TransformationSetMemoryOperandsMask(
-      protobufs::TransformationSetMemoryOperandsMask message);
+      const protobufs::TransformationSetMemoryOperandsMask& message);
 
   TransformationSetMemoryOperandsMask(
       const protobufs::InstructionDescriptor& memory_access_instruction,

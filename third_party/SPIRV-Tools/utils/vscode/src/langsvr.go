@@ -28,15 +28,11 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/KhronosGroup/SPIRV-Tools/utils/vscode/src/parser"
-	"github.com/KhronosGroup/SPIRV-Tools/utils/vscode/src/schema"
+	"./parser"
+	"./schema"
 
-	"github.com/KhronosGroup/SPIRV-Tools/utils/vscode/src/lsp/jsonrpc2"
-	lsp "github.com/KhronosGroup/SPIRV-Tools/utils/vscode/src/lsp/protocol"
-)
-
-const (
-	enableDebugLogging = false
+	"./lsp/jsonrpc2"
+	lsp "./lsp/protocol"
 )
 
 // rSpy is a reader 'spy' that wraps an io.Reader, and logs all data that passes
@@ -67,13 +63,12 @@ func (s wSpy) Write(p []byte) (n int, err error) {
 
 // main entry point.
 func main() {
-	log.SetOutput(ioutil.Discard)
-	if enableDebugLogging {
-		// create a log file in the executable's directory.
-		if logfile, err := os.Create(path.Join(path.Dir(os.Args[0]), "log.txt")); err == nil {
-			defer logfile.Close()
-			log.SetOutput(logfile)
-		}
+	// create a log file in the executable's directory.
+	if logfile, err := os.Create(path.Join(path.Dir(os.Args[0]), "log.txt")); err == nil {
+		defer logfile.Close()
+		log.SetOutput(logfile)
+	} else {
+		log.SetOutput(ioutil.Discard)
 	}
 
 	log.Println("language server started")
@@ -412,15 +407,13 @@ func (s *server) Formatting(ctx context.Context, p *lsp.DocumentFormattingParams
 			}
 		}
 
-		formatted := sb.String()
-
-		// Every good file ends with a single new line.
-		formatted = strings.TrimRight(formatted, "\n") + "\n"
+		// Every good file ends with a new line.
+		sb.WriteString("\n")
 
 		return []lsp.TextEdit{
-			{
+			lsp.TextEdit{
 				Range:   rangeToLSP(f.fullRange),
-				NewText: formatted,
+				NewText: sb.String(),
 			},
 		}, nil
 	}

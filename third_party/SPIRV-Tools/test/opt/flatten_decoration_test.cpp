@@ -43,7 +43,7 @@ OpName %Camera "Camera"
 )";
 }
 
-// Returns types
+// Retuns types
 std::string TypesAndFunctionsAssembly() {
   return
       R"(%void = OpTypeVoid

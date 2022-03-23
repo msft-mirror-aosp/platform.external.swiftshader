@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "VkDeviceMemory.hpp"
-
 #include "System/Debug.hpp"
 #include "System/Linux/MemFd.hpp"
 
@@ -21,20 +19,19 @@
 #include <string.h>
 #include <sys/mman.h>
 
-class OpaqueFdExternalMemory : public vk::DeviceMemory, public vk::ObjectBase<OpaqueFdExternalMemory, VkDeviceMemory>
+class OpaqueFdExternalMemory : public vk::DeviceMemory::ExternalBase
 {
 public:
 	static const VkExternalMemoryHandleTypeFlagBits typeFlagBit = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
 
-	static bool SupportsAllocateInfo(const vk::DeviceMemory::ExtendedAllocationInfo &extendedAllocationInfo)
+	static bool SupportsAllocateInfo(const VkMemoryAllocateInfo *pAllocateInfo)
 	{
-		OpaqueFdAllocateInfo info(extendedAllocationInfo);
+		OpaqueFdAllocateInfo info(pAllocateInfo);
 		return info.importFd || info.exportFd;
 	}
 
-	explicit OpaqueFdExternalMemory(const VkMemoryAllocateInfo *pCreateInfo, void *mem, const vk::DeviceMemory::ExtendedAllocationInfo &extendedAllocationInfo, vk::Device *pDevice)
-	    : vk::DeviceMemory(pCreateInfo, pDevice)
-	    , allocateInfo(extendedAllocationInfo)
+	explicit OpaqueFdExternalMemory(const VkMemoryAllocateInfo *pAllocateInfo)
+	    : allocateInfo(pAllocateInfo)
 	{
 	}
 
@@ -43,7 +40,7 @@ public:
 		memfd.close();
 	}
 
-	VkResult allocateBuffer() override
+	VkResult allocate(size_t size, void **pBuffer) override
 	{
 		if(allocateInfo.importFd)
 		{
@@ -59,24 +56,24 @@ public:
 			static int counter = 0;
 			char name[40];
 			snprintf(name, sizeof(name), "SwiftShader.Memory.%d", ++counter);
-			if(!memfd.allocate(name, allocationSize))
+			if(!memfd.allocate(name, size))
 			{
 				TRACE("memfd.allocate() returned %s", strerror(errno));
 				return VK_ERROR_OUT_OF_DEVICE_MEMORY;
 			}
 		}
-		void *addr = memfd.mapReadWrite(0, allocationSize);
+		void *addr = memfd.mapReadWrite(0, size);
 		if(!addr)
 		{
 			return VK_ERROR_MEMORY_MAP_FAILED;
 		}
-		buffer = addr;
+		*pBuffer = addr;
 		return VK_SUCCESS;
 	}
 
-	void freeBuffer() override
+	void deallocate(void *buffer, size_t size) override
 	{
-		memfd.unmap(buffer, allocationSize);
+		memfd.unmap(buffer, size);
 	}
 
 	VkExternalMemoryHandleTypeFlagBits getFlagBit() const override

@@ -29,7 +29,6 @@
 #include "source/util/bitutils.h"
 #include "source/util/hex_float.h"
 #include "source/util/parse_number.h"
-#include "source/util/string_utils.h"
 
 namespace spvtools {
 namespace {
@@ -121,8 +120,7 @@ spv_result_t getWord(spv_text text, spv_position position, std::string* word) {
         case '\n':
         case '\r':
           if (escaping || quoting) break;
-          word->assign(text->str + start_index, text->str + position->index);
-          return SPV_SUCCESS;
+        // Fall through.
         case '\0': {  // NOTE: End of word found!
           word->assign(text->str + start_index, text->str + position->index);
           return SPV_SUCCESS;
@@ -308,8 +306,14 @@ spv_result_t AssemblyContext::binaryEncodeString(const char* value,
                         << SPV_LIMIT_INSTRUCTION_WORD_COUNT_MAX << " words.";
   }
 
-  pInst->words.reserve(newWordCount);
-  spvtools::utils::AppendToVector(value, &pInst->words);
+  pInst->words.resize(newWordCount);
+
+  // Make sure all the bytes in the last word are 0, in case we only
+  // write a partial word at the end.
+  pInst->words.back() = 0;
+
+  char* dest = (char*)&pInst->words[oldWordCount];
+  strncpy(dest, value, length + 1);
 
   return SPV_SUCCESS;
 }
