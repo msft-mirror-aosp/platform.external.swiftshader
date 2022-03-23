@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationSplitBlock : public Transformation {
  public:
   explicit TransformationSplitBlock(
-      protobufs::TransformationSplitBlock message);
+      const protobufs::TransformationSplitBlock& message);
 
   TransformationSplitBlock(
       const protobufs::InstructionDescriptor& instruction_to_split_before,

@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationReplaceLinearAlgebraInstruction : public Transformation {
  public:
   explicit TransformationReplaceLinearAlgebraInstruction(
-      protobufs::TransformationReplaceLinearAlgebraInstruction message);
+      const protobufs::TransformationReplaceLinearAlgebraInstruction& message);
 
   TransformationReplaceLinearAlgebraInstruction(
       const std::vector<uint32_t>& fresh_ids,

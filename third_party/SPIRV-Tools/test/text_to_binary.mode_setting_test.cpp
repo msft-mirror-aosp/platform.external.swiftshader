@@ -189,7 +189,6 @@ INSTANTIATE_TEST_SUITE_P(
                 {CASE(OutputTriangleStrip), {}},
                 {CASE(VecTypeHint), {96}},
                 {CASE(ContractionOff), {}},
-                {CASE(SubgroupUniformControlFlowKHR), {}},
             })));
 
 INSTANTIATE_TEST_SUITE_P(

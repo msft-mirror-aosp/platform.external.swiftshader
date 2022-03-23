@@ -36,7 +36,6 @@ namespace vk {
 
 class Device;
 class Fence;
-struct SubmitInfo;
 
 class Queue
 {
@@ -51,7 +50,7 @@ public:
 		return reinterpret_cast<VkQueue>(this);
 	}
 
-	VkResult submit(uint32_t submitCount, SubmitInfo *pSubmits, Fence *fence);
+	VkResult submit(uint32_t submitCount, const VkSubmitInfo *pSubmits, Fence *fence);
 	VkResult waitIdle();
 #ifndef __ANDROID__
 	VkResult present(const VkPresentInfoKHR *presentInfo);
@@ -65,7 +64,7 @@ private:
 	struct Task
 	{
 		uint32_t submitCount = 0;
-		SubmitInfo *pSubmits = nullptr;
+		VkSubmitInfo *pSubmits = nullptr;
 		std::shared_ptr<sw::CountedEvent> events;
 
 		enum Type
@@ -83,7 +82,7 @@ private:
 	Device *device;
 	std::unique_ptr<sw::Renderer> renderer;
 	sw::Chan<Task> pending;
-	sw::Chan<SubmitInfo *> toDelete;
+	sw::Chan<VkSubmitInfo *> toDelete;
 	std::thread queueThread;
 };
 

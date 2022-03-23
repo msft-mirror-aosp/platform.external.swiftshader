@@ -1,5 +1,5 @@
 {
-  "revision" : 2,
+  "revision" : 1,
   "instructions" : [
     {
       "opname" : "Kernel",
@@ -231,13 +231,6 @@
         { "kind" : "IdRef", "name" : "X" },
         { "kind" : "IdRef", "name" : "Y" },
         { "kind" : "IdRef", "name" : "Z" }
-      ]
-    },
-    {
-      "opname" : "SpecConstantSubgroupMaxSize",
-      "opcode" : 25,
-      "operands" : [
-        { "kind" : "IdRef", "name" : "Size" }
       ]
     }
   ]

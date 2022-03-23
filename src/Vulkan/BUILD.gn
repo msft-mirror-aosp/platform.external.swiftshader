@@ -18,13 +18,10 @@ import("vulkan.gni")
 
 # Need a separate config to ensure the warnings are added to the end.
 config("swiftshader_libvulkan_private_config") {
-  if (is_linux) {
+  if (is_linux || is_chromeos) {
     defines = [
+      "VK_USE_PLATFORM_XLIB_KHR",
       "VK_USE_PLATFORM_XCB_KHR",
-      "VK_EXPORT=__attribute__((visibility(\"default\")))",
-    ]
-  } else if (is_chromeos) {
-    defines = [
       "VK_EXPORT=__attribute__((visibility(\"default\")))",
     ]
   } else if (is_fuchsia) {
@@ -56,7 +53,6 @@ config("swiftshader_libvulkan_private_config") {
 
   defines += [
      "SWIFTSHADER_ENABLE_ASTC",  # TODO(b/150130101)
-     "SWIFTSHADER_LEGACY_PRECISION=true",  # TODO(chromium:1299047)
   ]
 }
 
@@ -76,7 +72,6 @@ swiftshader_source_set("swiftshader_libvulkan_headers") {
     "VkDestroy.hpp",
     "VkDevice.hpp",
     "VkDeviceMemory.hpp",
-    "VkDeviceMemoryExternalHost.hpp",
     "VkEvent.hpp",
     "VkFence.hpp",
     "VkFormat.hpp",
@@ -99,7 +94,6 @@ swiftshader_source_set("swiftshader_libvulkan_headers") {
     "VkShaderModule.hpp",
     "VkSpecializationInfo.hpp",
     "VkStringify.hpp",
-    "VkStructConversion.hpp",
     "VkTimelineSemaphore.hpp",
     "VulkanPlatform.hpp",
   ]
@@ -130,7 +124,6 @@ swiftshader_shared_library("swiftshader_libvulkan") {
     "VkDescriptorUpdateTemplate.cpp",
     "VkDevice.cpp",
     "VkDeviceMemory.cpp",
-    "VkDeviceMemoryExternalHost.cpp",
     "VkFormat.cpp",
     "VkFramebuffer.cpp",
     "VkGetProcAddress.cpp",
@@ -223,8 +216,6 @@ action("icd_file") {
     library_path = ".\\vk_swiftshader.dll"
   } else if (is_mac) {
     library_path = "./libvk_swiftshader.dylib"
-  } else if (is_fuchsia) {
-    library_path = "/pkg/lib/libvk_swiftshader.so"
   } else {
     library_path = "./libvk_swiftshader.so"
   }

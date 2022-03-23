@@ -16,7 +16,6 @@
 
 #include <memory>
 
-#include "source/fuzz/available_instructions.h"
 #include "source/fuzz/fuzzer_util.h"
 #include "source/fuzz/transformation_composite_construct.h"
 
@@ -26,10 +25,11 @@ namespace fuzz {
 FuzzerPassConstructComposites::FuzzerPassConstructComposites(
     opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
-    protobufs::TransformationSequence* transformations,
-    bool ignore_inapplicable_transformations)
+    protobufs::TransformationSequence* transformations)
     : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations, ignore_inapplicable_transformations) {}
+                 transformations) {}
+
+FuzzerPassConstructComposites::~FuzzerPassConstructComposites() = default;
 
 void FuzzerPassConstructComposites::Apply() {
   // Gather up the ids of all composite types, but skip block-/buffer
@@ -44,44 +44,22 @@ void FuzzerPassConstructComposites::Apply() {
     }
   }
 
-  if (composite_type_ids.empty()) {
-    // There are no composite types, so this fuzzer pass cannot do anything.
-    return;
-  }
-
-  AvailableInstructions available_composite_constituents(
-      GetIRContext(),
-      [this](opt::IRContext* ir_context, opt::Instruction* inst) -> bool {
-        if (!inst->result_id() || !inst->type_id()) {
-          return false;
-        }
-
-        // If the id is irrelevant, we can use it since it will not
-        // participate in DataSynonym fact. Otherwise, we should be able
-        // to produce a synonym out of the id.
-        return GetTransformationContext()->GetFactManager()->IdIsIrrelevant(
-                   inst->result_id()) ||
-               fuzzerutil::CanMakeSynonymOf(ir_context,
-                                            *GetTransformationContext(), *inst);
-      });
-
   ForEachInstructionWithInstructionDescriptor(
-      [this, &available_composite_constituents, &composite_type_ids](
-          opt::Function* /*unused*/, opt::BasicBlock* /*unused*/,
+      [this, &composite_type_ids](
+          opt::Function* function, opt::BasicBlock* block,
           opt::BasicBlock::iterator inst_it,
           const protobufs::InstructionDescriptor& instruction_descriptor)
           -> void {
-        // Randomly decide whether to try inserting a composite construction
-        // here.
-        if (!GetFuzzerContext()->ChoosePercentage(
-                GetFuzzerContext()->GetChanceOfConstructingComposite())) {
-          return;
-        }
-
         // Check whether it is legitimate to insert a composite construction
         // before the instruction.
         if (!fuzzerutil::CanInsertOpcodeBeforeInstruction(
                 SpvOpCompositeConstruct, inst_it)) {
+          return;
+        }
+
+        // Randomly decide whether to try inserting an object copy here.
+        if (!GetFuzzerContext()->ChoosePercentage(
+                GetFuzzerContext()->GetChanceOfConstructingComposite())) {
           return;
         }
 
@@ -90,16 +68,25 @@ void FuzzerPassConstructComposites::Apply() {
         // program point) and suitable for making a synonym of, associate it
         // with the id of its result type.
         TypeIdToInstructions type_id_to_available_instructions;
-        auto available_instructions =
-            available_composite_constituents.GetAvailableBeforeInstruction(
-                &*inst_it);
-        for (uint32_t available_instruction_index = 0;
-             available_instruction_index < available_instructions.size();
-             available_instruction_index++) {
-          opt::Instruction* inst =
-              available_instructions[available_instruction_index];
-          type_id_to_available_instructions[inst->type_id()].push_back(
-              inst->result_id());
+        auto available_instructions = FindAvailableInstructions(
+            function, block, inst_it,
+            [this](opt::IRContext* ir_context, opt::Instruction* inst) {
+              if (!inst->result_id() || !inst->type_id()) {
+                return false;
+              }
+
+              // If the id is irrelevant, we can use it since it will not
+              // participate in DataSynonym fact. Otherwise, we should be able
+              // to produce a synonym out of the id.
+              return GetTransformationContext()
+                         ->GetFactManager()
+                         ->IdIsIrrelevant(inst->result_id()) ||
+                     fuzzerutil::CanMakeSynonymOf(
+                         ir_context, *GetTransformationContext(), inst);
+            });
+        for (auto instruction : available_instructions) {
+          RecordAvailableInstruction(instruction,
+                                     &type_id_to_available_instructions);
         }
 
         // At this point, |composite_type_ids| captures all the composite types
@@ -107,41 +94,68 @@ void FuzzerPassConstructComposites::Apply() {
         // captures all the available result ids we might use, organized by
         // type.
 
-        // Now we choose a composite type to construct, building it from
-        // available constituent components and using zero constants if suitable
-        // components are not available.
-
+        // Now we try to find a composite that we can construct.  We might not
+        // manage, if there is a paucity of available ingredients in the module
+        // (e.g. if our only available composite was a boolean vector and we had
+        // no instructions generating boolean result types available).
+        //
+        // If we succeed, |chosen_composite_type| will end up being non-zero,
+        // and |constructor_arguments| will end up giving us result ids suitable
+        // for constructing a composite of that type.  Otherwise these variables
+        // will remain 0 and null respectively.
+        uint32_t chosen_composite_type = 0;
         std::vector<uint32_t> constructor_arguments;
-        uint32_t chosen_composite_type =
-            composite_type_ids[GetFuzzerContext()->RandomIndex(
-                composite_type_ids)];
 
-        // Construct a composite of this type, using an appropriate helper
-        // method depending on the kind of composite type.
-        auto composite_type_inst =
-            GetIRContext()->get_def_use_mgr()->GetDef(chosen_composite_type);
-        switch (composite_type_inst->opcode()) {
-          case SpvOpTypeArray:
-            constructor_arguments = FindComponentsToConstructArray(
-                *composite_type_inst, type_id_to_available_instructions);
+        // Initially, all composite type ids are available for us to try.  Keep
+        // trying until we run out of options.
+        auto composites_to_try_constructing = composite_type_ids;
+        while (!composites_to_try_constructing.empty()) {
+          // Remove a composite type from the composite types left for us to
+          // try.
+          auto next_composite_to_try_constructing =
+              GetFuzzerContext()->RemoveAtRandomIndex(
+                  &composites_to_try_constructing);
+
+          // Now try to construct a composite of this type, using an appropriate
+          // helper method depending on the kind of composite type.
+          auto composite_type_inst = GetIRContext()->get_def_use_mgr()->GetDef(
+              next_composite_to_try_constructing);
+          switch (composite_type_inst->opcode()) {
+            case SpvOpTypeArray:
+              constructor_arguments = FindComponentsToConstructArray(
+                  *composite_type_inst, type_id_to_available_instructions);
+              break;
+            case SpvOpTypeMatrix:
+              constructor_arguments = FindComponentsToConstructMatrix(
+                  *composite_type_inst, type_id_to_available_instructions);
+              break;
+            case SpvOpTypeStruct:
+              constructor_arguments = FindComponentsToConstructStruct(
+                  *composite_type_inst, type_id_to_available_instructions);
+              break;
+            case SpvOpTypeVector:
+              constructor_arguments = FindComponentsToConstructVector(
+                  *composite_type_inst, type_id_to_available_instructions);
+              break;
+            default:
+              assert(false &&
+                     "The space of possible composite types should be covered "
+                     "by the above cases.");
+              break;
+          }
+          if (!constructor_arguments.empty()) {
+            // We succeeded!  Note the composite type we finally settled on, and
+            // exit from the loop.
+            chosen_composite_type = next_composite_to_try_constructing;
             break;
-          case SpvOpTypeMatrix:
-            constructor_arguments = FindComponentsToConstructMatrix(
-                *composite_type_inst, type_id_to_available_instructions);
-            break;
-          case SpvOpTypeStruct:
-            constructor_arguments = FindComponentsToConstructStruct(
-                *composite_type_inst, type_id_to_available_instructions);
-            break;
-          case SpvOpTypeVector:
-            constructor_arguments = FindComponentsToConstructVector(
-                *composite_type_inst, type_id_to_available_instructions);
-            break;
-          default:
-            assert(false &&
-                   "The space of possible composite types should be covered "
-                   "by the above cases.");
-            break;
+          }
+        }
+
+        if (!chosen_composite_type) {
+          // We did not manage to make a composite; return 0 to indicate that no
+          // instructions were added.
+          assert(constructor_arguments.empty());
+          return;
         }
         assert(!constructor_arguments.empty());
 
@@ -150,6 +164,15 @@ void FuzzerPassConstructComposites::Apply() {
             chosen_composite_type, constructor_arguments,
             instruction_descriptor, GetFuzzerContext()->GetFreshId()));
       });
+}
+
+void FuzzerPassConstructComposites::RecordAvailableInstruction(
+    opt::Instruction* inst,
+    TypeIdToInstructions* type_id_to_available_instructions) {
+  if (type_id_to_available_instructions->count(inst->type_id()) == 0) {
+    (*type_id_to_available_instructions)[inst->type_id()] = {};
+  }
+  type_id_to_available_instructions->at(inst->type_id()).push_back(inst);
 }
 
 std::vector<uint32_t>
@@ -167,6 +190,13 @@ FuzzerPassConstructComposites::FindComponentsToConstructArray(
   auto available_instructions =
       type_id_to_available_instructions.find(element_type_id);
 
+  if (available_instructions == type_id_to_available_instructions.cend()) {
+    // If there are not any instructions available that compute the element type
+    // of the array then we are not in a position to construct a composite with
+    // this array type.
+    return {};
+  }
+
   uint32_t array_length =
       GetIRContext()
           ->get_def_use_mgr()
@@ -175,14 +205,10 @@ FuzzerPassConstructComposites::FindComponentsToConstructArray(
 
   std::vector<uint32_t> result;
   for (uint32_t index = 0; index < array_length; index++) {
-    if (available_instructions == type_id_to_available_instructions.cend()) {
-      // No suitable instructions are available, so use a zero constant
-      result.push_back(FindOrCreateZeroConstant(element_type_id, true));
-    } else {
-      result.push_back(
-          available_instructions->second[GetFuzzerContext()->RandomIndex(
-              available_instructions->second)]);
-    }
+    result.push_back(available_instructions
+                         ->second[GetFuzzerContext()->RandomIndex(
+                             available_instructions->second)]
+                         ->result_id());
   }
   return result;
 }
@@ -202,17 +228,19 @@ FuzzerPassConstructComposites::FindComponentsToConstructMatrix(
   auto available_instructions =
       type_id_to_available_instructions.find(element_type_id);
 
+  if (available_instructions == type_id_to_available_instructions.cend()) {
+    // If there are not any instructions available that compute the element type
+    // of the matrix then we are not in a position to construct a composite with
+    // this matrix type.
+    return {};
+  }
   std::vector<uint32_t> result;
   for (uint32_t index = 0;
        index < matrix_type_instruction.GetSingleWordInOperand(1); index++) {
-    if (available_instructions == type_id_to_available_instructions.cend()) {
-      // No suitable components are available, so use a zero constant.
-      result.push_back(FindOrCreateZeroConstant(element_type_id, true));
-    } else {
-      result.push_back(
-          available_instructions->second[GetFuzzerContext()->RandomIndex(
-              available_instructions->second)]);
-    }
+    result.push_back(available_instructions
+                         ->second[GetFuzzerContext()->RandomIndex(
+                             available_instructions->second)]
+                         ->result_id());
   }
   return result;
 }
@@ -235,14 +263,14 @@ FuzzerPassConstructComposites::FindComponentsToConstructStruct(
     auto available_instructions =
         type_id_to_available_instructions.find(element_type_id);
     if (available_instructions == type_id_to_available_instructions.cend()) {
-      // No suitable component is available for this element type, so use a zero
-      // constant.
-      result.push_back(FindOrCreateZeroConstant(element_type_id, true));
-    } else {
-      result.push_back(
-          available_instructions->second[GetFuzzerContext()->RandomIndex(
-              available_instructions->second)]);
+      // If there are no such instructions, we cannot construct a composite of
+      // this struct type.
+      return {};
     }
+    result.push_back(available_instructions
+                         ->second[GetFuzzerContext()->RandomIndex(
+                             available_instructions->second)]
+                         ->result_id());
   }
   return result;
 }
@@ -297,13 +325,12 @@ FuzzerPassConstructComposites::FindComponentsToConstructVector(
   // (otherwise there will not be space left for a vec3).
 
   uint32_t vector_slots_used = 0;
-
-  // The instructions result ids we will use to construct the vector, in no
-  // particular order at this stage.
-  std::vector<uint32_t> result;
+  // The instructions we will use to construct the vector, in no particular
+  // order at this stage.
+  std::vector<opt::Instruction*> instructions_to_use;
 
   while (vector_slots_used < element_count) {
-    std::vector<uint32_t> instructions_to_choose_from;
+    std::vector<opt::Instruction*> instructions_to_choose_from;
     for (auto& entry : smaller_vector_type_id_to_width) {
       if (entry.second >
           std::min(element_count - 1, element_count - vector_slots_used)) {
@@ -318,16 +345,19 @@ FuzzerPassConstructComposites::FindComponentsToConstructVector(
                                          available_instructions->second.begin(),
                                          available_instructions->second.end());
     }
-    // If there are no instructions to choose from then use a zero constant,
-    // otherwise select one of the instructions at random.
-    uint32_t id_of_instruction_to_use =
-        instructions_to_choose_from.empty()
-            ? FindOrCreateZeroConstant(element_type_id, true)
-            : instructions_to_choose_from[GetFuzzerContext()->RandomIndex(
-                  instructions_to_choose_from)];
-    opt::Instruction* instruction_to_use =
-        GetIRContext()->get_def_use_mgr()->GetDef(id_of_instruction_to_use);
-    result.push_back(instruction_to_use->result_id());
+    if (instructions_to_choose_from.empty()) {
+      // We may get unlucky and find that there are not any instructions to
+      // choose from.  In this case we give up constructing a composite of this
+      // vector type.  It might be that we could construct the composite in
+      // another manner, so we could opt to retry a few times here, but it is
+      // simpler to just give up on the basis that this will not happen
+      // frequently.
+      return {};
+    }
+    auto instruction_to_use =
+        instructions_to_choose_from[GetFuzzerContext()->RandomIndex(
+            instructions_to_choose_from)];
+    instructions_to_use.push_back(instruction_to_use);
     auto chosen_type =
         GetIRContext()->get_type_mgr()->GetType(instruction_to_use->type_id());
     if (chosen_type->AsVector()) {
@@ -343,7 +373,14 @@ FuzzerPassConstructComposites::FindComponentsToConstructVector(
   }
   assert(vector_slots_used == element_count);
 
-  GetFuzzerContext()->Shuffle(&result);
+  std::vector<uint32_t> result;
+  std::vector<uint32_t> operands;
+  while (!instructions_to_use.empty()) {
+    auto index = GetFuzzerContext()->RandomIndex(instructions_to_use);
+    result.push_back(instructions_to_use[index]->result_id());
+    instructions_to_use.erase(instructions_to_use.begin() + index);
+  }
+  assert(result.size() > 1);
   return result;
 }
 

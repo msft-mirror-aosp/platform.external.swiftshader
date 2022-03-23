@@ -23,7 +23,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/KhronosGroup/SPIRV-Tools/utils/vscode/src/schema"
+	"../schema"
 )
 
 // Type is an enumerator of token types.
@@ -798,7 +798,7 @@ type Identifier struct {
 	References []*Token     // all the places the identifier was referenced
 }
 
-// Severity is an enumerator of diagnostic severities
+// Severity is an enumerator of diagnositc seeverities
 type Severity int
 
 // Severity levels
