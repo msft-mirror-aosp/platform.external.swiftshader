@@ -581,7 +581,7 @@ INSTANTIATE_TEST_SUITE_P(
     OpenCLDebugInfo100DebugSource, ExtInstCLDebugInfo100RoundTripTest,
     ::testing::ValuesIn(std::vector<InstructionCase>({
         // TODO(dneto): Should this be a list of sourc texts,
-        // to accommodate length limits?
+        // to accomodate length limits?
         CASE_I(Source),
         CASE_II(Source),
     })));

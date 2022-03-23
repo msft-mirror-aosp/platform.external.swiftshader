@@ -28,19 +28,14 @@ namespace vk {
 class SamplerYcbcrConversion;
 
 // Uniquely identifies state used by sampling routine generation.
-// Integer ID space shared by image views and buffer views.
+// ID space shared by image views and buffer views.
 union Identifier
 {
 	// Image view identifier
-	Identifier(const VkImageViewCreateInfo *pCreateInfo);
+	Identifier(const Image *image, VkImageViewType type, VkFormat format, VkComponentMapping mapping);
 
 	// Buffer view identifier
 	Identifier(VkFormat format);
-
-	// Copy constructor from existing identifier
-	Identifier(uint32_t fromId)
-	    : id(fromId)
-	{}
 
 	operator uint32_t() const
 	{
@@ -48,19 +43,8 @@ union Identifier
 		return id;
 	}
 
-	struct State
-	{
-		VkImageViewType imageViewType;
-		VkFormat format;
-		VkComponentMapping mapping;
-		bool singleMipLevel;
-	};
-	State getState() const;
+	uint32_t id = 0;
 
-private:
-	void pack(const State &data);
-
-	// Identifier is a union of this struct and the integer below.
 	struct
 	{
 		uint32_t imageViewType : 3;
@@ -69,10 +53,7 @@ private:
 		uint32_t g : 3;
 		uint32_t b : 3;
 		uint32_t a : 3;
-		uint32_t singleMipLevel : 1;
 	};
-
-	uint32_t id = 0;
 };
 
 class ImageView : public Object<ImageView, VkImageView>
@@ -92,31 +73,34 @@ public:
 
 	static size_t ComputeRequiredAllocationSize(const VkImageViewCreateInfo *pCreateInfo);
 
-	void clear(const VkClearValue &clearValues, VkImageAspectFlags aspectMask, const VkRect2D &renderArea, uint32_t layerMask);
-	void clear(const VkClearValue &clearValue, VkImageAspectFlags aspectMask, const VkClearRect &renderArea, uint32_t layerMask);
-	void resolve(ImageView *resolveAttachment, uint32_t layerMask);
-	void resolveDepthStencil(ImageView *resolveAttachment, VkResolveModeFlagBits depthResolveMode, VkResolveModeFlagBits stencilResolveMode);
+	void clear(const VkClearValue &clearValues, VkImageAspectFlags aspectMask, const VkRect2D &renderArea);
+	void clear(const VkClearValue &clearValue, VkImageAspectFlags aspectMask, const VkClearRect &renderArea);
+	void clearWithLayerMask(const VkClearValue &clearValue, VkImageAspectFlags aspectMask, const VkRect2D &renderArea, uint32_t layerMask);
+	void resolve(ImageView *resolveAttachment);
+	void resolve(ImageView *resolveAttachment, int layer);
+	void resolveWithLayerMask(ImageView *resolveAttachment, uint32_t layerMask);
+	void resolveDepthStencil(ImageView *resolveAttachment, const VkSubpassDescriptionDepthStencilResolve &dsResolve);
 
 	VkImageViewType getType() const { return viewType; }
 	Format getFormat(Usage usage = RAW) const;
 	Format getFormat(VkImageAspectFlagBits aspect) const { return image->getFormat(aspect); }
-	uint32_t rowPitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel, Usage usage = RAW) const;
-	uint32_t slicePitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel, Usage usage = RAW) const;
-	uint32_t getMipLevelSize(VkImageAspectFlagBits aspect, uint32_t mipLevel, Usage usage = RAW) const;
-	uint32_t layerPitchBytes(VkImageAspectFlagBits aspect, Usage usage = RAW) const;
+	int rowPitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel, Usage usage = RAW) const;
+	int slicePitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel, Usage usage = RAW) const;
+	int getMipLevelSize(VkImageAspectFlagBits aspect, uint32_t mipLevel, Usage usage = RAW) const;
+	int layerPitchBytes(VkImageAspectFlagBits aspect, Usage usage = RAW) const;
 	VkExtent2D getMipLevelExtent(uint32_t mipLevel) const;
 	VkExtent2D getMipLevelExtent(uint32_t mipLevel, VkImageAspectFlagBits aspect) const;
-	uint32_t getDepthOrLayerCount(uint32_t mipLevel) const;
+	int getDepthOrLayerCount(uint32_t mipLevel) const;
 
 	int getSampleCount() const
 	{
 		switch(image->getSampleCountFlagBits())
 		{
-		case VK_SAMPLE_COUNT_1_BIT: return 1;
-		case VK_SAMPLE_COUNT_4_BIT: return 4;
-		default:
-			UNSUPPORTED("Sample count flags %d", image->getSampleCountFlagBits());
-			return 1;
+			case VK_SAMPLE_COUNT_1_BIT: return 1;
+			case VK_SAMPLE_COUNT_4_BIT: return 4;
+			default:
+				UNSUPPORTED("Sample count flags %d", image->getSampleCountFlagBits());
+				return 1;
 		}
 	}
 
@@ -124,7 +108,9 @@ public:
 	bool hasDepthAspect() const { return (subresourceRange.aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) != 0; }
 	bool hasStencilAspect() const { return (subresourceRange.aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT) != 0; }
 
-	void contentsChanged(Image::ContentsChangedContext context) { image->contentsChanged(subresourceRange, context); }
+	// This function is only called from the renderer, so use the USING_STORAGE flag,
+	// as it is required in order to write to an image from a shader
+	void contentsChanged() { image->contentsChanged(subresourceRange, Image::USING_STORAGE); }
 
 	void prepareForSampling() { image->prepareForSampling(subresourceRange); }
 
@@ -135,12 +121,6 @@ public:
 private:
 	bool imageTypesMatch(VkImageType imageType) const;
 	const Image *getImage(Usage usage) const;
-	void clear(const VkClearValue &clearValues, VkImageAspectFlags aspectMask, const VkRect2D &renderArea);
-	void clear(const VkClearValue &clearValue, VkImageAspectFlags aspectMask, const VkClearRect &renderArea);
-	void clearWithLayerMask(const VkClearValue &clearValue, VkImageAspectFlags aspectMask, const VkRect2D &renderArea, uint32_t layerMask);
-	void resolve(ImageView *resolveAttachment);
-	void resolveSingleLayer(ImageView *resolveAttachment, int layer);
-	void resolveWithLayerMask(ImageView *resolveAttachment, uint32_t layerMask);
 
 	Image *const image = nullptr;
 	const VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D;

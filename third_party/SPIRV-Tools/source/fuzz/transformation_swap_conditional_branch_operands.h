@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationSwapConditionalBranchOperands : public Transformation {
  public:
   explicit TransformationSwapConditionalBranchOperands(
-      protobufs::TransformationSwapConditionalBranchOperands message);
+      const protobufs::TransformationSwapConditionalBranchOperands& message);
 
   TransformationSwapConditionalBranchOperands(
       const protobufs::InstructionDescriptor& instruction_descriptor,

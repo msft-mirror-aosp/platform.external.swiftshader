@@ -21,8 +21,8 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationReplaceIrrelevantId::TransformationReplaceIrrelevantId(
-    protobufs::TransformationReplaceIrrelevantId message)
-    : message_(std::move(message)) {}
+    const protobufs::TransformationReplaceIrrelevantId& message)
+    : message_(message) {}
 
 TransformationReplaceIrrelevantId::TransformationReplaceIrrelevantId(
     const protobufs::IdUseDescriptor& id_use_descriptor,
@@ -107,12 +107,9 @@ void TransformationReplaceIrrelevantId::Apply(
       message_.id_use_descriptor().in_operand_index(),
       {message_.replacement_id()});
 
-  ir_context->get_def_use_mgr()->EraseUseRecordsOfOperandIds(
-      instruction_to_change);
-  ir_context->get_def_use_mgr()->AnalyzeInstUse(instruction_to_change);
-
-  // No analyses need to be invalidated, since the transformation is local to a
-  // block, and the def-use analysis has been updated.
+  // Invalidate the analyses, since the usage of ids has been changed.
+  ir_context->InvalidateAnalysesExceptFor(
+      opt::IRContext::Analysis::kAnalysisNone);
 }
 
 protobufs::Transformation TransformationReplaceIrrelevantId::ToMessage() const {

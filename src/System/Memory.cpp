@@ -40,21 +40,34 @@
 #	define __x86__
 #endif
 
-// A Clang extension to determine compiler features.
-// We use it to detect Sanitizer builds (e.g. -fsanitize=memory).
-#ifndef __has_feature
-#	define __has_feature(x) 0
-#endif
-
 namespace sw {
 
 namespace {
 
 struct Allocation
 {
-	// size_t bytes;
+	//	size_t bytes;
 	unsigned char *block;
 };
+
+void *allocateRaw(size_t bytes, size_t alignment)
+{
+	ASSERT((alignment & (alignment - 1)) == 0);  // Power of 2 alignment.
+
+	unsigned char *block = (unsigned char *)malloc(bytes + sizeof(Allocation) + alignment);
+	unsigned char *aligned = nullptr;
+
+	if(block)
+	{
+		aligned = (unsigned char *)((uintptr_t)(block + sizeof(Allocation) + alignment - 1) & -(intptr_t)alignment);
+		Allocation *allocation = (Allocation *)(aligned - sizeof(Allocation));
+
+		//	allocation->bytes = bytes;
+		allocation->block = block;
+	}
+
+	return aligned;
+}
 
 }  // anonymous namespace
 
@@ -73,50 +86,19 @@ size_t memoryPageSize()
 	return pageSize;
 }
 
-static void *allocate(size_t bytes, size_t alignment, bool clearToZero)
+void *allocate(size_t bytes, size_t alignment)
 {
-	ASSERT((alignment & (alignment - 1)) == 0);  // Power of 2 alignment.
+	void *memory = allocateRaw(bytes, alignment);
 
-	size_t size = bytes + sizeof(Allocation) + alignment;
-	unsigned char *block = (unsigned char *)malloc(size);
-	unsigned char *aligned = nullptr;
-
-	if(block)
+	if(memory)
 	{
-		if(clearToZero)
-		{
-			memset(block, 0, size);
-		}
-
-		aligned = (unsigned char *)((uintptr_t)(block + sizeof(Allocation) + alignment - 1) & -(intptr_t)alignment);
-		Allocation *allocation = (Allocation *)(aligned - sizeof(Allocation));
-
-		// allocation->bytes = bytes;
-		allocation->block = block;
+		memset(memory, 0, bytes);
 	}
 
-	return aligned;
+	return memory;
 }
 
-// TODO(b/140991626): Rename to allocate().
-void *allocateUninitialized(size_t bytes, size_t alignment)
-{
-	return allocate(bytes, alignment, false);
-}
-
-void *allocateZero(size_t bytes, size_t alignment)
-{
-	return allocate(bytes, alignment, true);
-}
-
-// This funtion allocates memory that is zero-initialized for security reasons
-// only. In MemorySanitizer enabled builds it is left uninitialized.
-void *allocateZeroOrPoison(size_t bytes, size_t alignment)
-{
-	return allocate(bytes, alignment, !__has_feature(memory_sanitizer));
-}
-
-void freeMemory(void *memory)
+void deallocate(void *memory)
 {
 	if(memory)
 	{

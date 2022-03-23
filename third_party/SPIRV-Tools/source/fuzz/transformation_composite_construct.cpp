@@ -23,8 +23,8 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationCompositeConstruct::TransformationCompositeConstruct(
-    protobufs::TransformationCompositeConstruct message)
-    : message_(std::move(message)) {}
+    const protobufs::TransformationCompositeConstruct& message)
+    : message_(message) {}
 
 TransformationCompositeConstruct::TransformationCompositeConstruct(
     uint32_t composite_type_id, std::vector<uint32_t> component,
@@ -120,18 +120,12 @@ void TransformationCompositeConstruct::Apply(
   }
 
   // Insert an OpCompositeConstruct instruction.
-  auto new_instruction = MakeUnique<opt::Instruction>(
+  insert_before.InsertBefore(MakeUnique<opt::Instruction>(
       ir_context, SpvOpCompositeConstruct, message_.composite_type_id(),
-      message_.fresh_id(), in_operands);
-  auto new_instruction_ptr = new_instruction.get();
-  insert_before.InsertBefore(std::move(new_instruction));
-  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(new_instruction_ptr);
-  ir_context->set_instr_block(new_instruction_ptr, destination_block);
+      message_.fresh_id(), in_operands));
 
   fuzzerutil::UpdateModuleIdBound(ir_context, message_.fresh_id());
-
-  // No analyses need to be invalidated since the transformation is local to a
-  // block and the def-use and instruction-to-block mappings have been updated.
+  ir_context->InvalidateAnalysesExceptFor(opt::IRContext::kAnalysisNone);
 
   AddDataSynonymFacts(ir_context, transformation_context);
 }
@@ -297,7 +291,7 @@ void TransformationCompositeConstruct::AddDataSynonymFacts(
         composite_type->AsVector() && component_type->AsVector();
     if (!fuzzerutil::CanMakeSynonymOf(
             ir_context, *transformation_context,
-            *ir_context->get_def_use_mgr()->GetDef(component))) {
+            ir_context->get_def_use_mgr()->GetDef(component))) {
       // We can't make a synonym of this component, so we skip on to the next
       // component.  In the case where we're packing a vector into a vector we
       // have to skip as many components of the resulting vectors as there are

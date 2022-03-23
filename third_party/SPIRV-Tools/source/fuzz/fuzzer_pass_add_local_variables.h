@@ -27,8 +27,9 @@ class FuzzerPassAddLocalVariables : public FuzzerPass {
   FuzzerPassAddLocalVariables(
       opt::IRContext* ir_context, TransformationContext* transformation_context,
       FuzzerContext* fuzzer_context,
-      protobufs::TransformationSequence* transformations,
-      bool ignore_inapplicable_transformations);
+      protobufs::TransformationSequence* transformations);
+
+  ~FuzzerPassAddLocalVariables();
 
   void Apply() override;
 };

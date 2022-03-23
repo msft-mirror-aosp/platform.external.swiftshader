@@ -143,7 +143,6 @@ spv_result_t ValidateEntryPoints(ValidationState_t& _) {
       if (_.recursive_entry_points().find(entry_point) !=
           _.recursive_entry_points().end()) {
         return _.diag(SPV_ERROR_INVALID_BINARY, _.FindDef(entry_point))
-               << _.VkErrorID(4634)
                << "Entry points may not have a call graph with cycles.";
       }
     }
@@ -202,7 +201,7 @@ spv_result_t ValidateBinaryUsingContextAndValidationState(
                  /* diagnostic = */ nullptr);
 
   // Parse the module and perform inline validation checks. These checks do
-  // not require the knowledge of the whole module.
+  // not require the the knowledge of the whole module.
   if (auto error = spvBinaryParse(&context, vstate, words, num_words,
                                   /*parsed_header =*/nullptr,
                                   ProcessInstruction, pDiagnostic)) {
@@ -219,7 +218,9 @@ spv_result_t ValidateBinaryUsingContextAndValidationState(
       if (inst->opcode() == SpvOpEntryPoint) {
         const auto entry_point = inst->GetOperandAs<uint32_t>(1);
         const auto execution_model = inst->GetOperandAs<SpvExecutionModel>(0);
-        const std::string desc_name = inst->GetOperandAs<std::string>(2);
+        const char* str = reinterpret_cast<const char*>(
+            inst->words().data() + inst->operand(2).offset);
+        const std::string desc_name(str);
 
         ValidationState_t::EntryPointDescription desc;
         desc.name = desc_name;
@@ -235,8 +236,9 @@ spv_result_t ValidateBinaryUsingContextAndValidationState(
           for (const Instruction* check_inst : visited_entry_points) {
             const auto check_execution_model =
                 check_inst->GetOperandAs<SpvExecutionModel>(0);
-            const std::string check_name =
-                check_inst->GetOperandAs<std::string>(2);
+            const char* check_str = reinterpret_cast<const char*>(
+                check_inst->words().data() + inst->operand(2).offset);
+            const std::string check_name(check_str);
 
             if (desc_name == check_name &&
                 execution_model == check_execution_model) {
@@ -348,7 +350,7 @@ spv_result_t ValidateBinaryUsingContextAndValidationState(
   }
 
   // Validate the preconditions involving adjacent instructions. e.g. SpvOpPhi
-  // must only be preceded by SpvOpLabel, SpvOpPhi, or SpvOpLine.
+  // must only be preceeded by SpvOpLabel, SpvOpPhi, or SpvOpLine.
   if (auto error = ValidateAdjacency(*vstate)) return error;
 
   if (auto error = ValidateEntryPoints(*vstate)) return error;

@@ -52,7 +52,7 @@ void VectorDCE::FindLiveComponents(Function* function,
   // components are live because of arbitrary nesting of structs.
   function->ForEachInst(
       [&work_list, this, live_components](Instruction* current_inst) {
-        if (current_inst->IsCommonDebugInstr()) {
+        if (current_inst->IsOpenCL100DebugInstr()) {
           return;
         }
         if (!HasVectorOrScalarResult(current_inst) ||
@@ -110,11 +110,7 @@ void VectorDCE::MarkExtractUseAsLive(const Instruction* current_inst,
     if (current_inst->NumInOperands() < 2) {
       new_item.components = live_elements;
     } else {
-      uint32_t element_index = current_inst->GetSingleWordInOperand(1);
-      uint32_t item_size = GetVectorComponentCount(operand_inst->type_id());
-      if (element_index < item_size) {
-        new_item.components.Set(element_index);
-      }
+      new_item.components.Set(current_inst->GetSingleWordInOperand(1));
     }
     AddItemToWorkListIfNeeded(new_item, live_components, work_list);
   }
@@ -180,10 +176,10 @@ void VectorDCE::MarkVectorShuffleUsesAsLive(
   second_operand.instruction =
       def_use_mgr->GetDef(current_item.instruction->GetSingleWordInOperand(1));
 
-  uint32_t size_of_first_operand =
-      GetVectorComponentCount(first_operand.instruction->type_id());
-  uint32_t size_of_second_operand =
-      GetVectorComponentCount(second_operand.instruction->type_id());
+  analysis::TypeManager* type_mgr = context()->get_type_mgr();
+  analysis::Vector* first_type =
+      type_mgr->GetType(first_operand.instruction->type_id())->AsVector();
+  uint32_t size_of_first_operand = first_type->element_count();
 
   for (uint32_t in_op = 2; in_op < current_item.instruction->NumInOperands();
        ++in_op) {
@@ -191,7 +187,7 @@ void VectorDCE::MarkVectorShuffleUsesAsLive(
     if (current_item.components.Get(in_op - 2)) {
       if (index < size_of_first_operand) {
         first_operand.components.Set(index);
-      } else if (index - size_of_first_operand < size_of_second_operand) {
+      } else {
         second_operand.components.Set(index - size_of_first_operand);
       }
     }
@@ -206,6 +202,7 @@ void VectorDCE::MarkCompositeContructUsesAsLive(
     VectorDCE::LiveComponentMap* live_components,
     std::vector<VectorDCE::WorkListItem>* work_list) {
   analysis::DefUseManager* def_use_mgr = context()->get_def_use_mgr();
+  analysis::TypeManager* type_mgr = context()->get_type_mgr();
 
   uint32_t current_component = 0;
   Instruction* current_inst = work_item.instruction;
@@ -226,7 +223,8 @@ void VectorDCE::MarkCompositeContructUsesAsLive(
       assert(HasVectorResult(op_inst));
       WorkListItem new_work_item;
       new_work_item.instruction = op_inst;
-      uint32_t op_vector_size = GetVectorComponentCount(op_inst->type_id());
+      uint32_t op_vector_size =
+          type_mgr->GetType(op_inst->type_id())->AsVector()->element_count();
 
       for (uint32_t op_vector_idx = 0; op_vector_idx < op_vector_size;
            op_vector_idx++, current_component++) {
@@ -297,18 +295,6 @@ bool VectorDCE::HasScalarResult(const Instruction* inst) const {
     default:
       return false;
   }
-}
-
-uint32_t VectorDCE::GetVectorComponentCount(uint32_t type_id) {
-  assert(type_id != 0 &&
-         "Trying to get the vector element count, but the type id is 0");
-  analysis::TypeManager* type_mgr = context()->get_type_mgr();
-  const analysis::Type* type = type_mgr->GetType(type_id);
-  const analysis::Vector* vector_type = type->AsVector();
-  assert(
-      vector_type &&
-      "Trying to get the vector element count, but the type is not a vector");
-  return vector_type->element_count();
 }
 
 bool VectorDCE::RewriteInstructions(
@@ -408,7 +394,7 @@ void VectorDCE::MarkDebugValueUsesAsDead(
     Instruction* composite, std::vector<Instruction*>* dead_dbg_value) {
   context()->get_def_use_mgr()->ForEachUser(
       composite, [&dead_dbg_value](Instruction* use) {
-        if (use->GetCommonDebugOpcode() == CommonDebugInfoDebugValue)
+        if (use->GetOpenCL100DebugOpcode() == OpenCLDebugInfo100DebugValue)
           dead_dbg_value->push_back(use);
       });
 }

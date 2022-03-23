@@ -43,7 +43,7 @@ class ValidationStateTest : public testing::Test {
         options_(spvValidatorOptionsCreate()),
         state_(context_, options_, kFakeBinary, 0, 1) {}
 
-  ~ValidationStateTest() override {
+  ~ValidationStateTest() {
     spvContextDestroy(context_);
     spvValidatorOptionsDestroy(options_);
   }

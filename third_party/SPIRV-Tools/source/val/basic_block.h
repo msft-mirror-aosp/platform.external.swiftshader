@@ -84,26 +84,26 @@ class BasicBlock {
       type_.set(type);
   }
 
-  /// Sets the immediate dominator of this basic block
+  /// Sets the immedate dominator of this basic block
   ///
   /// @param[in] dom_block The dominator block
   void SetImmediateDominator(BasicBlock* dom_block);
 
-  /// Sets the immediate post dominator of this basic block
+  /// Sets the immedate post dominator of this basic block
   ///
   /// @param[in] pdom_block The post dominator block
   void SetImmediatePostDominator(BasicBlock* pdom_block);
 
-  /// Returns the immediate dominator of this basic block
+  /// Returns the immedate dominator of this basic block
   BasicBlock* immediate_dominator();
 
-  /// Returns the immediate dominator of this basic block
+  /// Returns the immedate dominator of this basic block
   const BasicBlock* immediate_dominator() const;
 
-  /// Returns the immediate post dominator of this basic block
+  /// Returns the immedate post dominator of this basic block
   BasicBlock* immediate_post_dominator();
 
-  /// Returns the immediate post dominator of this basic block
+  /// Returns the immedate post dominator of this basic block
   const BasicBlock* immediate_post_dominator() const;
 
   /// Returns the label instruction for the block, or nullptr if not set.
@@ -139,14 +139,9 @@ class BasicBlock {
   /// @brief A BasicBlock dominator iterator class
   ///
   /// This iterator will iterate over the (post)dominators of the block
-  class DominatorIterator {
+  class DominatorIterator
+      : public std::iterator<std::forward_iterator_tag, BasicBlock*> {
    public:
-    using iterator_category = std::forward_iterator_tag;
-    using value_type = BasicBlock*;
-    using pointer = value_type*;
-    using reference = value_type&;
-    using difference_type = std::ptrdiff_t;
-
     /// @brief Constructs the end of dominator iterator
     ///
     /// This will create an iterator which will represent the element

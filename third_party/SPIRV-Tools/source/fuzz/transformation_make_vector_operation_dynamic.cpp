@@ -22,8 +22,9 @@ namespace fuzz {
 
 TransformationMakeVectorOperationDynamic::
     TransformationMakeVectorOperationDynamic(
-        protobufs::TransformationMakeVectorOperationDynamic message)
-    : message_(std::move(message)) {}
+        const spvtools::fuzz::protobufs::
+            TransformationMakeVectorOperationDynamic& message)
+    : message_(message) {}
 
 TransformationMakeVectorOperationDynamic::
     TransformationMakeVectorOperationDynamic(uint32_t instruction_result_id,

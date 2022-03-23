@@ -28,7 +28,7 @@ namespace fuzz {
 class TransformationReplaceParamsWithStruct : public Transformation {
  public:
   explicit TransformationReplaceParamsWithStruct(
-      protobufs::TransformationReplaceParamsWithStruct message);
+      const protobufs::TransformationReplaceParamsWithStruct& message);
 
   TransformationReplaceParamsWithStruct(
       const std::vector<uint32_t>& parameter_id,
