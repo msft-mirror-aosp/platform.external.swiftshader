@@ -427,8 +427,7 @@ spv_result_t ValidateTypeStruct(ValidationState_t& _, const Instruction* inst) {
   if (spvIsVulkanEnv(_.context()->target_env) &&
       !_.options()->before_hlsl_legalization && ContainsOpaqueType(_, inst)) {
     return _.diag(SPV_ERROR_INVALID_ID, inst)
-           << _.VkErrorID(4667) << "In "
-           << spvLogStringForEnv(_.context()->target_env)
+           << "In " << spvLogStringForEnv(_.context()->target_env)
            << ", OpTypeStruct must not contain an opaque type.";
   }
 
@@ -463,7 +462,6 @@ spv_result_t ValidateTypePointer(ValidationState_t& _,
 
   if (!_.IsValidStorageClass(storage_class)) {
     return _.diag(SPV_ERROR_INVALID_BINARY, inst)
-           << _.VkErrorID(4643)
            << "Invalid storage class for target environment";
   }
 
@@ -596,7 +594,7 @@ spv_result_t ValidateTypeCooperativeMatrixNV(ValidationState_t& _,
   if (!cols || !_.IsIntScalarType(cols->type_id()) ||
       !spvOpcodeIsConstant(cols->opcode())) {
     return _.diag(SPV_ERROR_INVALID_ID, inst)
-           << "OpTypeCooperativeMatrixNV Cols <id> '" << _.getIdName(cols_id)
+           << "OpTypeCooperativeMatrixNV Cols <id> '" << _.getIdName(rows_id)
            << "' is not a constant instruction with scalar integer type.";
   }
 

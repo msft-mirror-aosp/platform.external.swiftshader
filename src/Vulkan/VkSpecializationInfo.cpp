@@ -12,66 +12,90 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "VkSpecializationInfo.hpp"
-
-#include "System/Memory.hpp"
-
+#include "VkPipelineCache.hpp"
 #include <cstring>
 
 namespace vk {
 
 SpecializationInfo::SpecializationInfo(const VkSpecializationInfo *specializationInfo)
 {
-	if(specializationInfo && specializationInfo->mapEntryCount > 0)
+	if(specializationInfo)
 	{
-		info.mapEntryCount = specializationInfo->mapEntryCount;
-		size_t entriesSize = specializationInfo->mapEntryCount * sizeof(VkSpecializationMapEntry);
-		void *mapEntries = sw::allocateUninitialized(entriesSize);
-		memcpy(mapEntries, specializationInfo->pMapEntries, entriesSize);
-		info.pMapEntries = reinterpret_cast<VkSpecializationMapEntry *>(mapEntries);
+		auto ptr = reinterpret_cast<VkSpecializationInfo *>(
+		    allocate(sizeof(VkSpecializationInfo), REQUIRED_MEMORY_ALIGNMENT, DEVICE_MEMORY));
 
-		info.dataSize = specializationInfo->dataSize;
-		void *data = sw::allocateUninitialized(specializationInfo->dataSize);
-		memcpy(data, specializationInfo->pData, specializationInfo->dataSize);
-		info.pData = data;
+		info = std::shared_ptr<VkSpecializationInfo>(ptr, Deleter());
+
+		info->mapEntryCount = specializationInfo->mapEntryCount;
+		if(specializationInfo->mapEntryCount > 0)
+		{
+			size_t entriesSize = specializationInfo->mapEntryCount * sizeof(VkSpecializationMapEntry);
+			VkSpecializationMapEntry *mapEntries = reinterpret_cast<VkSpecializationMapEntry *>(
+			    allocate(entriesSize, REQUIRED_MEMORY_ALIGNMENT, DEVICE_MEMORY));
+			memcpy(mapEntries, specializationInfo->pMapEntries, entriesSize);
+			info->pMapEntries = mapEntries;
+		}
+
+		info->dataSize = specializationInfo->dataSize;
+		if(specializationInfo->dataSize > 0)
+		{
+			void *data = allocate(specializationInfo->dataSize, REQUIRED_MEMORY_ALIGNMENT, DEVICE_MEMORY);
+			memcpy(data, specializationInfo->pData, specializationInfo->dataSize);
+			info->pData = data;
+		}
+		else
+		{
+			info->pData = nullptr;
+		}
 	}
 }
 
-SpecializationInfo::SpecializationInfo(const SpecializationInfo &copy)
-    : SpecializationInfo(&copy.info)
+void SpecializationInfo::Deleter::operator()(VkSpecializationInfo *info) const
 {
+	if(info)
+	{
+		deallocate(const_cast<VkSpecializationMapEntry *>(info->pMapEntries), DEVICE_MEMORY);
+		deallocate(const_cast<void *>(info->pData), DEVICE_MEMORY);
+		deallocate(info, DEVICE_MEMORY);
+	}
 }
 
-SpecializationInfo::~SpecializationInfo()
+bool SpecializationInfo::operator<(const SpecializationInfo &specializationInfo) const
 {
-	sw::freeMemory(const_cast<VkSpecializationMapEntry *>(info.pMapEntries));
-	sw::freeMemory(const_cast<void *>(info.pData));
-}
-
-bool SpecializationInfo::operator<(const SpecializationInfo &rhs) const
-{
-	if(info.mapEntryCount != rhs.info.mapEntryCount)
+	// Check that either both or neither keys have specialization info.
+	if((info.get() == nullptr) != (specializationInfo.info.get() == nullptr))
 	{
-		return info.mapEntryCount < rhs.info.mapEntryCount;
+		return info.get() == nullptr;
 	}
 
-	if(info.dataSize != rhs.info.dataSize)
+	if(!info)
 	{
-		return info.dataSize < rhs.info.dataSize;
+		ASSERT(!specializationInfo.info);
+		return false;
 	}
 
-	if(info.mapEntryCount > 0)
+	if(info->mapEntryCount != specializationInfo.info->mapEntryCount)
 	{
-		int cmp = memcmp(info.pMapEntries, rhs.info.pMapEntries, info.mapEntryCount * sizeof(VkSpecializationMapEntry));
+		return info->mapEntryCount < specializationInfo.info->mapEntryCount;
+	}
+
+	if(info->dataSize != specializationInfo.info->dataSize)
+	{
+		return info->dataSize < specializationInfo.info->dataSize;
+	}
+
+	if(info->mapEntryCount > 0)
+	{
+		int cmp = memcmp(info->pMapEntries, specializationInfo.info->pMapEntries, info->mapEntryCount * sizeof(VkSpecializationMapEntry));
 		if(cmp != 0)
 		{
 			return cmp < 0;
 		}
 	}
 
-	if(info.dataSize > 0)
+	if(info->dataSize > 0)
 	{
-		int cmp = memcmp(info.pData, rhs.info.pData, info.dataSize);
+		int cmp = memcmp(info->pData, specializationInfo.info->pData, info->dataSize);
 		if(cmp != 0)
 		{
 			return cmp < 0;

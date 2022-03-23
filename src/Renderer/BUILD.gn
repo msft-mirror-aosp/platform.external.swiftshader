@@ -23,7 +23,10 @@ config("swiftshader_renderer_private_config") {
       "/wd5030",  # attribute is not recognized
     ]
   } else if (current_cpu == "x86" || current_cpu == "x64") {
-    cflags = [ "-Wno-sign-compare" ]
+    cflags = [
+      "-msse2",
+      "-Wno-sign-compare",
+    ]
   }
 }
 

@@ -52,7 +52,7 @@ inline std::unique_ptr<IRContext> BuildModule(std::string text) {
 }
 
 TEST(ModuleTest, ComputeIdBound) {
-  // Empty module case.
+  // Emtpy module case.
   EXPECT_EQ(1u, BuildModule("")->module()->ComputeIdBound());
   // Sensitive to result id
   EXPECT_EQ(2u, BuildModule("%void = OpTypeVoid")->module()->ComputeIdBound());

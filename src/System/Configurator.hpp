@@ -15,61 +15,52 @@
 #ifndef sw_Configurator_hpp
 #define sw_Configurator_hpp
 
-#include <optional>
-#include <sstream>
 #include <string>
-#include <unordered_map>
+#include <vector>
+
+#include <stdlib.h>
 
 namespace sw {
 
 class Configurator
 {
 public:
-	// Construct a Configurator given a configuration file.
-	explicit Configurator(const std::string &filePath);
+	Configurator(std::string iniPath = "");
 
-	// Construct a Configurator given an in-memory stream.
-	explicit Configurator(std::istream &str);
+	~Configurator();
 
-	void writeFile(const std::string &filePath, const std::string &title = "Configuration File");
+	std::string getValue(std::string sectionName, std::string valueName, std::string defaultValue = "") const;
+	int getInteger(std::string sectionName, std::string valueName, int defaultValue = 0) const;
+	bool getBoolean(std::string sectionName, std::string valueName, bool defaultValue = false) const;
+	double getFloat(std::string sectionName, std::string valueName, double defaultValue = 0.0) const;
+	unsigned int getFormatted(std::string sectionName, std::string valueName, char *format,
+	                          void *v1 = 0, void *v2 = 0, void *v3 = 0, void *v4 = 0,
+	                          void *v5 = 0, void *v6 = 0, void *v7 = 0, void *v8 = 0,
+	                          void *v9 = 0, void *v10 = 0, void *v11 = 0, void *v12 = 0,
+	                          void *v13 = 0, void *v14 = 0, void *v15 = 0, void *v16 = 0);
 
-	template<typename T>
-	int getInteger(const std::string &sectionName, const std::string &keyName, T defaultValue = 0) const;
-	bool getBoolean(const std::string &sectionName, const std::string &keyName, bool defaultValue = false) const;
-	double getFloat(const std::string &sectionName, const std::string &keyName, double defaultValue = 0.0) const;
+	void addValue(std::string sectionName, std::string valueName, std::string value);
 
-	std::string getValue(const std::string &sectionName, const std::string &keyName, const std::string &defaultValue = "") const;
-	void addValue(const std::string &sectionName, const std::string &keyName, const std::string &value);
+	void writeFile(std::string title = "Configuration File");
 
 private:
-	bool readConfiguration(std::istream &str);
+	bool readFile();
 
-	std::optional<std::string> getValueIfExists(const std::string &sectionName, const std::string &keyName) const;
+	unsigned int addKeyName(std::string sectionName);
+	int findKey(std::string sectionName) const;
+	int findValue(unsigned int sectionID, std::string valueName) const;
+
+	std::string path;
 
 	struct Section
 	{
-		std::unordered_map<std::string, std::string> keyValuePairs;
+		std::vector<std::string> names;
+		std::vector<std::string> values;
 	};
-	std::unordered_map<std::string, Section> sections;
+
+	std::vector<Section> sections;
+	std::vector<std::string> names;
 };
-
-template<typename T>
-int Configurator::getInteger(const std::string &sectionName, const std::string &keyName, T defaultValue) const
-{
-	static_assert(std::is_integral_v<T>, "getInteger must be used with integral types");
-
-	auto strValue = getValueIfExists(sectionName, keyName);
-	if(!strValue)
-		return defaultValue;
-
-	std::stringstream ss{ *strValue };
-	if(strValue->find("0x") != std::string::npos)
-		ss >> std::hex;
-
-	T val = 0;
-	ss >> val;
-	return val;
-}
 
 }  // namespace sw
 

@@ -28,7 +28,7 @@ namespace fuzz {
 class TransformationEquationInstruction : public Transformation {
  public:
   explicit TransformationEquationInstruction(
-      protobufs::TransformationEquationInstruction message);
+      const protobufs::TransformationEquationInstruction& message);
 
   TransformationEquationInstruction(
       uint32_t fresh_id, SpvOp opcode,

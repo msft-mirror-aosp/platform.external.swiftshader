@@ -579,9 +579,12 @@ bool ARMLowOverheadLoops::runOnMachineFunction(MachineFunction &mf) {
 }
 
 bool ARMLowOverheadLoops::ProcessLoop(MachineLoop *ML) {
+
+  bool Changed = false;
+
   // Process inner loops first.
   for (auto I = ML->begin(), E = ML->end(); I != E; ++I)
-    ProcessLoop(*I);
+    Changed |= ProcessLoop(*I);
 
   LLVM_DEBUG(dbgs() << "ARM Loops: Processing loop containing:\n";
              if (auto *Preheader = ML->getLoopPreheader())

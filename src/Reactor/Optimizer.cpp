@@ -396,11 +396,7 @@ void Optimizer::optimizeSingleBasicBlockLoadsStores()
 			bool allLoadsReplaced = true;
 		};
 
-		// Use the (unique) index of the alloca's destination argument (i.e. the address
-		// of the allocated variable), which is of type SizeT, as the key. Note we do not
-		// use the pointer to the alloca instruction or its resulting address, to avoid
-		// undeterministic unordered_map behavior.
-		std::unordered_map<Ice::SizeT, LastStore> lastStoreTo;
+		std::unordered_map<const Ice::InstAlloca *, LastStore> lastStoreTo;
 
 		for(Ice::Inst &inst : block->getInsts())
 		{
@@ -419,11 +415,9 @@ void Optimizer::optimizeSingleBasicBlockLoadsStores()
 					// a pointer which could be used for indirect stores.
 					if(getUses(address)->areOnlyLoadStore())
 					{
-						Ice::SizeT addressIdx = alloca->getDest()->getIndex();
-
 						// If there was a previous store to this address, and it was propagated
 						// to all subsequent loads, it can be eliminated.
-						if(auto entry = lastStoreTo.find(addressIdx); entry != lastStoreTo.end())
+						if(auto entry = lastStoreTo.find(alloca); entry != lastStoreTo.end())
 						{
 							Ice::Inst *previousStore = entry->second.store;
 
@@ -434,7 +428,7 @@ void Optimizer::optimizeSingleBasicBlockLoadsStores()
 							}
 						}
 
-						lastStoreTo[addressIdx] = { &inst };
+						lastStoreTo[alloca] = { &inst };
 					}
 				}
 			}
@@ -442,8 +436,7 @@ void Optimizer::optimizeSingleBasicBlockLoadsStores()
 			{
 				if(Ice::InstAlloca *alloca = allocaOf(inst.getLoadAddress()))
 				{
-					Ice::SizeT addressIdx = alloca->getDest()->getIndex();
-					auto entry = lastStoreTo.find(addressIdx);
+					auto entry = lastStoreTo.find(alloca);
 					if(entry != lastStoreTo.end())
 					{
 						const Ice::Inst *store = entry->second.store;

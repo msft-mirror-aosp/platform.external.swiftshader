@@ -147,7 +147,7 @@ TEST(Optimizer, CanRegisterPassesFromFlags) {
 
   std::vector<std::string> pass_flags = {
       "--strip-debug",
-      "--strip-nonsemantic",
+      "--strip-reflect",
       "--set-spec-const-default-value=23:42 21:12",
       "--if-conversion",
       "--freeze-spec-const",

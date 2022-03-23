@@ -49,6 +49,7 @@ enum IntrinsicID {
   Memcpy,
   Memmove,
   Memset,
+  NaClReadTP,
   Setjmp,
   Sqrt,
   Stacksave,

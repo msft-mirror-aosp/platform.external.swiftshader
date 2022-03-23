@@ -20,8 +20,9 @@
 #include "Context.h"
 #include "Device.hpp"
 #include "common/debug.h"
-#include "libEGL/Display.h"
 #include "libEGL/libEGL.hpp"
+#include "libEGL/Display.h"
+#include "libGLES_CM/libGLES_CM.hpp"
 
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
@@ -50,5 +51,6 @@ namespace egl
 }
 
 extern LibEGL libEGL;
+extern LibGLES_CM libGLES_CM;
 
 #endif   // LIBGLESV2_MAIN_H_
