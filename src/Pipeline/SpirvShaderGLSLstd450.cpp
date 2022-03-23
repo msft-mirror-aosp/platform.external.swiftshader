@@ -43,6 +43,27 @@ sw::SIMD::Float Interpolate(const sw::SIMD::Float &x, const sw::SIMD::Float &y, 
 	return interpolant;
 }
 
+// TODO(b/179925303): Eliminate when interpolants are tightly packed.
+uint32_t ComputeInterpolantOffset(uint32_t offset, uint32_t components_per_row, bool useArrayOffset)
+{
+	if(useArrayOffset)
+	{
+		uint32_t interpolant_offset = offset / components_per_row;
+		offset = (interpolant_offset * 4) + (offset - interpolant_offset * components_per_row);
+	}
+	return offset;
+}
+
+rr::Int ComputeInterpolantOffset(rr::Int offset, uint32_t components_per_row, bool useArrayOffset)
+{
+	if(useArrayOffset)
+	{
+		rr::Int interpolant_offset = offset / rr::Int(components_per_row);
+		offset = (interpolant_offset << 2) + (offset - interpolant_offset * rr::Int(components_per_row));
+	}
+	return offset;
+}
+
 }  // namespace
 
 namespace sw {
@@ -55,79 +76,79 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 
 	switch(extInstIndex)
 	{
-	case GLSLstd450FAbs:
+		case GLSLstd450FAbs:
 		{
 			auto src = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, Abs(src.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450SAbs:
+		case GLSLstd450SAbs:
 		{
 			auto src = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, Abs(src.Int(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Cross:
+		case GLSLstd450Cross:
 		{
 			auto lhs = Operand(this, state, insn.word(5));
 			auto rhs = Operand(this, state, insn.word(6));
 			dst.move(0, lhs.Float(1) * rhs.Float(2) - rhs.Float(1) * lhs.Float(2));
 			dst.move(1, lhs.Float(2) * rhs.Float(0) - rhs.Float(2) * lhs.Float(0));
 			dst.move(2, lhs.Float(0) * rhs.Float(1) - rhs.Float(0) * lhs.Float(1));
+			break;
 		}
-		break;
-	case GLSLstd450Floor:
+		case GLSLstd450Floor:
 		{
 			auto src = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, Floor(src.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Trunc:
+		case GLSLstd450Trunc:
 		{
 			auto src = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, Trunc(src.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Ceil:
+		case GLSLstd450Ceil:
 		{
 			auto src = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, Ceil(src.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Fract:
+		case GLSLstd450Fract:
 		{
 			auto src = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, Frac(src.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Round:
+		case GLSLstd450Round:
 		{
 			auto src = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, Round(src.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450RoundEven:
+		case GLSLstd450RoundEven:
 		{
 			auto src = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
@@ -137,9 +158,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 				dst.move(i, x + ((SIMD::Float(CmpLT(x, src.Float(i)) & SIMD::Int(1)) * SIMD::Float(2.0f)) - SIMD::Float(1.0f)) *
 				                    SIMD::Float(CmpEQ(Frac(src.Float(i)), SIMD::Float(0.5f)) & SIMD::Int(1)) * SIMD::Float(Int4(x) & SIMD::Int(1)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450FMin:
+		case GLSLstd450FMin:
 		{
 			auto lhs = Operand(this, state, insn.word(5));
 			auto rhs = Operand(this, state, insn.word(6));
@@ -147,9 +168,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, Min(lhs.Float(i), rhs.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450FMax:
+		case GLSLstd450FMax:
 		{
 			auto lhs = Operand(this, state, insn.word(5));
 			auto rhs = Operand(this, state, insn.word(6));
@@ -157,9 +178,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, Max(lhs.Float(i), rhs.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450SMin:
+		case GLSLstd450SMin:
 		{
 			auto lhs = Operand(this, state, insn.word(5));
 			auto rhs = Operand(this, state, insn.word(6));
@@ -167,9 +188,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, Min(lhs.Int(i), rhs.Int(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450SMax:
+		case GLSLstd450SMax:
 		{
 			auto lhs = Operand(this, state, insn.word(5));
 			auto rhs = Operand(this, state, insn.word(6));
@@ -177,9 +198,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, Max(lhs.Int(i), rhs.Int(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450UMin:
+		case GLSLstd450UMin:
 		{
 			auto lhs = Operand(this, state, insn.word(5));
 			auto rhs = Operand(this, state, insn.word(6));
@@ -187,9 +208,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, Min(lhs.UInt(i), rhs.UInt(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450UMax:
+		case GLSLstd450UMax:
 		{
 			auto lhs = Operand(this, state, insn.word(5));
 			auto rhs = Operand(this, state, insn.word(6));
@@ -197,9 +218,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, Max(lhs.UInt(i), rhs.UInt(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Step:
+		case GLSLstd450Step:
 		{
 			auto edge = Operand(this, state, insn.word(5));
 			auto x = Operand(this, state, insn.word(6));
@@ -207,9 +228,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, CmpNLT(x.Float(i), edge.Float(i)) & As<SIMD::Int>(SIMD::Float(1.0f)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450SmoothStep:
+		case GLSLstd450SmoothStep:
 		{
 			auto edge0 = Operand(this, state, insn.word(5));
 			auto edge1 = Operand(this, state, insn.word(6));
@@ -222,9 +243,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 				              SIMD::Float(1.0f));
 				dst.move(i, tx * tx * (Float4(3.0f) - Float4(2.0f) * tx));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450FMix:
+		case GLSLstd450FMix:
 		{
 			auto x = Operand(this, state, insn.word(5));
 			auto y = Operand(this, state, insn.word(6));
@@ -233,9 +254,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, a.Float(i) * (y.Float(i) - x.Float(i)) + x.Float(i));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450FClamp:
+		case GLSLstd450FClamp:
 		{
 			auto x = Operand(this, state, insn.word(5));
 			auto minVal = Operand(this, state, insn.word(6));
@@ -244,9 +265,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, Min(Max(x.Float(i), minVal.Float(i)), maxVal.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450SClamp:
+		case GLSLstd450SClamp:
 		{
 			auto x = Operand(this, state, insn.word(5));
 			auto minVal = Operand(this, state, insn.word(6));
@@ -255,9 +276,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, Min(Max(x.Int(i), minVal.Int(i)), maxVal.Int(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450UClamp:
+		case GLSLstd450UClamp:
 		{
 			auto x = Operand(this, state, insn.word(5));
 			auto minVal = Operand(this, state, insn.word(6));
@@ -266,9 +287,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, Min(Max(x.UInt(i), minVal.UInt(i)), maxVal.UInt(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450FSign:
+		case GLSLstd450FSign:
 		{
 			auto src = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
@@ -277,9 +298,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 				auto pos = As<SIMD::Int>(CmpNLE(src.Float(i), SIMD::Float(+0.0f))) & As<SIMD::Int>(SIMD::Float(1.0f));
 				dst.move(i, neg | pos);
 			}
+			break;
 		}
-		break;
-	case GLSLstd450SSign:
+		case GLSLstd450SSign:
 		{
 			auto src = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
@@ -288,46 +309,45 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 				auto pos = CmpNLE(src.Int(i), SIMD::Int(0)) & SIMD::Int(1);
 				dst.move(i, neg | pos);
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Reflect:
+		case GLSLstd450Reflect:
 		{
 			auto I = Operand(this, state, insn.word(5));
 			auto N = Operand(this, state, insn.word(6));
 
-			SIMD::Float d = FDot(type.componentCount, I, N);
+			SIMD::Float d = Dot(type.componentCount, I, N);
 
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, I.Float(i) - SIMD::Float(2.0f) * d * N.Float(i));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Refract:
+		case GLSLstd450Refract:
 		{
 			auto I = Operand(this, state, insn.word(5));
 			auto N = Operand(this, state, insn.word(6));
 			auto eta = Operand(this, state, insn.word(7));
-			Decorations r = GetDecorationsForId(insn.resultId());
 
-			SIMD::Float d = FDot(type.componentCount, I, N);
+			SIMD::Float d = Dot(type.componentCount, I, N);
 			SIMD::Float k = SIMD::Float(1.0f) - eta.Float(0) * eta.Float(0) * (SIMD::Float(1.0f) - d * d);
 			SIMD::Int pos = CmpNLT(k, SIMD::Float(0.0f));
-			SIMD::Float t = (eta.Float(0) * d + Sqrt(k, r.RelaxedPrecision));
+			SIMD::Float t = (eta.Float(0) * d + Sqrt(k));
 
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, pos & As<SIMD::Int>(eta.Float(0) * I.Float(i) - t * N.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450FaceForward:
+		case GLSLstd450FaceForward:
 		{
 			auto N = Operand(this, state, insn.word(5));
 			auto I = Operand(this, state, insn.word(6));
 			auto Nref = Operand(this, state, insn.word(7));
 
-			SIMD::Float d = FDot(type.componentCount, I, Nref);
+			SIMD::Float d = Dot(type.componentCount, I, Nref);
 			SIMD::Int neg = CmpLT(d, SIMD::Float(0.0f));
 
 			for(auto i = 0u; i < type.componentCount; i++)
@@ -335,36 +355,32 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 				auto n = N.Float(i);
 				dst.move(i, (neg & As<SIMD::Int>(n)) | (~neg & As<SIMD::Int>(-n)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Length:
+		case GLSLstd450Length:
 		{
 			auto x = Operand(this, state, insn.word(5));
-			SIMD::Float d = FDot(getObjectType(insn.word(5)).componentCount, x, x);
-			Decorations r = GetDecorationsForId(insn.resultId());
+			SIMD::Float d = Dot(getType(getObject(insn.word(5))).componentCount, x, x);
 
-			dst.move(0, Sqrt(d, r.RelaxedPrecision));
+			dst.move(0, Sqrt(d));
+			break;
 		}
-		break;
-	case GLSLstd450Normalize:
+		case GLSLstd450Normalize:
 		{
 			auto x = Operand(this, state, insn.word(5));
-			Decorations r = GetDecorationsForId(insn.resultId());
-
-			SIMD::Float d = FDot(getObjectType(insn.word(5)).componentCount, x, x);
-			SIMD::Float invLength = SIMD::Float(1.0f) / Sqrt(d, r.RelaxedPrecision);
+			SIMD::Float d = Dot(getType(getObject(insn.word(5))).componentCount, x, x);
+			SIMD::Float invLength = SIMD::Float(1.0f) / Sqrt(d);
 
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, invLength * x.Float(i));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Distance:
+		case GLSLstd450Distance:
 		{
 			auto p0 = Operand(this, state, insn.word(5));
 			auto p1 = Operand(this, state, insn.word(6));
-			Decorations r = GetDecorationsForId(insn.resultId());
 
 			// sqrt(dot(p0-p1, p0-p1))
 			SIMD::Float d = (p0.Float(0) - p1.Float(0)) * (p0.Float(0) - p1.Float(0));
@@ -374,10 +390,10 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 				d += (p0.Float(i) - p1.Float(i)) * (p0.Float(i) - p1.Float(i));
 			}
 
-			dst.move(0, Sqrt(d, r.RelaxedPrecision));
+			dst.move(0, Sqrt(d));
+			break;
 		}
-		break;
-	case GLSLstd450Modf:
+		case GLSLstd450Modf:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			auto ptrId = Object::ID(insn.word(6));
@@ -392,9 +408,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			}
 
 			Store(ptrId, whole, false, std::memory_order_relaxed, state);
+			break;
 		}
-		break;
-	case GLSLstd450ModfStruct:
+		case GLSLstd450ModfStruct:
 		{
 			auto val = Operand(this, state, insn.word(5));
 
@@ -404,9 +420,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 				dst.move(i, wholeAndFrac.second);
 				dst.move(val.componentCount + i, wholeAndFrac.first);
 			}
+			break;
 		}
-		break;
-	case GLSLstd450PackSnorm4x8:
+		case GLSLstd450PackSnorm4x8:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			dst.move(0, (SIMD::Int(Round(Min(Max(val.Float(0), SIMD::Float(-1.0f)), SIMD::Float(1.0f)) * SIMD::Float(127.0f))) &
@@ -420,18 +436,18 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			                ((SIMD::Int(Round(Min(Max(val.Float(3), SIMD::Float(-1.0f)), SIMD::Float(1.0f)) * SIMD::Float(127.0f))) &
 			                  SIMD::Int(0xFF))
 			                 << 24));
+			break;
 		}
-		break;
-	case GLSLstd450PackUnorm4x8:
+		case GLSLstd450PackUnorm4x8:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			dst.move(0, (SIMD::UInt(Round(Min(Max(val.Float(0), SIMD::Float(0.0f)), SIMD::Float(1.0f)) * SIMD::Float(255.0f)))) |
 			                ((SIMD::UInt(Round(Min(Max(val.Float(1), SIMD::Float(0.0f)), SIMD::Float(1.0f)) * SIMD::Float(255.0f)))) << 8) |
 			                ((SIMD::UInt(Round(Min(Max(val.Float(2), SIMD::Float(0.0f)), SIMD::Float(1.0f)) * SIMD::Float(255.0f)))) << 16) |
 			                ((SIMD::UInt(Round(Min(Max(val.Float(3), SIMD::Float(0.0f)), SIMD::Float(1.0f)) * SIMD::Float(255.0f)))) << 24));
+			break;
 		}
-		break;
-	case GLSLstd450PackSnorm2x16:
+		case GLSLstd450PackSnorm2x16:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			dst.move(0, (SIMD::Int(Round(Min(Max(val.Float(0), SIMD::Float(-1.0f)), SIMD::Float(1.0f)) * SIMD::Float(32767.0f))) &
@@ -439,9 +455,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			                ((SIMD::Int(Round(Min(Max(val.Float(1), SIMD::Float(-1.0f)), SIMD::Float(1.0f)) * SIMD::Float(32767.0f))) &
 			                  SIMD::Int(0xFFFF))
 			                 << 16));
+			break;
 		}
-		break;
-	case GLSLstd450PackUnorm2x16:
+		case GLSLstd450PackUnorm2x16:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			dst.move(0, (SIMD::UInt(Round(Min(Max(val.Float(0), SIMD::Float(0.0f)), SIMD::Float(1.0f)) * SIMD::Float(65535.0f))) &
@@ -449,33 +465,33 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			                ((SIMD::UInt(Round(Min(Max(val.Float(1), SIMD::Float(0.0f)), SIMD::Float(1.0f)) * SIMD::Float(65535.0f))) &
 			                  SIMD::UInt(0xFFFF))
 			                 << 16));
+			break;
 		}
-		break;
-	case GLSLstd450PackHalf2x16:
+		case GLSLstd450PackHalf2x16:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			dst.move(0, floatToHalfBits(val.UInt(0), false) | floatToHalfBits(val.UInt(1), true));
+			break;
 		}
-		break;
-	case GLSLstd450UnpackSnorm4x8:
+		case GLSLstd450UnpackSnorm4x8:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			dst.move(0, Min(Max(SIMD::Float(((val.Int(0) << 24) & SIMD::Int(0xFF000000))) * SIMD::Float(1.0f / float(0x7f000000)), SIMD::Float(-1.0f)), SIMD::Float(1.0f)));
 			dst.move(1, Min(Max(SIMD::Float(((val.Int(0) << 16) & SIMD::Int(0xFF000000))) * SIMD::Float(1.0f / float(0x7f000000)), SIMD::Float(-1.0f)), SIMD::Float(1.0f)));
 			dst.move(2, Min(Max(SIMD::Float(((val.Int(0) << 8) & SIMD::Int(0xFF000000))) * SIMD::Float(1.0f / float(0x7f000000)), SIMD::Float(-1.0f)), SIMD::Float(1.0f)));
 			dst.move(3, Min(Max(SIMD::Float(((val.Int(0)) & SIMD::Int(0xFF000000))) * SIMD::Float(1.0f / float(0x7f000000)), SIMD::Float(-1.0f)), SIMD::Float(1.0f)));
+			break;
 		}
-		break;
-	case GLSLstd450UnpackUnorm4x8:
+		case GLSLstd450UnpackUnorm4x8:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			dst.move(0, SIMD::Float((val.UInt(0) & SIMD::UInt(0xFF))) * SIMD::Float(1.0f / 255.f));
 			dst.move(1, SIMD::Float(((val.UInt(0) >> 8) & SIMD::UInt(0xFF))) * SIMD::Float(1.0f / 255.f));
 			dst.move(2, SIMD::Float(((val.UInt(0) >> 16) & SIMD::UInt(0xFF))) * SIMD::Float(1.0f / 255.f));
 			dst.move(3, SIMD::Float(((val.UInt(0) >> 24) & SIMD::UInt(0xFF))) * SIMD::Float(1.0f / 255.f));
+			break;
 		}
-		break;
-	case GLSLstd450UnpackSnorm2x16:
+		case GLSLstd450UnpackSnorm2x16:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			// clamp(f / 32767.0, -1.0, 1.0)
@@ -486,35 +502,35 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			dst.move(1, Min(Max(SIMD::Float(As<SIMD::Int>(val.UInt(0) & SIMD::UInt(0xFFFF0000))) * SIMD::Float(1.0f / float(0x7FFF0000)),
 			                    SIMD::Float(-1.0f)),
 			                SIMD::Float(1.0f)));
+			break;
 		}
-		break;
-	case GLSLstd450UnpackUnorm2x16:
+		case GLSLstd450UnpackUnorm2x16:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			// f / 65535.0
 			dst.move(0, SIMD::Float((val.UInt(0) & SIMD::UInt(0x0000FFFF)) << 16) * SIMD::Float(1.0f / float(0xFFFF0000)));
 			dst.move(1, SIMD::Float(val.UInt(0) & SIMD::UInt(0xFFFF0000)) * SIMD::Float(1.0f / float(0xFFFF0000)));
+			break;
 		}
-		break;
-	case GLSLstd450UnpackHalf2x16:
+		case GLSLstd450UnpackHalf2x16:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			dst.move(0, halfToFloatBits(val.UInt(0) & SIMD::UInt(0x0000FFFF)));
 			dst.move(1, halfToFloatBits((val.UInt(0) & SIMD::UInt(0xFFFF0000)) >> 16));
+			break;
 		}
-		break;
-	case GLSLstd450Fma:
+		case GLSLstd450Fma:
 		{
 			auto a = Operand(this, state, insn.word(5));
 			auto b = Operand(this, state, insn.word(6));
 			auto c = Operand(this, state, insn.word(7));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, MulAdd(a.Float(i), b.Float(i), c.Float(i)));
+				dst.move(i, FMA(a.Float(i), b.Float(i), c.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Frexp:
+		case GLSLstd450Frexp:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			auto ptrId = Object::ID(insn.word(6));
@@ -529,9 +545,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			}
 
 			Store(ptrId, exp, false, std::memory_order_relaxed, state);
+			break;
 		}
-		break;
-	case GLSLstd450FrexpStruct:
+		case GLSLstd450FrexpStruct:
 		{
 			auto val = Operand(this, state, insn.word(5));
 
@@ -541,9 +557,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 				dst.move(i, significandAndExponent.first);
 				dst.move(val.componentCount + i, significandAndExponent.second);
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Ldexp:
+		case GLSLstd450Ldexp:
 		{
 			auto significand = Operand(this, state, insn.word(5));
 			auto exponent = Operand(this, state, insn.word(6));
@@ -575,284 +591,251 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 
 				dst.move(i, As<SIMD::Float>(v));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Radians:
+		case GLSLstd450Radians:
 		{
 			auto degrees = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, degrees.Float(i) * SIMD::Float(PI / 180.0f));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Degrees:
+		case GLSLstd450Degrees:
 		{
 			auto radians = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, radians.Float(i) * SIMD::Float(180.0f / PI));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Sin:
+		case GLSLstd450Sin:
 		{
 			auto radians = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Sin(radians.Float(i), d.RelaxedPrecision));
+				dst.move(i, Sin(radians.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Cos:
+		case GLSLstd450Cos:
 		{
 			auto radians = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Cos(radians.Float(i), d.RelaxedPrecision));
+				dst.move(i, Cos(radians.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Tan:
+		case GLSLstd450Tan:
 		{
 			auto radians = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Tan(radians.Float(i), d.RelaxedPrecision));
+				dst.move(i, Tan(radians.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Asin:
+		case GLSLstd450Asin:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
+			Decorations d;
+			ApplyDecorationsForId(&d, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Asin(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Asin(val.Float(i), d.RelaxedPrecision ? Precision::Relaxed : Precision::Full));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Acos:
+		case GLSLstd450Acos:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
+			Decorations d;
+			ApplyDecorationsForId(&d, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Acos(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Acos(val.Float(i), d.RelaxedPrecision ? Precision::Relaxed : Precision::Full));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Atan:
+		case GLSLstd450Atan:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Atan(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Atan(val.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Sinh:
+		case GLSLstd450Sinh:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Sinh(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Sinh(val.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Cosh:
+		case GLSLstd450Cosh:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Cosh(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Cosh(val.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Tanh:
+		case GLSLstd450Tanh:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Tanh(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Tanh(val.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Asinh:
+		case GLSLstd450Asinh:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Asinh(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Asinh(val.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Acosh:
+		case GLSLstd450Acosh:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Acosh(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Acosh(val.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Atanh:
+		case GLSLstd450Atanh:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Atanh(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Atanh(val.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Atan2:
+		case GLSLstd450Atan2:
 		{
 			auto x = Operand(this, state, insn.word(5));
 			auto y = Operand(this, state, insn.word(6));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Atan2(x.Float(i), y.Float(i), d.RelaxedPrecision));
+				dst.move(i, Atan2(x.Float(i), y.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Pow:
+		case GLSLstd450Pow:
 		{
 			auto x = Operand(this, state, insn.word(5));
 			auto y = Operand(this, state, insn.word(6));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Pow(x.Float(i), y.Float(i), d.RelaxedPrecision));
+				dst.move(i, Pow(x.Float(i), y.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Exp:
+		case GLSLstd450Exp:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Exp(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Exp(val.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Log:
+		case GLSLstd450Log:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Log(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Log(val.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Exp2:
+		case GLSLstd450Exp2:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Exp2(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Exp2(val.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Log2:
+		case GLSLstd450Log2:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, sw::Log2(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Log2(val.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Sqrt:
+		case GLSLstd450Sqrt:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
-
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, Sqrt(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, Sqrt(val.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450InverseSqrt:
+		case GLSLstd450InverseSqrt:
 		{
 			auto val = Operand(this, state, insn.word(5));
-			Decorations d = GetDecorationsForId(insn.resultId());
+			Decorations d;
+			ApplyDecorationsForId(&d, insn.word(5));
 
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, RcpSqrt(val.Float(i), d.RelaxedPrecision));
+				dst.move(i, RcpSqrt(val.Float(i), d.RelaxedPrecision ? Precision::Relaxed : Precision::Full));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450Determinant:
+		case GLSLstd450Determinant:
 		{
 			auto mat = Operand(this, state, insn.word(5));
 
 			switch(mat.componentCount)
 			{
-			case 4:  // 2x2
-				dst.move(0, Determinant(
-				                mat.Float(0), mat.Float(1),
-				                mat.Float(2), mat.Float(3)));
-				break;
-			case 9:  // 3x3
-				dst.move(0, Determinant(
-				                mat.Float(0), mat.Float(1), mat.Float(2),
-				                mat.Float(3), mat.Float(4), mat.Float(5),
-				                mat.Float(6), mat.Float(7), mat.Float(8)));
-				break;
-			case 16:  // 4x4
-				dst.move(0, Determinant(
-				                mat.Float(0), mat.Float(1), mat.Float(2), mat.Float(3),
-				                mat.Float(4), mat.Float(5), mat.Float(6), mat.Float(7),
-				                mat.Float(8), mat.Float(9), mat.Float(10), mat.Float(11),
-				                mat.Float(12), mat.Float(13), mat.Float(14), mat.Float(15)));
-				break;
-			default:
-				UNREACHABLE("GLSLstd450Determinant can only operate with square matrices. Got %d elements", int(mat.componentCount));
+				case 4:  // 2x2
+					dst.move(0, Determinant(
+					                mat.Float(0), mat.Float(1),
+					                mat.Float(2), mat.Float(3)));
+					break;
+				case 9:  // 3x3
+					dst.move(0, Determinant(
+					                mat.Float(0), mat.Float(1), mat.Float(2),
+					                mat.Float(3), mat.Float(4), mat.Float(5),
+					                mat.Float(6), mat.Float(7), mat.Float(8)));
+					break;
+				case 16:  // 4x4
+					dst.move(0, Determinant(
+					                mat.Float(0), mat.Float(1), mat.Float(2), mat.Float(3),
+					                mat.Float(4), mat.Float(5), mat.Float(6), mat.Float(7),
+					                mat.Float(8), mat.Float(9), mat.Float(10), mat.Float(11),
+					                mat.Float(12), mat.Float(13), mat.Float(14), mat.Float(15)));
+					break;
+				default:
+					UNREACHABLE("GLSLstd450Determinant can only operate with square matrices. Got %d elements", int(mat.componentCount));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450MatrixInverse:
+		case GLSLstd450MatrixInverse:
 		{
 			auto mat = Operand(this, state, insn.word(5));
 
 			switch(mat.componentCount)
 			{
-			case 4:  // 2x2
+				case 4:  // 2x2
 				{
 					auto inv = MatrixInverse(
 					    mat.Float(0), mat.Float(1),
@@ -861,9 +844,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 					{
 						dst.move(i, inv[i]);
 					}
+					break;
 				}
-				break;
-			case 9:  // 3x3
+				case 9:  // 3x3
 				{
 					auto inv = MatrixInverse(
 					    mat.Float(0), mat.Float(1), mat.Float(2),
@@ -873,9 +856,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 					{
 						dst.move(i, inv[i]);
 					}
+					break;
 				}
-				break;
-			case 16:  // 4x4
+				case 16:  // 4x4
 				{
 					auto inv = MatrixInverse(
 					    mat.Float(0), mat.Float(1), mat.Float(2), mat.Float(3),
@@ -886,29 +869,29 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 					{
 						dst.move(i, inv[i]);
 					}
+					break;
 				}
-				break;
-			default:
-				UNREACHABLE("GLSLstd450MatrixInverse can only operate with square matrices. Got %d elements", int(mat.componentCount));
+				default:
+					UNREACHABLE("GLSLstd450MatrixInverse can only operate with square matrices. Got %d elements", int(mat.componentCount));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450IMix:
+		case GLSLstd450IMix:
 		{
 			UNREACHABLE("GLSLstd450IMix has been removed from the specification");
+			break;
 		}
-		break;
-	case GLSLstd450PackDouble2x32:
+		case GLSLstd450PackDouble2x32:
 		{
 			UNSUPPORTED("SPIR-V Float64 Capability (GLSLstd450PackDouble2x32)");
+			break;
 		}
-		break;
-	case GLSLstd450UnpackDouble2x32:
+		case GLSLstd450UnpackDouble2x32:
 		{
 			UNSUPPORTED("SPIR-V Float64 Capability (GLSLstd450UnpackDouble2x32)");
+			break;
 		}
-		break;
-	case GLSLstd450FindILsb:
+		case GLSLstd450FindILsb:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
@@ -916,9 +899,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 				auto v = val.UInt(i);
 				dst.move(i, Cttz(v, true) | CmpEQ(v, SIMD::UInt(0)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450FindSMsb:
+		case GLSLstd450FindSMsb:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
@@ -926,48 +909,51 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 				auto v = val.UInt(i) ^ As<SIMD::UInt>(CmpLT(val.Int(i), SIMD::Int(0)));
 				dst.move(i, SIMD::UInt(31) - Ctlz(v, false));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450FindUMsb:
+		case GLSLstd450FindUMsb:
 		{
 			auto val = Operand(this, state, insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, SIMD::UInt(31) - Ctlz(val.UInt(i), false));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450InterpolateAtCentroid:
+		case GLSLstd450InterpolateAtCentroid:
 		{
-			Decorations d = GetDecorationsForId(insn.word(5));
+			Decorations d;
+			ApplyDecorationsForId(&d, insn.word(5));
 			auto ptr = state->getPointer(insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, Interpolate(ptr, d.Location, 0, i, state, SpirvShader::Centroid));
+				dst.move(i, Interpolate(ptr, d.Location, 0, i, type.componentCount, state, SpirvShader::Centroid));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450InterpolateAtSample:
+		case GLSLstd450InterpolateAtSample:
 		{
-			Decorations d = GetDecorationsForId(insn.word(5));
+			Decorations d;
+			ApplyDecorationsForId(&d, insn.word(5));
 			auto ptr = state->getPointer(insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, Interpolate(ptr, d.Location, insn.word(6), i, state, SpirvShader::AtSample));
+				dst.move(i, Interpolate(ptr, d.Location, insn.word(6), i, type.componentCount, state, SpirvShader::AtSample));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450InterpolateAtOffset:
+		case GLSLstd450InterpolateAtOffset:
 		{
-			Decorations d = GetDecorationsForId(insn.word(5));
+			Decorations d;
+			ApplyDecorationsForId(&d, insn.word(5));
 			auto ptr = state->getPointer(insn.word(5));
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				dst.move(i, Interpolate(ptr, d.Location, insn.word(6), i, state, SpirvShader::AtOffset));
+				dst.move(i, Interpolate(ptr, d.Location, insn.word(6), i, type.componentCount, state, SpirvShader::AtOffset));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450NMin:
+		case GLSLstd450NMin:
 		{
 			auto x = Operand(this, state, insn.word(5));
 			auto y = Operand(this, state, insn.word(6));
@@ -975,9 +961,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, NMin(x.Float(i), y.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450NMax:
+		case GLSLstd450NMax:
 		{
 			auto x = Operand(this, state, insn.word(5));
 			auto y = Operand(this, state, insn.word(6));
@@ -985,9 +971,9 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 			{
 				dst.move(i, NMax(x.Float(i), y.Float(i)));
 			}
+			break;
 		}
-		break;
-	case GLSLstd450NClamp:
+		case GLSLstd450NClamp:
 		{
 			auto x = Operand(this, state, insn.word(5));
 			auto minVal = Operand(this, state, insn.word(6));
@@ -997,18 +983,18 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 				auto clamp = NMin(NMax(x.Float(i), minVal.Float(i)), maxVal.Float(i));
 				dst.move(i, clamp);
 			}
+			break;
 		}
-		break;
-	default:
-		UNREACHABLE("ExtInst %d", int(extInstIndex));
-		break;
+		default:
+			UNREACHABLE("ExtInst %d", int(extInstIndex));
+			break;
 	}
 
 	return EmitResult::Continue;
 }
 
-SIMD::Float SpirvShader::Interpolate(SIMD::Pointer const &ptr, int32_t location, Object::ID paramId,
-                                     uint32_t component, EmitState *state, InterpolationType type) const
+SIMD::Float SpirvShader::Interpolate(SIMD::Pointer const &ptr, int32_t location, Object::ID paramId, uint32_t component,
+                                     uint32_t component_count, EmitState *state, InterpolationType type) const
 {
 	uint32_t interpolant = (location * 4);
 	uint32_t components_per_row = GetNumInputComponents(location);
@@ -1016,6 +1002,12 @@ SIMD::Float SpirvShader::Interpolate(SIMD::Pointer const &ptr, int32_t location,
 	{
 		return SIMD::Float(0.0f);
 	}
+
+	// Distinguish between the operator[] being used on a vector of on an array
+	// If the number of components of the interpolant is 1, then the operator[] automatically means this is an array.
+	// Otherwise, if the component_count is 1, than the operator[] can be the result of this operator being called
+	// from a vec2, vec3 or vec4, so a component_count greater than 1 means any offset is for an array
+	bool useArrayOffset = (components_per_row == 1) || (component_count > 1);
 
 	const auto &interpolationData = state->routine->interpolationData;
 
@@ -1025,48 +1017,48 @@ SIMD::Float SpirvShader::Interpolate(SIMD::Pointer const &ptr, int32_t location,
 
 	switch(type)
 	{
-	case Centroid:
-		x = interpolationData.xCentroid;
-		y = interpolationData.yCentroid;
-		rhw = interpolationData.rhwCentroid;
-		break;
-	case AtSample:
-		x = SIMD::Float(0.0f);
-		y = SIMD::Float(0.0f);
+		case Centroid:
+			x = interpolationData.xCentroid;
+			y = interpolationData.yCentroid;
+			rhw = interpolationData.rhwCentroid;
+			break;
+		case AtSample:
+			x = SIMD::Float(0.0f);
+			y = SIMD::Float(0.0f);
 
-		if(state->getMultiSampleCount() > 1)
-		{
-			static constexpr int NUM_SAMPLES = 4;
-			ASSERT(state->getMultiSampleCount() == NUM_SAMPLES);
-
-			Array<Float> sampleX(NUM_SAMPLES);
-			Array<Float> sampleY(NUM_SAMPLES);
-			for(int i = 0; i < NUM_SAMPLES; ++i)
+			if(state->getMultiSampleCount() > 1)
 			{
-				sampleX[i] = Constants::SampleLocationsX[i];
-				sampleY[i] = Constants::SampleLocationsY[i];
+				static constexpr int NUM_SAMPLES = 4;
+				ASSERT(state->getMultiSampleCount() == NUM_SAMPLES);
+
+				Array<Float> sampleX(NUM_SAMPLES);
+				Array<Float> sampleY(NUM_SAMPLES);
+				for(int i = 0; i < NUM_SAMPLES; ++i)
+				{
+					sampleX[i] = Constants::SampleLocationsX[i];
+					sampleY[i] = Constants::SampleLocationsY[i];
+				}
+
+				auto sampleOperand = Operand(this, state, paramId);
+				ASSERT(sampleOperand.componentCount == 1);
+
+				// If sample does not exist, the position used to interpolate the
+				// input variable is undefined, so we just clamp to avoid OOB accesses.
+				SIMD::Int samples = sampleOperand.Int(0) & SIMD::Int(NUM_SAMPLES - 1);
+
+				for(int i = 0; i < SIMD::Width; ++i)
+				{
+					Int sample = Extract(samples, i);
+					x = Insert(x, sampleX[sample], i);
+					y = Insert(y, sampleY[sample], i);
+				}
 			}
 
-			auto sampleOperand = Operand(this, state, paramId);
-			ASSERT(sampleOperand.componentCount == 1);
-
-			// If sample does not exist, the position used to interpolate the
-			// input variable is undefined, so we just clamp to avoid OOB accesses.
-			SIMD::Int samples = sampleOperand.Int(0) & SIMD::Int(NUM_SAMPLES - 1);
-
-			for(int i = 0; i < SIMD::Width; ++i)
-			{
-				Int sample = Extract(samples, i);
-				x = Insert(x, sampleX[sample], i);
-				y = Insert(y, sampleY[sample], i);
-			}
-		}
-
-		x += interpolationData.x;
-		y += interpolationData.y;
-		rhw = interpolationData.rhw;
-		break;
-	case AtOffset:
+			x += interpolationData.x;
+			y += interpolationData.y;
+			rhw = interpolationData.rhw;
+			break;
+		case AtOffset:
 		{
 			//  An offset of (0, 0) identifies the center of the pixel.
 			auto offset = Operand(this, state, paramId);
@@ -1077,35 +1069,24 @@ SIMD::Float SpirvShader::Interpolate(SIMD::Pointer const &ptr, int32_t location,
 			rhw = interpolationData.rhw;
 		}
 		break;
-	default:
-		UNREACHABLE("Unknown interpolation type: %d", (int)type);
-		return SIMD::Float(0.0f);
+		default:
+			UNREACHABLE("Unknown interpolation type: %d", (int)type);
+			return SIMD::Float(0.0f);
 	}
 
-	uint32_t packedInterpolant = GetPackedInterpolant(location);
-	Pointer<Byte> planeEquation = interpolationData.primitive + OFFSET(Primitive, V[packedInterpolant]);
+	Pointer<Byte> planeEquation = interpolationData.primitive + OFFSET(Primitive, V[interpolant]);
 	if(ptr.hasDynamicOffsets)
 	{
-		// Combine plane equations into one
-		SIMD::Float A;
-		SIMD::Float B;
-		SIMD::Float C;
-
-		for(int i = 0; i < SIMD::Width; ++i)
-		{
-			Int offset = ((Extract(ptr.dynamicOffsets, i) + ptr.staticOffsets[i]) >> 2) + component;
-			Pointer<Byte> planeEquationI = planeEquation + (offset * sizeof(PlaneEquation));
-			A = Insert(A, Extract(*Pointer<SIMD::Float>(planeEquationI + OFFSET(PlaneEquation, A), 16), i), i);
-			B = Insert(B, Extract(*Pointer<SIMD::Float>(planeEquationI + OFFSET(PlaneEquation, B), 16), i), i);
-			C = Insert(C, Extract(*Pointer<SIMD::Float>(planeEquationI + OFFSET(PlaneEquation, C), 16), i), i);
-		}
-		return ::Interpolate(x, y, rhw, A, B, C, false, true);
+		// This code assumes all dynamic offsets are equal
+		Int offset = ComputeInterpolantOffset(((Extract(ptr.dynamicOffsets, 0) + ptr.staticOffsets[0]) >> 2) + component, components_per_row, useArrayOffset);
+		offset = Min(offset, Int(inputs.size() - interpolant - 1));
+		planeEquation += (offset * sizeof(PlaneEquation));
 	}
 	else
 	{
 		ASSERT(ptr.hasStaticEqualOffsets());
 
-		uint32_t offset = (ptr.staticOffsets[0] >> 2) + component;
+		uint32_t offset = ComputeInterpolantOffset((ptr.staticOffsets[0] >> 2) + component, components_per_row, useArrayOffset);
 		if((interpolant + offset) >= inputs.size())
 		{
 			return SIMD::Float(0.0f);

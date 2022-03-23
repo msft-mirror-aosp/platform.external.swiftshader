@@ -28,7 +28,7 @@ namespace fuzz {
 class TransformationAddConstantComposite : public Transformation {
  public:
   explicit TransformationAddConstantComposite(
-      protobufs::TransformationAddConstantComposite message);
+      const protobufs::TransformationAddConstantComposite& message);
 
   TransformationAddConstantComposite(
       uint32_t fresh_id, uint32_t type_id,

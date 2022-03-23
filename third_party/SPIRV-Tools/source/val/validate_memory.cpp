@@ -407,10 +407,6 @@ spv_result_t ValidateVariable(ValidationState_t& _, const Instruction* inst) {
            << "' is not a pointer type.";
   }
 
-  const auto type_index = 2;
-  const auto value_id = result_type->GetOperandAs<uint32_t>(type_index);
-  auto value_type = _.FindDef(value_id);
-
   const auto initializer_index = 3;
   const auto storage_class_index = 2;
   if (initializer_index < inst->operands().size()) {
@@ -427,7 +423,7 @@ spv_result_t ValidateVariable(ValidationState_t& _, const Instruction* inst) {
              << "OpVariable Initializer <id> '" << _.getIdName(initializer_id)
              << "' is not a constant or module-scope variable.";
     }
-    if (initializer->type_id() != value_id) {
+    if (initializer->type_id() != result_type->GetOperandAs<uint32_t>(2u)) {
       return _.diag(SPV_ERROR_INVALID_ID, inst)
              << "Initializer type must match the type pointed to by the Result "
                 "Type";
@@ -444,6 +440,9 @@ spv_result_t ValidateVariable(ValidationState_t& _, const Instruction* inst) {
       storage_class != SpvStorageClassHitAttributeNV &&
       storage_class != SpvStorageClassCallableDataNV &&
       storage_class != SpvStorageClassIncomingCallableDataNV) {
+    const auto storage_index = 2;
+    const auto storage_id = result_type->GetOperandAs<uint32_t>(storage_index);
+    const auto storage = _.FindDef(storage_id);
     bool storage_input_or_output = storage_class == SpvStorageClassInput ||
                                    storage_class == SpvStorageClassOutput;
     bool builtin = false;
@@ -456,7 +455,7 @@ spv_result_t ValidateVariable(ValidationState_t& _, const Instruction* inst) {
       }
     }
     if (!(storage_input_or_output && builtin) &&
-        ContainsInvalidBool(_, value_type, storage_input_or_output)) {
+        ContainsInvalidBool(_, storage, storage_input_or_output)) {
       return _.diag(SPV_ERROR_INVALID_ID, inst)
              << "If OpTypeBool is stored in conjunction with OpVariable, it "
              << "can only be used with non-externally visible shader Storage "
@@ -466,7 +465,6 @@ spv_result_t ValidateVariable(ValidationState_t& _, const Instruction* inst) {
 
   if (!_.IsValidStorageClass(storage_class)) {
     return _.diag(SPV_ERROR_INVALID_BINARY, inst)
-           << _.VkErrorID(4643)
            << "Invalid storage class for target environment";
   }
 
@@ -537,14 +535,18 @@ spv_result_t ValidateVariable(ValidationState_t& _, const Instruction* inst) {
       if (!IsAllowedTypeOrArrayOfSame(
               _, pointee,
               {SpvOpTypeImage, SpvOpTypeSampler, SpvOpTypeSampledImage,
-               SpvOpTypeAccelerationStructureKHR})) {
+               SpvOpTypeAccelerationStructureNV,
+               SpvOpTypeAccelerationStructureKHR, SpvOpTypeRayQueryKHR})) {
         return _.diag(SPV_ERROR_INVALID_ID, inst)
-               << _.VkErrorID(4655) << "UniformConstant OpVariable <id> '"
-               << _.getIdName(inst->id()) << "' has illegal type.\n"
+               << "UniformConstant OpVariable <id> '" << _.getIdName(inst->id())
+               << "' has illegal type.\n"
+               << "From Vulkan spec, section 14.5.2:\n"
                << "Variables identified with the UniformConstant storage class "
                << "are used only as handles to refer to opaque resources. Such "
                << "variables must be typed as OpTypeImage, OpTypeSampler, "
-               << "OpTypeSampledImage, OpTypeAccelerationStructureKHR, "
+               << "OpTypeSampledImage, OpTypeAccelerationStructureNV, "
+                  "OpTypeAccelerationStructureKHR, "
+                  "OpTypeRayQueryKHR, "
                << "or an array of one of these types.";
       }
     }
@@ -574,56 +576,24 @@ spv_result_t ValidateVariable(ValidationState_t& _, const Instruction* inst) {
                   "of this type";
       }
     }
+  }
 
-    // Check for invalid use of Invariant
-    if (storage_class != SpvStorageClassInput &&
-        storage_class != SpvStorageClassOutput) {
-      if (_.HasDecoration(inst->id(), SpvDecorationInvariant)) {
-        return _.diag(SPV_ERROR_INVALID_ID, inst)
-               << _.VkErrorID(4677)
-               << "Variable decorated with Invariant must only be identified "
-                  "with the Input or Output storage class in Vulkan "
-                  "environment.";
-      }
-      // Need to check if only the members in a struct are decorated
-      if (value_type && value_type->opcode() == SpvOpTypeStruct) {
-        if (_.HasDecoration(value_id, SpvDecorationInvariant)) {
-          return _.diag(SPV_ERROR_INVALID_ID, inst)
-                 << _.VkErrorID(4677)
-                 << "Variable struct member decorated with Invariant must only "
-                    "be identified with the Input or Output storage class in "
-                    "Vulkan environment.";
-        }
-      }
-    }
-
-    // Initializers in Vulkan are only allowed in some storage clases
-    if (inst->operands().size() > 3) {
-      if (storage_class == SpvStorageClassWorkgroup) {
-        auto init_id = inst->GetOperandAs<uint32_t>(3);
-        auto init = _.FindDef(init_id);
-        if (init->opcode() != SpvOpConstantNull) {
-          return _.diag(SPV_ERROR_INVALID_ID, inst)
-                 << _.VkErrorID(4734) << "OpVariable, <id> '"
-                 << _.getIdName(inst->id())
-                 << "', initializers are limited to OpConstantNull in "
-                    "Workgroup "
-                    "storage class";
-        }
-      } else if (storage_class != SpvStorageClassOutput &&
-                 storage_class != SpvStorageClassPrivate &&
-                 storage_class != SpvStorageClassFunction) {
-        return _.diag(SPV_ERROR_INVALID_ID, inst)
-               << _.VkErrorID(4651) << "OpVariable, <id> '"
-               << _.getIdName(inst->id())
-               << "', has a disallowed initializer & storage class "
-               << "combination.\n"
-               << "From " << spvLogStringForEnv(_.context()->target_env)
-               << " spec:\n"
-               << "Variable declarations that include initializers must have "
-               << "one of the following storage classes: Output, Private, "
-               << "Function or Workgroup";
-      }
+  // Vulkan Appendix A: Check that if contains initializer, then
+  // storage class is Output, Private, or Function.
+  if (inst->operands().size() > 3 && storage_class != SpvStorageClassOutput &&
+      storage_class != SpvStorageClassPrivate &&
+      storage_class != SpvStorageClassFunction) {
+    if (spvIsVulkanEnv(_.context()->target_env)) {
+      return _.diag(SPV_ERROR_INVALID_ID, inst)
+             << _.VkErrorID(4651) << "OpVariable, <id> '"
+             << _.getIdName(inst->id())
+             << "', has a disallowed initializer & storage class "
+             << "combination.\n"
+             << "From " << spvLogStringForEnv(_.context()->target_env)
+             << " spec:\n"
+             << "Variable declarations that include initializers must have "
+             << "one of the following storage classes: Output, Private, or "
+             << "Function";
     }
   }
 
@@ -660,6 +630,9 @@ spv_result_t ValidateVariable(ValidationState_t& _, const Instruction* inst) {
   }
 
   // Vulkan specific validation rules for OpTypeRuntimeArray
+  const auto type_index = 2;
+  const auto value_id = result_type->GetOperandAs<uint32_t>(type_index);
+  auto value_type = _.FindDef(value_id);
   if (spvIsVulkanEnv(_.context()->target_env)) {
     // OpTypeRuntimeArray should only ever be in a container like OpTypeStruct,
     // so should never appear as a bare variable.
@@ -776,11 +749,6 @@ spv_result_t ValidateVariable(ValidationState_t& _, const Instruction* inst) {
             storage_class_ok = false;
           }
           break;
-        case SpvStorageClassWorkgroup:
-          if (!_.HasCapability(SpvCapabilityWorkgroupMemoryExplicitLayout16BitAccessKHR)) {
-            storage_class_ok = false;
-          }
-          break;
         default:
           return _.diag(SPV_ERROR_INVALID_ID, inst)
                  << "Cannot allocate a variable containing a 16-bit type in "
@@ -829,11 +797,6 @@ spv_result_t ValidateVariable(ValidationState_t& _, const Instruction* inst) {
           break;
         case SpvStorageClassPushConstant:
           if (!_.HasCapability(SpvCapabilityStoragePushConstant8)) {
-            storage_class_ok = false;
-          }
-          break;
-        case SpvStorageClassWorkgroup:
-          if (!_.HasCapability(SpvCapabilityWorkgroupMemoryExplicitLayout8BitAccessKHR)) {
             storage_class_ok = false;
           }
           break;
@@ -891,12 +854,6 @@ spv_result_t ValidateLoad(ValidationState_t& _, const Instruction* inst) {
            << "OpLoad Result Type <id> '" << _.getIdName(inst->type_id())
            << "' does not match Pointer <id> '" << _.getIdName(pointer->id())
            << "'s type.";
-  }
-
-  if (!_.options()->before_hlsl_legalization &&
-      _.ContainsRuntimeArray(inst->type_id())) {
-    return _.diag(SPV_ERROR_INVALID_ID, inst)
-           << "Cannot load a runtime-sized array";
   }
 
   if (auto error = CheckMemoryAccess(_, inst, 3)) return error;
@@ -1411,7 +1368,7 @@ spv_result_t ValidateArrayLength(ValidationState_t& state,
            << state.getIdName(inst->id()) << "' must be an OpTypeRuntimeArray.";
   }
 
-  // The array member must the index of the last element (the run time
+  // The array member must the the index of the last element (the run time
   // array).
   if (inst->GetOperandAs<uint32_t>(3) != num_of_members - 1) {
     return state.diag(SPV_ERROR_INVALID_ID, inst)

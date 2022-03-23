@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Validation tests for illegal literals
+// Validation tests for ilegal literals
 
 #include <string>
 #include <utility>

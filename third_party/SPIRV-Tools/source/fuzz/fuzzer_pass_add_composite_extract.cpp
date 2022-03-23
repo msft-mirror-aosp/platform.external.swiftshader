@@ -14,7 +14,6 @@
 
 #include "source/fuzz/fuzzer_pass_add_composite_extract.h"
 
-#include "source/fuzz/available_instructions.h"
 #include "source/fuzz/fuzzer_context.h"
 #include "source/fuzz/fuzzer_util.h"
 #include "source/fuzz/instruction_descriptor.h"
@@ -26,10 +25,11 @@ namespace fuzz {
 FuzzerPassAddCompositeExtract::FuzzerPassAddCompositeExtract(
     opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
-    protobufs::TransformationSequence* transformations,
-    bool ignore_inapplicable_transformations)
+    protobufs::TransformationSequence* transformations)
     : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations, ignore_inapplicable_transformations) {}
+                 transformations) {}
+
+FuzzerPassAddCompositeExtract::~FuzzerPassAddCompositeExtract() = default;
 
 void FuzzerPassAddCompositeExtract::Apply() {
   std::vector<const protobufs::DataDescriptor*> composite_synonyms;
@@ -41,16 +41,14 @@ void FuzzerPassAddCompositeExtract::Apply() {
     }
   }
 
-  AvailableInstructions available_composites(
-      GetIRContext(), [](opt::IRContext* ir_context, opt::Instruction* inst) {
-        return inst->type_id() && inst->result_id() &&
-               fuzzerutil::IsCompositeType(
-                   ir_context->get_type_mgr()->GetType(inst->type_id()));
-      });
+  // We don't want to invalidate the module every time we apply this
+  // transformation since rebuilding DominatorAnalysis can be expensive, so we
+  // collect up the transformations we wish to apply and apply them all later.
+  std::vector<TransformationCompositeExtract> transformations;
 
   ForEachInstructionWithInstructionDescriptor(
-      [this, &available_composites, &composite_synonyms](
-          opt::Function* /*unused*/, opt::BasicBlock* /*unused*/,
+      [this, &composite_synonyms, &transformations](
+          opt::Function* function, opt::BasicBlock* block,
           opt::BasicBlock::iterator inst_it,
           const protobufs::InstructionDescriptor& instruction_descriptor) {
         if (!fuzzerutil::CanInsertOpcodeBeforeInstruction(SpvOpCompositeExtract,
@@ -63,6 +61,14 @@ void FuzzerPassAddCompositeExtract::Apply() {
           return;
         }
 
+        auto available_composites = FindAvailableInstructions(
+            function, block, inst_it,
+            [](opt::IRContext* ir_context, opt::Instruction* inst) {
+              return inst->type_id() && inst->result_id() &&
+                     fuzzerutil::IsCompositeType(
+                         ir_context->get_type_mgr()->GetType(inst->type_id()));
+            });
+
         std::vector<const protobufs::DataDescriptor*> available_synonyms;
         for (const auto* dd : composite_synonyms) {
           if (fuzzerutil::IdIsAvailableBeforeInstruction(
@@ -71,21 +77,18 @@ void FuzzerPassAddCompositeExtract::Apply() {
           }
         }
 
-        auto candidate_composites =
-            available_composites.GetAvailableBeforeInstruction(&*inst_it);
-
-        if (available_synonyms.empty() && candidate_composites.empty()) {
+        if (available_synonyms.empty() && available_composites.empty()) {
           return;
         }
 
         uint32_t composite_id = 0;
         std::vector<uint32_t> indices;
 
-        if (available_synonyms.empty() || (!candidate_composites.empty() &&
+        if (available_synonyms.empty() || (!available_composites.empty() &&
                                            GetFuzzerContext()->ChooseEven())) {
           const auto* inst =
-              candidate_composites[GetFuzzerContext()->RandomIndex(
-                  candidate_composites)];
+              available_composites[GetFuzzerContext()->RandomIndex(
+                  available_composites)];
           composite_id = inst->result_id();
 
           auto type_id = inst->type_id();
@@ -150,10 +153,14 @@ void FuzzerPassAddCompositeExtract::Apply() {
         assert(composite_id != 0 && !indices.empty() &&
                "Composite object should have been chosen correctly");
 
-        ApplyTransformation(TransformationCompositeExtract(
-            instruction_descriptor, GetFuzzerContext()->GetFreshId(),
-            composite_id, indices));
+        transformations.emplace_back(instruction_descriptor,
+                                     GetFuzzerContext()->GetFreshId(),
+                                     composite_id, indices);
       });
+
+  for (const auto& transformation : transformations) {
+    ApplyTransformation(transformation);
+  }
 }
 
 }  // namespace fuzz

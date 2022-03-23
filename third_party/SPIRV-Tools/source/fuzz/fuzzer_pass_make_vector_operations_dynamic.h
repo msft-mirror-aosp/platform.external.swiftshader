@@ -27,8 +27,9 @@ class FuzzerPassMakeVectorOperationsDynamic : public FuzzerPass {
   FuzzerPassMakeVectorOperationsDynamic(
       opt::IRContext* ir_context, TransformationContext* transformation_context,
       FuzzerContext* fuzzer_context,
-      protobufs::TransformationSequence* transformations,
-      bool ignore_inapplicable_transformations);
+      protobufs::TransformationSequence* transformations);
+
+  ~FuzzerPassMakeVectorOperationsDynamic() override;
 
   void Apply() override;
 };

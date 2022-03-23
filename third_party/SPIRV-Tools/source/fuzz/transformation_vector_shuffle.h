@@ -27,7 +27,7 @@ namespace fuzz {
 class TransformationVectorShuffle : public Transformation {
  public:
   explicit TransformationVectorShuffle(
-      protobufs::TransformationVectorShuffle message);
+      const protobufs::TransformationVectorShuffle& message);
 
   TransformationVectorShuffle(
       const protobufs::InstructionDescriptor& instruction_to_insert_before,

@@ -29,6 +29,7 @@ namespace vk {
 
 class Image;
 class ImageView;
+class Buffer;
 
 }  // namespace vk
 
@@ -101,12 +102,12 @@ class Blitter
 
 	struct BlitData
 	{
-		const void *source;
+		void *source;
 		void *dest;
-		uint32_t sPitchB;
-		uint32_t dPitchB;
-		uint32_t sSliceB;
-		uint32_t dSliceB;
+		int sPitchB;
+		int dPitchB;
+		int sSliceB;
+		int dSliceB;
 
 		float x0;
 		float y0;
@@ -132,7 +133,7 @@ class Blitter
 	struct CubeBorderData
 	{
 		void *layers;
-		uint32_t pitchB;
+		int pitchB;
 		uint32_t layerSize;
 		uint32_t dim;
 	};
@@ -141,14 +142,14 @@ public:
 	Blitter();
 	virtual ~Blitter();
 
-	void clear(const void *clearValue, vk::Format clearFormat, vk::Image *dest, const vk::Format &viewFormat, const VkImageSubresourceRange &subresourceRange, const VkRect2D *renderArea = nullptr);
+	void clear(void *clearValue, vk::Format clearFormat, vk::Image *dest, const vk::Format &viewFormat, const VkImageSubresourceRange &subresourceRange, const VkRect2D *renderArea = nullptr);
 
-	void blit(const vk::Image *src, vk::Image *dst, VkImageBlit2KHR region, VkFilter filter);
-	void resolve(const vk::Image *src, vk::Image *dst, VkImageResolve2KHR region);
-	void resolveDepthStencil(const vk::ImageView *src, vk::ImageView *dst, VkResolveModeFlagBits depthResolveMode, VkResolveModeFlagBits stencilResolveMode);
+	void blit(const vk::Image *src, vk::Image *dst, VkImageBlit region, VkFilter filter);
+	void resolve(const vk::Image *src, vk::Image *dst, VkImageResolve region);
+	void resolveDepthStencil(const vk::ImageView *src, vk::ImageView *dst, const VkSubpassDescriptionDepthStencilResolve &dsrDesc);
 	void copy(const vk::Image *src, uint8_t *dst, unsigned int dstPitch);
 
-	void updateBorders(const vk::Image *image, const VkImageSubresource &subresource);
+	void updateBorders(vk::Image *image, const VkImageSubresource &subresource);
 
 private:
 	enum Edge
@@ -159,8 +160,8 @@ private:
 		LEFT
 	};
 
-	bool fastClear(const void *clearValue, vk::Format clearFormat, vk::Image *dest, const vk::Format &viewFormat, const VkImageSubresourceRange &subresourceRange, const VkRect2D *renderArea);
-	bool fastResolve(const vk::Image *src, vk::Image *dst, VkImageResolve2KHR region);
+	bool fastClear(void *clearValue, vk::Format clearFormat, vk::Image *dest, const vk::Format &viewFormat, const VkImageSubresourceRange &subresourceRange, const VkRect2D *renderArea);
+	bool fastResolve(const vk::Image *src, vk::Image *dst, VkImageResolve region);
 
 	Float4 readFloat4(Pointer<Byte> element, const State &state);
 	void write(Float4 &color, Pointer<Byte> element, const State &state);
@@ -186,7 +187,7 @@ private:
 	CornerUpdateRoutineType generateCornerUpdate(const State &state);
 	void computeCubeCorner(Pointer<Byte> &layer, Int &x0, Int &x1, Int &y0, Int &y1, Int &pitchB, const State &state);
 
-	void copyCubeEdge(const vk::Image *image,
+	void copyCubeEdge(vk::Image *image,
 	                  const VkImageSubresource &dstSubresource, Edge dstEdge,
 	                  const VkImageSubresource &srcSubresource, Edge srcEdge);
 
