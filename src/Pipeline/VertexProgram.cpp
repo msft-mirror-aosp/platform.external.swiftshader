@@ -19,7 +19,7 @@
 #include "Device/Vertex.hpp"
 #include "System/Debug.hpp"
 #include "System/Half.hpp"
-#include "Vulkan/VkDevice.hpp"
+
 #include "Vulkan/VkPipelineLayout.hpp"
 
 namespace sw {
@@ -36,12 +36,12 @@ VertexProgram::VertexProgram(
 
 	// TODO(b/146486064): Consider only assigning these to the SpirvRoutine iff
 	// they are ever going to be read.
-	routine.layer = *Pointer<Int>(data + OFFSET(DrawData, layer));
+	routine.viewID = *Pointer<Int>(data + OFFSET(DrawData, viewID));
 	routine.instanceID = *Pointer<Int>(data + OFFSET(DrawData, instanceID));
 
 	routine.setInputBuiltin(spirvShader, spv::BuiltInViewIndex, [&](const SpirvShader::BuiltinMapping &builtin, Array<SIMD::Float> &value) {
 		assert(builtin.SizeInComponents == 1);
-		value[builtin.FirstComponent] = As<SIMD::Float>(SIMD::Int(routine.layer));
+		value[builtin.FirstComponent] = As<SIMD::Float>(SIMD::Int(routine.viewID));
 	});
 
 	routine.setInputBuiltin(spirvShader, spv::BuiltInInstanceIndex, [&](const SpirvShader::BuiltinMapping &builtin, Array<SIMD::Float> &value) {
@@ -55,11 +55,10 @@ VertexProgram::VertexProgram(
 		value[builtin.FirstComponent] = As<SIMD::Float>(SIMD::Int(SIMD::Width));
 	});
 
-	routine.device = device;
 	routine.descriptorSets = data + OFFSET(DrawData, descriptorSets);
 	routine.descriptorDynamicOffsets = data + OFFSET(DrawData, descriptorDynamicOffsets);
 	routine.pushConstants = data + OFFSET(DrawData, pushConstants);
-	routine.constants = device + OFFSET(vk::Device, constants);
+	routine.constants = *Pointer<Pointer<Byte>>(data + OFFSET(DrawData, constants));
 }
 
 VertexProgram::~VertexProgram()

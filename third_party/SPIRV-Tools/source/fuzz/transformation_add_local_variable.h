@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationAddLocalVariable : public Transformation {
  public:
   explicit TransformationAddLocalVariable(
-      protobufs::TransformationAddLocalVariable message);
+      const protobufs::TransformationAddLocalVariable& message);
 
   TransformationAddLocalVariable(uint32_t fresh_id, uint32_t type_id,
                                  uint32_t function_id, uint32_t initializer_id,

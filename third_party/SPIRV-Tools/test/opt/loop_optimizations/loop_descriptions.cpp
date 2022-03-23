@@ -298,7 +298,7 @@ TEST_F(PassClassTest, NoLoop) {
 
 /*
 Generated from following GLSL with latch block artificially inserted to be
-separate from continue.
+seperate from continue.
 #version 430
 void main(void) {
     float x[10];

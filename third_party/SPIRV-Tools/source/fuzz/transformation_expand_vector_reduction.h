@@ -70,7 +70,7 @@ namespace fuzz {
 class TransformationExpandVectorReduction : public Transformation {
  public:
   explicit TransformationExpandVectorReduction(
-      protobufs::TransformationExpandVectorReduction message);
+      const protobufs::TransformationExpandVectorReduction& message);
 
   TransformationExpandVectorReduction(const uint32_t instruction_result_id,
                                       const std::vector<uint32_t>& fresh_ids);

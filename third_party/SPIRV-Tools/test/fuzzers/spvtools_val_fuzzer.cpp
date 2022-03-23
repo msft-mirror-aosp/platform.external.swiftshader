@@ -16,15 +16,9 @@
 #include <vector>
 
 #include "spirv-tools/libspirv.hpp"
-#include "test/fuzzers/random_generator.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  if (size < 1) {
-    return 0;
-  }
-
-  spvtools::fuzzers::RandomGenerator random_gen(data, size);
-  spvtools::SpirvTools tools(random_gen.GetTargetEnv());
+  spvtools::SpirvTools tools(SPV_ENV_UNIVERSAL_1_3);
   tools.SetMessageConsumer([](spv_message_level_t, const char*,
                               const spv_position_t&, const char*) {});
 

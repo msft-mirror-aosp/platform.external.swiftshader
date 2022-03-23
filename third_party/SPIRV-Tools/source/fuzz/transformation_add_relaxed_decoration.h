@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationAddRelaxedDecoration : public Transformation {
  public:
   explicit TransformationAddRelaxedDecoration(
-      protobufs::TransformationAddRelaxedDecoration message);
+      const protobufs::TransformationAddRelaxedDecoration& message);
 
   explicit TransformationAddRelaxedDecoration(uint32_t fresh_id);
 

@@ -22,8 +22,9 @@ namespace fuzz {
 
 TransformationAddImageSampleUnusedComponents::
     TransformationAddImageSampleUnusedComponents(
-        protobufs::TransformationAddImageSampleUnusedComponents message)
-    : message_(std::move(message)) {}
+        const spvtools::fuzz::protobufs::
+            TransformationAddImageSampleUnusedComponents& message)
+    : message_(message) {}
 
 TransformationAddImageSampleUnusedComponents::
     TransformationAddImageSampleUnusedComponents(
