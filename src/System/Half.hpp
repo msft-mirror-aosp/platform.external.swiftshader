@@ -30,6 +30,7 @@ public:
 
 	operator float() const;
 
+	half &operator=(half h);
 	half &operator=(float f);
 
 private:
@@ -57,7 +58,7 @@ class RGB9E5
 	unsigned int E : 5;
 
 public:
-	RGB9E5(const float rgb[3])
+	RGB9E5(float rgb[3])
 	    : RGB9E5(rgb[0], rgb[1], rgb[2])
 	{
 	}
@@ -128,7 +129,7 @@ public:
 class R11G11B10F
 {
 public:
-	R11G11B10F(const float rgb[3])
+	R11G11B10F(float rgb[3])
 	{
 		R = float32ToFloat11(rgb[0]);
 		G = float32ToFloat11(rgb[1]);

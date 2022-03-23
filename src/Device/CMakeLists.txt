@@ -46,6 +46,7 @@ set(DEVICE_SRC_FILES
     SetupProcessor.cpp
     SetupProcessor.hpp
     Stream.hpp
+    Triangle.hpp
     Vertex.hpp
     VertexProcessor.cpp
     VertexProcessor.hpp

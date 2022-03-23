@@ -22,8 +22,9 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationAddConstantComposite::TransformationAddConstantComposite(
-    spvtools::fuzz::protobufs::TransformationAddConstantComposite message)
-    : message_(std::move(message)) {}
+    const spvtools::fuzz::protobufs::TransformationAddConstantComposite&
+        message)
+    : message_(message) {}
 
 TransformationAddConstantComposite::TransformationAddConstantComposite(
     uint32_t fresh_id, uint32_t type_id,
@@ -75,7 +76,7 @@ bool TransformationAddConstantComposite::IsApplicable(
       // We do not create constants of structs decorated with Block nor
       // BufferBlock.  The SPIR-V spec does not explicitly disallow this, but it
       // seems like a strange thing to do, so we disallow it to avoid triggering
-      // low priority edge case issues related to it.
+      // low priorty edge case issues related to it.
       if (fuzzerutil::HasBlockOrBufferBlockDecoration(
               ir_context, composite_type_instruction->result_id())) {
         return false;
@@ -119,17 +120,14 @@ void TransformationAddConstantComposite::Apply(
   for (auto constituent_id : message_.constituent_id()) {
     in_operands.push_back({SPV_OPERAND_TYPE_ID, {constituent_id}});
   }
-  auto new_instruction = MakeUnique<opt::Instruction>(
+  ir_context->module()->AddGlobalValue(MakeUnique<opt::Instruction>(
       ir_context, SpvOpConstantComposite, message_.type_id(),
-      message_.fresh_id(), in_operands);
-  auto new_instruction_ptr = new_instruction.get();
-  ir_context->module()->AddGlobalValue(std::move(new_instruction));
+      message_.fresh_id(), in_operands));
   fuzzerutil::UpdateModuleIdBound(ir_context, message_.fresh_id());
-
-  // Inform the def-use manager of the new instruction. Invalidate the constant
-  // manager as we have added a new constant.
-  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(new_instruction_ptr);
-  ir_context->InvalidateAnalyses(opt::IRContext::kAnalysisConstants);
+  // We have added an instruction to the module, so need to be careful about the
+  // validity of existing analyses.
+  ir_context->InvalidateAnalysesExceptFor(
+      opt::IRContext::Analysis::kAnalysisNone);
 
   if (message_.is_irrelevant()) {
     transformation_context->GetFactManager()->AddFactIdIsIrrelevant(

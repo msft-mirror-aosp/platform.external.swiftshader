@@ -22,8 +22,9 @@ namespace fuzz {
 
 TransformationReplaceLinearAlgebraInstruction::
     TransformationReplaceLinearAlgebraInstruction(
-        protobufs::TransformationReplaceLinearAlgebraInstruction message)
-    : message_(std::move(message)) {}
+        const spvtools::fuzz::protobufs::
+            TransformationReplaceLinearAlgebraInstruction& message)
+    : message_(message) {}
 
 TransformationReplaceLinearAlgebraInstruction::
     TransformationReplaceLinearAlgebraInstruction(

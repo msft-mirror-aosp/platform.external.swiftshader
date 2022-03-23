@@ -19,7 +19,6 @@
 #include "VkDeviceMemory.hpp"
 #include "VkImageView.hpp"
 #include "VkStringify.hpp"
-#include "VkStructConversion.hpp"
 #include "Device/ASTC_Decoder.hpp"
 #include "Device/BC_Decoder.hpp"
 #include "Device/Blitter.hpp"
@@ -38,26 +37,26 @@ ETC_Decoder::InputType GetInputType(const vk::Format &format)
 {
 	switch(format)
 	{
-	case VK_FORMAT_EAC_R11_UNORM_BLOCK:
-		return ETC_Decoder::ETC_R_UNSIGNED;
-	case VK_FORMAT_EAC_R11_SNORM_BLOCK:
-		return ETC_Decoder::ETC_R_SIGNED;
-	case VK_FORMAT_EAC_R11G11_UNORM_BLOCK:
-		return ETC_Decoder::ETC_RG_UNSIGNED;
-	case VK_FORMAT_EAC_R11G11_SNORM_BLOCK:
-		return ETC_Decoder::ETC_RG_SIGNED;
-	case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK:
-	case VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK:
-		return ETC_Decoder::ETC_RGB;
-	case VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK:
-	case VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK:
-		return ETC_Decoder::ETC_RGB_PUNCHTHROUGH_ALPHA;
-	case VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK:
-	case VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK:
-		return ETC_Decoder::ETC_RGBA;
-	default:
-		UNSUPPORTED("format: %d", int(format));
-		return ETC_Decoder::ETC_RGBA;
+		case VK_FORMAT_EAC_R11_UNORM_BLOCK:
+			return ETC_Decoder::ETC_R_UNSIGNED;
+		case VK_FORMAT_EAC_R11_SNORM_BLOCK:
+			return ETC_Decoder::ETC_R_SIGNED;
+		case VK_FORMAT_EAC_R11G11_UNORM_BLOCK:
+			return ETC_Decoder::ETC_RG_UNSIGNED;
+		case VK_FORMAT_EAC_R11G11_SNORM_BLOCK:
+			return ETC_Decoder::ETC_RG_SIGNED;
+		case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK:
+		case VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK:
+			return ETC_Decoder::ETC_RGB;
+		case VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK:
+		case VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK:
+			return ETC_Decoder::ETC_RGB_PUNCHTHROUGH_ALPHA;
+		case VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK:
+		case VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK:
+			return ETC_Decoder::ETC_RGBA;
+		default:
+			UNSUPPORTED("format: %d", int(format));
+			return ETC_Decoder::ETC_RGBA;
 	}
 }
 
@@ -65,32 +64,32 @@ int GetBCn(const vk::Format &format)
 {
 	switch(format)
 	{
-	case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
-	case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
-	case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
-	case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
-		return 1;
-	case VK_FORMAT_BC2_UNORM_BLOCK:
-	case VK_FORMAT_BC2_SRGB_BLOCK:
-		return 2;
-	case VK_FORMAT_BC3_UNORM_BLOCK:
-	case VK_FORMAT_BC3_SRGB_BLOCK:
-		return 3;
-	case VK_FORMAT_BC4_UNORM_BLOCK:
-	case VK_FORMAT_BC4_SNORM_BLOCK:
-		return 4;
-	case VK_FORMAT_BC5_UNORM_BLOCK:
-	case VK_FORMAT_BC5_SNORM_BLOCK:
-		return 5;
-	case VK_FORMAT_BC6H_UFLOAT_BLOCK:
-	case VK_FORMAT_BC6H_SFLOAT_BLOCK:
-		return 6;
-	case VK_FORMAT_BC7_UNORM_BLOCK:
-	case VK_FORMAT_BC7_SRGB_BLOCK:
-		return 7;
-	default:
-		UNSUPPORTED("format: %d", int(format));
-		return 0;
+		case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+		case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+		case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
+		case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+			return 1;
+		case VK_FORMAT_BC2_UNORM_BLOCK:
+		case VK_FORMAT_BC2_SRGB_BLOCK:
+			return 2;
+		case VK_FORMAT_BC3_UNORM_BLOCK:
+		case VK_FORMAT_BC3_SRGB_BLOCK:
+			return 3;
+		case VK_FORMAT_BC4_UNORM_BLOCK:
+		case VK_FORMAT_BC4_SNORM_BLOCK:
+			return 4;
+		case VK_FORMAT_BC5_UNORM_BLOCK:
+		case VK_FORMAT_BC5_SNORM_BLOCK:
+			return 5;
+		case VK_FORMAT_BC6H_UFLOAT_BLOCK:
+		case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+			return 6;
+		case VK_FORMAT_BC7_UNORM_BLOCK:
+		case VK_FORMAT_BC7_SRGB_BLOCK:
+			return 7;
+		default:
+			UNSUPPORTED("format: %d", int(format));
+			return 0;
 	}
 }
 
@@ -101,27 +100,27 @@ bool GetNoAlphaOrUnsigned(const vk::Format &format)
 {
 	switch(format)
 	{
-	case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
-	case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
-	case VK_FORMAT_BC4_UNORM_BLOCK:
-	case VK_FORMAT_BC5_UNORM_BLOCK:
-	case VK_FORMAT_BC6H_UFLOAT_BLOCK:
-		return true;
-	case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
-	case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
-	case VK_FORMAT_BC2_UNORM_BLOCK:
-	case VK_FORMAT_BC2_SRGB_BLOCK:
-	case VK_FORMAT_BC3_UNORM_BLOCK:
-	case VK_FORMAT_BC3_SRGB_BLOCK:
-	case VK_FORMAT_BC4_SNORM_BLOCK:
-	case VK_FORMAT_BC5_SNORM_BLOCK:
-	case VK_FORMAT_BC6H_SFLOAT_BLOCK:
-	case VK_FORMAT_BC7_SRGB_BLOCK:
-	case VK_FORMAT_BC7_UNORM_BLOCK:
-		return false;
-	default:
-		UNSUPPORTED("format: %d", int(format));
-		return false;
+		case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+		case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
+		case VK_FORMAT_BC4_UNORM_BLOCK:
+		case VK_FORMAT_BC5_UNORM_BLOCK:
+		case VK_FORMAT_BC6H_UFLOAT_BLOCK:
+			return true;
+		case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+		case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+		case VK_FORMAT_BC2_UNORM_BLOCK:
+		case VK_FORMAT_BC2_SRGB_BLOCK:
+		case VK_FORMAT_BC3_UNORM_BLOCK:
+		case VK_FORMAT_BC3_SRGB_BLOCK:
+		case VK_FORMAT_BC4_SNORM_BLOCK:
+		case VK_FORMAT_BC5_SNORM_BLOCK:
+		case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+		case VK_FORMAT_BC7_SRGB_BLOCK:
+		case VK_FORMAT_BC7_UNORM_BLOCK:
+			return false;
+		default:
+			UNSUPPORTED("format: %d", int(format));
+			return false;
 	}
 }
 
@@ -130,12 +129,10 @@ VkFormat GetImageFormat(const VkImageCreateInfo *pCreateInfo)
 	auto nextInfo = reinterpret_cast<VkBaseInStructure const *>(pCreateInfo->pNext);
 	while(nextInfo)
 	{
-		// Casting to an int since some structures, such as VK_STRUCTURE_TYPE_NATIVE_BUFFER_ANDROID and
-		// VK_STRUCTURE_TYPE_SWAPCHAIN_IMAGE_CREATE_INFO_ANDROID, are not enumerated in the official Vulkan headers.
-		switch((int)(nextInfo->sType))
+		switch(nextInfo->sType)
 		{
 #ifdef __ANDROID__
-		case VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID:
+			case VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID:
 			{
 				const VkExternalFormatANDROID *externalFormatAndroid = reinterpret_cast<const VkExternalFormatANDROID *>(nextInfo);
 
@@ -150,23 +147,10 @@ VkFormat GetImageFormat(const VkImageCreateInfo *pCreateInfo)
 				return correspondingVkFormat;
 			}
 			break;
-		case VK_STRUCTURE_TYPE_NATIVE_BUFFER_ANDROID:
-			break;
-		case VK_STRUCTURE_TYPE_SWAPCHAIN_IMAGE_CREATE_INFO_ANDROID:
-			break;
 #endif
-		// We support these extensions, but they don't affect the image format.
-		case VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO:
-		case VK_STRUCTURE_TYPE_IMAGE_SWAPCHAIN_CREATE_INFO_KHR:
-		case VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO:
-		case VK_STRUCTURE_TYPE_IMAGE_STENCIL_USAGE_CREATE_INFO:
-			break;
-		case VK_STRUCTURE_TYPE_MAX_ENUM:
-			// dEQP tests that this value is ignored.
-			break;
-		default:
-			UNSUPPORTED("pCreateInfo->pNext->sType = %s", vk::Stringify(nextInfo->sType).c_str());
-			break;
+			default:
+				LOG_TRAP("pCreateInfo->pNext->sType = %s", vk::Stringify(nextInfo->sType).c_str());
+				break;
 		}
 
 		nextInfo = nextInfo->pNext;
@@ -213,7 +197,7 @@ void Image::destroy(const VkAllocationCallbacks *pAllocator)
 {
 	if(decompressedImage)
 	{
-		vk::freeHostMemory(decompressedImage, pAllocator);
+		vk::deallocate(decompressedImage, pAllocator);
 	}
 }
 
@@ -230,37 +214,6 @@ const VkMemoryRequirements Image::getMemoryRequirements() const
 	memoryRequirements.size = getStorageSize(format.getAspects()) +
 	                          (decompressedImage ? decompressedImage->getStorageSize(decompressedImage->format.getAspects()) : 0);
 	return memoryRequirements;
-}
-
-void Image::getMemoryRequirements(VkMemoryRequirements2 *pMemoryRequirements) const
-{
-	VkBaseOutStructure *extensionRequirements = reinterpret_cast<VkBaseOutStructure *>(pMemoryRequirements->pNext);
-	while(extensionRequirements)
-	{
-		switch(extensionRequirements->sType)
-		{
-		case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS:
-			{
-				auto requirements = reinterpret_cast<VkMemoryDedicatedRequirements *>(extensionRequirements);
-				device->getRequirements(requirements);
-#if SWIFTSHADER_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER
-				if(getSupportedExternalMemoryHandleTypes() == VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID)
-				{
-					requirements->prefersDedicatedAllocation = VK_TRUE;
-					requirements->requiresDedicatedAllocation = VK_TRUE;
-				}
-#endif
-			}
-			break;
-		default:
-			UNSUPPORTED("pMemoryRequirements->pNext sType = %s", vk::Stringify(extensionRequirements->sType).c_str());
-			break;
-		}
-
-		extensionRequirements = extensionRequirements->pNext;
-	}
-
-	pMemoryRequirements->memoryRequirements = getMemoryRequirements();
 }
 
 size_t Image::getSizeInBytes(const VkImageSubresourceRange &subresourceRange) const
@@ -385,35 +338,14 @@ void Image::getSubresourceLayout(const VkImageSubresource *pSubresource, VkSubre
 	}
 
 	auto aspect = static_cast<VkImageAspectFlagBits>(pSubresource->aspectMask);
-	pLayout->offset = getSubresourceOffset(aspect, pSubresource->mipLevel, pSubresource->arrayLayer);
+	pLayout->offset = getMemoryOffset(aspect, pSubresource->mipLevel, pSubresource->arrayLayer);
 	pLayout->size = getMultiSampledLevelSize(aspect, pSubresource->mipLevel);
 	pLayout->rowPitch = rowPitchBytes(aspect, pSubresource->mipLevel);
 	pLayout->depthPitch = slicePitchBytes(aspect, pSubresource->mipLevel);
 	pLayout->arrayPitch = getLayerSize(aspect);
 }
 
-void Image::copyTo(Image *dstImage, const VkImageCopy2KHR &region) const
-{
-	static constexpr VkImageAspectFlags CombinedDepthStencilAspects =
-	    VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-	if((region.srcSubresource.aspectMask == CombinedDepthStencilAspects) &&
-	   (region.dstSubresource.aspectMask == CombinedDepthStencilAspects))
-	{
-		// Depth and stencil can be specified together, copy each separately
-		VkImageCopy2KHR singleAspectRegion = region;
-		singleAspectRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-		singleAspectRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-		copySingleAspectTo(dstImage, singleAspectRegion);
-		singleAspectRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
-		singleAspectRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
-		copySingleAspectTo(dstImage, singleAspectRegion);
-		return;
-	}
-
-	copySingleAspectTo(dstImage, region);
-}
-
-void Image::copySingleAspectTo(Image *dstImage, const VkImageCopy2KHR &region) const
+void Image::copyTo(Image *dstImage, const VkImageCopy &region) const
 {
 	// Image copy does not perform any conversion, it simply copies memory from
 	// an image to another image that has the same number of bytes per pixel.
@@ -505,8 +437,8 @@ void Image::copySingleAspectTo(Image *dstImage, const VkImageCopy2KHR &region) c
 	                     (copyExtent.height == dstExtent.height) &&
 	                     (srcDepthPitch == dstDepthPitch);
 
-	const uint8_t *srcLayer = static_cast<const uint8_t *>(getTexelPointer(region.srcOffset, ImageSubresource(region.srcSubresource)));
-	uint8_t *dstLayer = static_cast<uint8_t *>(dstImage->getTexelPointer(region.dstOffset, ImageSubresource(region.dstSubresource)));
+	const uint8_t *srcLayer = static_cast<const uint8_t *>(getTexelPointer(region.srcOffset, { region.srcSubresource.aspectMask, region.srcSubresource.mipLevel, region.srcSubresource.baseArrayLayer }));
+	uint8_t *dstLayer = static_cast<uint8_t *>(dstImage->getTexelPointer(region.dstOffset, { region.dstSubresource.aspectMask, region.dstSubresource.mipLevel, region.dstSubresource.baseArrayLayer }));
 
 	for(uint32_t layer = 0; layer < layerCount; layer++)
 	{
@@ -579,23 +511,24 @@ void Image::copySingleAspectTo(Image *dstImage, const VkImageCopy2KHR &region) c
 		dstLayer += dstLayerPitch;
 	}
 
-	dstImage->contentsChanged(ImageSubresourceRange(region.dstSubresource));
+	dstImage->contentsChanged({ region.dstSubresource.aspectMask, region.dstSubresource.mipLevel, 1,
+	                            region.dstSubresource.baseArrayLayer, region.dstSubresource.layerCount });
 }
 
-void Image::copy(Buffer *buffer, const VkBufferImageCopy2KHR &region, bool bufferIsSource)
+void Image::copy(Buffer *buffer, const VkBufferImageCopy &region, bool bufferIsSource)
 {
 	switch(region.imageSubresource.aspectMask)
 	{
-	case VK_IMAGE_ASPECT_COLOR_BIT:
-	case VK_IMAGE_ASPECT_DEPTH_BIT:
-	case VK_IMAGE_ASPECT_STENCIL_BIT:
-	case VK_IMAGE_ASPECT_PLANE_0_BIT:
-	case VK_IMAGE_ASPECT_PLANE_1_BIT:
-	case VK_IMAGE_ASPECT_PLANE_2_BIT:
-		break;
-	default:
-		UNSUPPORTED("aspectMask %x", int(region.imageSubresource.aspectMask));
-		break;
+		case VK_IMAGE_ASPECT_COLOR_BIT:
+		case VK_IMAGE_ASPECT_DEPTH_BIT:
+		case VK_IMAGE_ASPECT_STENCIL_BIT:
+		case VK_IMAGE_ASPECT_PLANE_0_BIT:
+		case VK_IMAGE_ASPECT_PLANE_1_BIT:
+		case VK_IMAGE_ASPECT_PLANE_2_BIT:
+			break;
+		default:
+			UNSUPPORTED("aspectMask %x", int(region.imageSubresource.aspectMask));
+			break;
 	}
 
 	auto aspect = static_cast<VkImageAspectFlagBits>(region.imageSubresource.aspectMask);
@@ -608,14 +541,14 @@ void Image::copy(Buffer *buffer, const VkBufferImageCopy2KHR &region, bool buffe
 		return;
 	}
 
-	VkExtent2D bufferExtent = bufferExtentInBlocks(Extent2D(imageExtent), region);
+	VkExtent2D bufferExtent = bufferExtentInBlocks({ imageExtent.width, imageExtent.height }, region);
 	int bytesPerBlock = copyFormat.bytesPerBlock();
 	int bufferRowPitchBytes = bufferExtent.width * bytesPerBlock;
 	int bufferSlicePitchBytes = bufferExtent.height * bufferRowPitchBytes;
 	ASSERT(samples == 1);
 
 	uint8_t *bufferMemory = static_cast<uint8_t *>(buffer->getOffsetPointer(region.bufferOffset));
-	uint8_t *imageMemory = static_cast<uint8_t *>(getTexelPointer(region.imageOffset, ImageSubresource(region.imageSubresource)));
+	uint8_t *imageMemory = static_cast<uint8_t *>(getTexelPointer(region.imageOffset, { region.imageSubresource.aspectMask, region.imageSubresource.mipLevel, region.imageSubresource.baseArrayLayer }));
 	uint8_t *srcMemory = bufferIsSource ? bufferMemory : imageMemory;
 	uint8_t *dstMemory = bufferIsSource ? imageMemory : bufferMemory;
 	int imageRowPitchBytes = rowPitchBytes(aspect, region.imageSubresource.mipLevel);
@@ -708,16 +641,17 @@ void Image::copy(Buffer *buffer, const VkBufferImageCopy2KHR &region, bool buffe
 
 	if(bufferIsSource)
 	{
-		contentsChanged(ImageSubresourceRange(region.imageSubresource));
+		contentsChanged({ region.imageSubresource.aspectMask, region.imageSubresource.mipLevel, 1,
+		                  region.imageSubresource.baseArrayLayer, region.imageSubresource.layerCount });
 	}
 }
 
-void Image::copyTo(Buffer *dstBuffer, const VkBufferImageCopy2KHR &region)
+void Image::copyTo(Buffer *dstBuffer, const VkBufferImageCopy &region)
 {
 	copy(dstBuffer, region, false);
 }
 
-void Image::copyFrom(Buffer *srcBuffer, const VkBufferImageCopy2KHR &region)
+void Image::copyFrom(Buffer *srcBuffer, const VkBufferImageCopy &region)
 {
 	copy(srcBuffer, region, true);
 }
@@ -725,9 +659,8 @@ void Image::copyFrom(Buffer *srcBuffer, const VkBufferImageCopy2KHR &region)
 void *Image::getTexelPointer(const VkOffset3D &offset, const VkImageSubresource &subresource) const
 {
 	VkImageAspectFlagBits aspect = static_cast<VkImageAspectFlagBits>(subresource.aspectMask);
-	return deviceMemory->getOffsetPointer(getMemoryOffset(aspect) +
-	                                      texelOffsetBytesInStorage(offset, subresource) +
-	                                      getSubresourceOffset(aspect, subresource.mipLevel, subresource.arrayLayer));
+	return deviceMemory->getOffsetPointer(texelOffsetBytesInStorage(offset, subresource) +
+	                                      getMemoryOffset(aspect, subresource.mipLevel, subresource.arrayLayer));
 }
 
 VkExtent3D Image::imageExtentInBlocks(const VkExtent3D &extent, VkImageAspectFlagBits aspect) const
@@ -765,12 +698,11 @@ VkOffset3D Image::imageOffsetInBlocks(const VkOffset3D &offset, VkImageAspectFla
 	return adjustedOffset;
 }
 
-VkExtent2D Image::bufferExtentInBlocks(const VkExtent2D &extent, const VkBufferImageCopy2KHR &region) const
+VkExtent2D Image::bufferExtentInBlocks(const VkExtent2D &extent, const VkBufferImageCopy &region) const
 {
 	VkExtent2D adjustedExtent = extent;
 	VkImageAspectFlagBits aspect = static_cast<VkImageAspectFlagBits>(region.imageSubresource.aspectMask);
 	Format usedFormat = getFormat(aspect);
-
 	if(region.bufferRowLength != 0)
 	{
 		adjustedExtent.width = region.bufferRowLength;
@@ -778,11 +710,10 @@ VkExtent2D Image::bufferExtentInBlocks(const VkExtent2D &extent, const VkBufferI
 		if(usedFormat.isCompressed())
 		{
 			int blockWidth = usedFormat.blockWidth();
-			ASSERT((adjustedExtent.width % blockWidth == 0) || (adjustedExtent.width + region.imageOffset.x == extent.width));
-			adjustedExtent.width = (region.bufferRowLength + blockWidth - 1) / blockWidth;
+			ASSERT((adjustedExtent.width % blockWidth) == 0);
+			adjustedExtent.width /= blockWidth;
 		}
 	}
-
 	if(region.bufferImageHeight != 0)
 	{
 		adjustedExtent.height = region.bufferImageHeight;
@@ -790,18 +721,17 @@ VkExtent2D Image::bufferExtentInBlocks(const VkExtent2D &extent, const VkBufferI
 		if(usedFormat.isCompressed())
 		{
 			int blockHeight = usedFormat.blockHeight();
-			ASSERT((adjustedExtent.height % blockHeight == 0) || (adjustedExtent.height + region.imageOffset.y == extent.height));
-			adjustedExtent.height = (region.bufferImageHeight + blockHeight - 1) / blockHeight;
+			ASSERT((adjustedExtent.height % blockHeight) == 0);
+			adjustedExtent.height /= blockHeight;
 		}
 	}
-
 	return adjustedExtent;
 }
 
 int Image::borderSize() const
 {
 	// We won't add a border to compressed cube textures, we'll add it when we decompress the texture
-	return (isCubeCompatible() && !format.isCompressed()) ? 1 : 0;
+	return (isCube() && !format.isCompressed()) ? 1 : 0;
 }
 
 VkDeviceSize Image::texelOffsetBytesInStorage(const VkOffset3D &offset, const VkImageSubresource &subresource) const
@@ -827,38 +757,37 @@ VkExtent3D Image::getMipLevelExtent(VkImageAspectFlagBits aspect, uint32_t mipLe
 
 	switch(aspect)
 	{
-	case VK_IMAGE_ASPECT_COLOR_BIT:
-	case VK_IMAGE_ASPECT_DEPTH_BIT:
-	case VK_IMAGE_ASPECT_STENCIL_BIT:
-	case VK_IMAGE_ASPECT_PLANE_0_BIT:  // Vulkan 1.1 Table 31. Plane Format Compatibility Table: plane 0 of all defined formats is full resolution.
-		break;
-	case VK_IMAGE_ASPECT_PLANE_1_BIT:
-	case VK_IMAGE_ASPECT_PLANE_2_BIT:
-		switch(format)
-		{
-		case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
-		case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
-		case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:
-			ASSERT(mipLevelExtent.width % 2 == 0 && mipLevelExtent.height % 2 == 0);  // Vulkan 1.1: "Images in this format must be defined with a width and height that is a multiple of two."
-			// Vulkan 1.1 Table 31. Plane Format Compatibility Table:
-			// Half-resolution U and V planes.
-			mipLevelExtent.width /= 2;
-			mipLevelExtent.height /= 2;
+		case VK_IMAGE_ASPECT_COLOR_BIT:
+		case VK_IMAGE_ASPECT_DEPTH_BIT:
+		case VK_IMAGE_ASPECT_STENCIL_BIT:
+		case VK_IMAGE_ASPECT_PLANE_0_BIT:  // Vulkan 1.1 Table 31. Plane Format Compatibility Table: plane 0 of all defined formats is full resolution.
+			break;
+		case VK_IMAGE_ASPECT_PLANE_1_BIT:
+		case VK_IMAGE_ASPECT_PLANE_2_BIT:
+			switch(format)
+			{
+				case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
+				case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
+					ASSERT(mipLevelExtent.width % 2 == 0 && mipLevelExtent.height % 2 == 0);  // Vulkan 1.1: "Images in this format must be defined with a width and height that is a multiple of two."
+					// Vulkan 1.1 Table 31. Plane Format Compatibility Table:
+					// Half-resolution U and V planes.
+					mipLevelExtent.width /= 2;
+					mipLevelExtent.height /= 2;
+					break;
+				default:
+					UNSUPPORTED("format %d", int(format));
+			}
 			break;
 		default:
-			UNSUPPORTED("format %d", int(format));
-		}
-		break;
-	default:
-		UNSUPPORTED("aspect %x", int(aspect));
+			UNSUPPORTED("aspect %x", int(aspect));
 	}
 
 	return mipLevelExtent;
 }
 
-size_t Image::rowPitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel) const
+int Image::rowPitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel) const
 {
-	if(deviceMemory && deviceMemory->hasExternalImagePlanes())
+	if(deviceMemory && deviceMemory->hasExternalImageProperties())
 	{
 		return deviceMemory->externalImageRowPitchBytes(aspect);
 	}
@@ -875,10 +804,10 @@ size_t Image::rowPitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel) con
 		return extentInBlocks.width * usedFormat.bytesPerBlock();
 	}
 
-	return usedFormat.pitchB(mipLevelExtent.width, borderSize());
+	return usedFormat.pitchB(mipLevelExtent.width, borderSize(), true);
 }
 
-size_t Image::slicePitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel) const
+int Image::slicePitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel) const
 {
 	// Depth and Stencil slice should be computed separately
 	ASSERT((aspect & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) !=
@@ -892,7 +821,7 @@ size_t Image::slicePitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel) c
 		return extentInBlocks.height * extentInBlocks.width * usedFormat.bytesPerBlock();
 	}
 
-	return usedFormat.sliceB(mipLevelExtent.width, mipLevelExtent.height, borderSize());
+	return usedFormat.sliceB(mipLevelExtent.width, mipLevelExtent.height, borderSize(), true);
 }
 
 Format Image::getFormat(VkImageAspectFlagBits aspect) const
@@ -900,13 +829,9 @@ Format Image::getFormat(VkImageAspectFlagBits aspect) const
 	return format.getAspectFormat(aspect);
 }
 
-bool Image::isCubeCompatible() const
+bool Image::isCube() const
 {
-	bool cubeCompatible = (flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT);
-	ASSERT(!cubeCompatible || (imageType == VK_IMAGE_TYPE_2D));  // VUID-VkImageCreateInfo-flags-00949
-	ASSERT(!cubeCompatible || (arrayLayers >= 6));               // VUID-VkImageCreateInfo-imageType-00954
-
-	return cubeCompatible;
+	return (flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) && (imageType == VK_IMAGE_TYPE_2D);
 }
 
 uint8_t *Image::end() const
@@ -916,74 +841,67 @@ uint8_t *Image::end() const
 
 VkDeviceSize Image::getMemoryOffset(VkImageAspectFlagBits aspect) const
 {
-	if(deviceMemory && deviceMemory->hasExternalImagePlanes())
+	if(deviceMemory && deviceMemory->hasExternalImageProperties())
 	{
 		return deviceMemory->externalImageMemoryOffset(aspect);
+	}
+
+	switch(format)
+	{
+		case VK_FORMAT_D16_UNORM_S8_UINT:
+		case VK_FORMAT_D24_UNORM_S8_UINT:
+		case VK_FORMAT_D32_SFLOAT_S8_UINT:
+			if(aspect == VK_IMAGE_ASPECT_STENCIL_BIT)
+			{
+				// Offset by depth buffer to get to stencil buffer
+				return memoryOffset + getStorageSize(VK_IMAGE_ASPECT_DEPTH_BIT);
+			}
+			break;
+
+		case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
+			if(aspect == VK_IMAGE_ASPECT_PLANE_2_BIT)
+			{
+				return memoryOffset + getStorageSize(VK_IMAGE_ASPECT_PLANE_1_BIT) + getStorageSize(VK_IMAGE_ASPECT_PLANE_0_BIT);
+			}
+			// Fall through to 2PLANE case:
+		case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
+			if(aspect == VK_IMAGE_ASPECT_PLANE_1_BIT)
+			{
+				return memoryOffset + getStorageSize(VK_IMAGE_ASPECT_PLANE_0_BIT);
+			}
+			else
+			{
+				ASSERT(aspect == VK_IMAGE_ASPECT_PLANE_0_BIT);
+
+				return memoryOffset;
+			}
+			break;
+
+		default:
+			break;
 	}
 
 	return memoryOffset;
 }
 
-VkDeviceSize Image::getAspectOffset(VkImageAspectFlagBits aspect) const
+VkDeviceSize Image::getMemoryOffset(VkImageAspectFlagBits aspect, uint32_t mipLevel) const
 {
-	switch(format)
-	{
-	case VK_FORMAT_D16_UNORM_S8_UINT:
-	case VK_FORMAT_D24_UNORM_S8_UINT:
-	case VK_FORMAT_D32_SFLOAT_S8_UINT:
-		if(aspect == VK_IMAGE_ASPECT_STENCIL_BIT)
-		{
-			// Offset by depth buffer to get to stencil buffer
-			return getStorageSize(VK_IMAGE_ASPECT_DEPTH_BIT);
-		}
-		break;
-
-	case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
-		if(aspect == VK_IMAGE_ASPECT_PLANE_2_BIT)
-		{
-			return getStorageSize(VK_IMAGE_ASPECT_PLANE_1_BIT) + getStorageSize(VK_IMAGE_ASPECT_PLANE_0_BIT);
-		}
-		// Fall through to 2PLANE case:
-	case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
-	case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:
-		if(aspect == VK_IMAGE_ASPECT_PLANE_1_BIT)
-		{
-			return getStorageSize(VK_IMAGE_ASPECT_PLANE_0_BIT);
-		}
-		else
-		{
-			ASSERT(aspect == VK_IMAGE_ASPECT_PLANE_0_BIT);
-
-			return 0;
-		}
-		break;
-
-	default:
-		break;
-	}
-
-	return 0;
-}
-
-VkDeviceSize Image::getSubresourceOffset(VkImageAspectFlagBits aspect, uint32_t mipLevel, uint32_t layer) const
-{
-	// "If the image is disjoint, then the offset is relative to the base address of the plane.
-	//  If the image is non-disjoint, then the offset is relative to the base address of the image."
-	// Multi-plane external images are essentially disjoint.
-	bool disjoint = (flags & VK_IMAGE_CREATE_DISJOINT_BIT) || (deviceMemory && deviceMemory->hasExternalImagePlanes());
-	VkDeviceSize offset = !disjoint ? getAspectOffset(aspect) : 0;
-
-	for(uint32_t i = 0; i < mipLevel; i++)
+	VkDeviceSize offset = getMemoryOffset(aspect);
+	for(uint32_t i = 0; i < mipLevel; ++i)
 	{
 		offset += getMultiSampledLevelSize(aspect, i);
 	}
+	return offset;
+}
 
-	return offset + layer * getLayerOffset(aspect, mipLevel);
+VkDeviceSize Image::getMemoryOffset(VkImageAspectFlagBits aspect, uint32_t mipLevel, uint32_t layer) const
+{
+	return layer * getLayerOffset(aspect, mipLevel) + getMemoryOffset(aspect, mipLevel);
 }
 
 VkDeviceSize Image::getMipLevelSize(VkImageAspectFlagBits aspect, uint32_t mipLevel) const
 {
-	return slicePitchBytes(aspect, mipLevel) * getMipLevelExtent(aspect, mipLevel).depth;
+	return getMipLevelExtent(aspect, mipLevel).depth * slicePitchBytes(aspect, mipLevel);
 }
 
 VkDeviceSize Image::getMultiSampledLevelSize(VkImageAspectFlagBits aspect, uint32_t mipLevel) const
@@ -1060,10 +978,9 @@ const Image *Image::getSampledImage(const vk::Format &imageViewFormat) const
 	return (decompressedImage && isImageViewCompressed) ? decompressedImage : this;
 }
 
-void Image::blitTo(Image *dstImage, const VkImageBlit2KHR &region, VkFilter filter) const
+void Image::blitTo(Image *dstImage, const VkImageBlit &region, VkFilter filter) const
 {
-	prepareForSampling(ImageSubresourceRange(region.srcSubresource));
-	device->getBlitter()->blit(decompressedImage ? decompressedImage : this, dstImage, region, filter);
+	device->getBlitter()->blit(this, dstImage, region, filter);
 }
 
 void Image::copyTo(uint8_t *dst, unsigned int dstPitch) const
@@ -1071,14 +988,30 @@ void Image::copyTo(uint8_t *dst, unsigned int dstPitch) const
 	device->getBlitter()->copy(this, dst, dstPitch);
 }
 
-void Image::resolveTo(Image *dstImage, const VkImageResolve2KHR &region) const
+void Image::resolveTo(Image *dstImage, const VkImageResolve &region) const
 {
 	device->getBlitter()->resolve(this, dstImage, region);
 }
 
-void Image::resolveDepthStencilTo(const ImageView *src, ImageView *dst, VkResolveModeFlagBits depthResolveMode, VkResolveModeFlagBits stencilResolveMode) const
+void Image::resolveDepthStencilTo(const ImageView *src, ImageView *dst, const VkSubpassDescriptionDepthStencilResolve &dsResolve) const
 {
-	device->getBlitter()->resolveDepthStencil(src, dst, depthResolveMode, stencilResolveMode);
+	device->getBlitter()->resolveDepthStencil(src, dst, dsResolve);
+}
+
+VkFormat Image::getClearFormat() const
+{
+	// Set the proper format for the clear value, as described here:
+	// https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html#clears-values
+	if(format.isSignedUnnormalizedInteger())
+	{
+		return VK_FORMAT_R32G32B32A32_SINT;
+	}
+	else if(format.isUnsignedUnnormalizedInteger())
+	{
+		return VK_FORMAT_R32G32B32A32_UINT;
+	}
+
+	return VK_FORMAT_R32G32B32A32_SFLOAT;
 }
 
 uint32_t Image::getLastLayerIndex(const VkImageSubresourceRange &subresourceRange) const
@@ -1091,16 +1024,16 @@ uint32_t Image::getLastMipLevel(const VkImageSubresourceRange &subresourceRange)
 	return ((subresourceRange.levelCount == VK_REMAINING_MIP_LEVELS) ? mipLevels : (subresourceRange.baseMipLevel + subresourceRange.levelCount)) - 1;
 }
 
-void Image::clear(const void *pixelData, VkFormat pixelFormat, const vk::Format &viewFormat, const VkImageSubresourceRange &subresourceRange, const VkRect2D *renderArea)
+void Image::clear(void *pixelData, VkFormat pixelFormat, const vk::Format &viewFormat, const VkImageSubresourceRange &subresourceRange, const VkRect2D &renderArea)
 {
-	device->getBlitter()->clear(pixelData, pixelFormat, this, viewFormat, subresourceRange, renderArea);
+	device->getBlitter()->clear(pixelData, pixelFormat, this, viewFormat, subresourceRange, &renderArea);
 }
 
 void Image::clear(const VkClearColorValue &color, const VkImageSubresourceRange &subresourceRange)
 {
 	ASSERT(subresourceRange.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT);
 
-	clear(color.float32, format.getClearFormat(), format, subresourceRange, nullptr);
+	device->getBlitter()->clear((void *)color.float32, getClearFormat(), this, format, subresourceRange);
 }
 
 void Image::clear(const VkClearDepthStencilValue &color, const VkImageSubresourceRange &subresourceRange)
@@ -1112,14 +1045,14 @@ void Image::clear(const VkClearDepthStencilValue &color, const VkImageSubresourc
 	{
 		VkImageSubresourceRange depthSubresourceRange = subresourceRange;
 		depthSubresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-		clear(&color.depth, VK_FORMAT_D32_SFLOAT, format, depthSubresourceRange, nullptr);
+		device->getBlitter()->clear((void *)(&color.depth), VK_FORMAT_D32_SFLOAT, this, format, depthSubresourceRange);
 	}
 
 	if(subresourceRange.aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT)
 	{
 		VkImageSubresourceRange stencilSubresourceRange = subresourceRange;
 		stencilSubresourceRange.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
-		clear(&color.stencil, VK_FORMAT_S8_UINT, format, stencilSubresourceRange, nullptr);
+		device->getBlitter()->clear((void *)(&color.stencil), VK_FORMAT_S8_UINT, this, format, stencilSubresourceRange);
 	}
 }
 
@@ -1131,7 +1064,7 @@ void Image::clear(const VkClearValue &clearValue, const vk::Format &viewFormat, 
 
 	if(subresourceRange.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT)
 	{
-		clear(clearValue.color.float32, viewFormat.getClearFormat(), viewFormat, subresourceRange, &renderArea);
+		clear((void *)(clearValue.color.float32), getClearFormat(), viewFormat, subresourceRange, renderArea);
 	}
 	else
 	{
@@ -1139,21 +1072,21 @@ void Image::clear(const VkClearValue &clearValue, const vk::Format &viewFormat, 
 		{
 			VkImageSubresourceRange depthSubresourceRange = subresourceRange;
 			depthSubresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-			clear(&clearValue.depthStencil.depth, VK_FORMAT_D32_SFLOAT, viewFormat, depthSubresourceRange, &renderArea);
+			clear((void *)(&clearValue.depthStencil.depth), VK_FORMAT_D32_SFLOAT, viewFormat, depthSubresourceRange, renderArea);
 		}
 
 		if(subresourceRange.aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT)
 		{
 			VkImageSubresourceRange stencilSubresourceRange = subresourceRange;
 			stencilSubresourceRange.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
-			clear(&clearValue.depthStencil.stencil, VK_FORMAT_S8_UINT, viewFormat, stencilSubresourceRange, &renderArea);
+			clear((void *)(&clearValue.depthStencil.stencil), VK_FORMAT_S8_UINT, viewFormat, stencilSubresourceRange, renderArea);
 		}
 	}
 }
 
 bool Image::requiresPreprocessing() const
 {
-	return isCubeCompatible() || decompressedImage;
+	return (isCube() && (arrayLayers >= 6)) || decompressedImage;
 }
 
 void Image::contentsChanged(const VkImageSubresourceRange &subresourceRange, ContentsChangedContext contentsChangedContext)
@@ -1197,7 +1130,7 @@ void Image::contentsChanged(const VkImageSubresourceRange &subresourceRange, Con
 	}
 }
 
-void Image::prepareForSampling(const VkImageSubresourceRange &subresourceRange) const
+void Image::prepareForSampling(const VkImageSubresourceRange &subresourceRange)
 {
 	// If this isn't a cube or a compressed image, there's nothing to do
 	if(!requiresPreprocessing())
@@ -1222,62 +1155,63 @@ void Image::prepareForSampling(const VkImageSubresourceRange &subresourceRange) 
 	}
 
 	// First, decompress all relevant dirty subregions
-	if(decompressedImage)
+	for(subresource.arrayLayer = subresourceRange.baseArrayLayer;
+	    subresource.arrayLayer <= lastLayer;
+	    subresource.arrayLayer++)
 	{
 		for(subresource.mipLevel = subresourceRange.baseMipLevel;
 		    subresource.mipLevel <= lastMipLevel;
 		    subresource.mipLevel++)
 		{
-			for(subresource.arrayLayer = subresourceRange.baseArrayLayer;
-			    subresource.arrayLayer <= lastLayer;
-			    subresource.arrayLayer++)
+			auto it = dirtySubresources.find(subresource);
+			if(it != dirtySubresources.end())
 			{
-				auto it = dirtySubresources.find(subresource);
-				if(it != dirtySubresources.end())
-				{
-					decompress(subresource);
-				}
+				decompress(subresource);
 			}
 		}
 	}
 
 	// Second, update cubemap borders
-	if(isCubeCompatible())
+	for(subresource.arrayLayer = subresourceRange.baseArrayLayer;
+	    subresource.arrayLayer <= lastLayer;
+	    subresource.arrayLayer++)
 	{
 		for(subresource.mipLevel = subresourceRange.baseMipLevel;
 		    subresource.mipLevel <= lastMipLevel;
 		    subresource.mipLevel++)
 		{
-			for(subresource.arrayLayer = subresourceRange.baseArrayLayer;
-			    subresource.arrayLayer <= lastLayer;
-			    subresource.arrayLayer++)
+			auto it = dirtySubresources.find(subresource);
+			if(it != dirtySubresources.end())
 			{
-				auto it = dirtySubresources.find(subresource);
-				if(it != dirtySubresources.end())
+				if(updateCube(subresource))
 				{
-					// Since cube faces affect each other's borders, we update all 6 layers.
-
-					subresource.arrayLayer -= subresource.arrayLayer % 6;  // Round down to a multiple of 6.
-
-					if(subresource.arrayLayer + 5 <= lastLayer)
+					// updateCube() updates all layers of all cubemaps at once, so remove entries to avoid duplicating effort
+					VkImageSubresource cleanSubresource = subresource;
+					for(cleanSubresource.arrayLayer = 0; cleanSubresource.arrayLayer < arrayLayers - 5;)
 					{
-						device->getBlitter()->updateBorders(decompressedImage ? decompressedImage : this, subresource);
+						// Delete one cube's worth of dirty subregions
+						for(uint32_t i = 0; i < 6; i++, cleanSubresource.arrayLayer++)
+						{
+							auto it = dirtySubresources.find(cleanSubresource);
+							if(it != dirtySubresources.end())
+							{
+								dirtySubresources.erase(it);
+							}
+						}
 					}
-
-					subresource.arrayLayer += 5;  // Together with the loop increment, advances to the next cube.
 				}
 			}
 		}
 	}
 
 	// Finally, mark all updated subregions clean
-	for(subresource.mipLevel = subresourceRange.baseMipLevel;
-	    subresource.mipLevel <= lastMipLevel;
-	    subresource.mipLevel++)
+	for(subresource.arrayLayer = subresourceRange.baseArrayLayer;
+	    subresource.arrayLayer <= lastLayer;
+	    subresource.arrayLayer++)
 	{
-		for(subresource.arrayLayer = subresourceRange.baseArrayLayer;
-		    subresource.arrayLayer <= lastLayer;
-		    subresource.arrayLayer++)
+		for(subresource.mipLevel = subresourceRange.baseMipLevel;
+		    subresource.mipLevel <= lastMipLevel;
+		    subresource.mipLevel++)
 		{
 			auto it = dirtySubresources.find(subresource);
 			if(it != dirtySubresources.end())
@@ -1288,77 +1222,98 @@ void Image::prepareForSampling(const VkImageSubresourceRange &subresourceRange) 
 	}
 }
 
-void Image::decompress(const VkImageSubresource &subresource) const
+void Image::decompress(const VkImageSubresource &subresource)
 {
-	switch(format)
+	if(decompressedImage)
 	{
-	case VK_FORMAT_EAC_R11_UNORM_BLOCK:
-	case VK_FORMAT_EAC_R11_SNORM_BLOCK:
-	case VK_FORMAT_EAC_R11G11_UNORM_BLOCK:
-	case VK_FORMAT_EAC_R11G11_SNORM_BLOCK:
-	case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK:
-	case VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK:
-	case VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK:
-	case VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK:
-	case VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK:
-	case VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK:
-		decodeETC2(subresource);
-		break;
-	case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
-	case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
-	case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
-	case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
-	case VK_FORMAT_BC2_UNORM_BLOCK:
-	case VK_FORMAT_BC2_SRGB_BLOCK:
-	case VK_FORMAT_BC3_UNORM_BLOCK:
-	case VK_FORMAT_BC3_SRGB_BLOCK:
-	case VK_FORMAT_BC4_UNORM_BLOCK:
-	case VK_FORMAT_BC4_SNORM_BLOCK:
-	case VK_FORMAT_BC5_UNORM_BLOCK:
-	case VK_FORMAT_BC5_SNORM_BLOCK:
-	case VK_FORMAT_BC6H_UFLOAT_BLOCK:
-	case VK_FORMAT_BC6H_SFLOAT_BLOCK:
-	case VK_FORMAT_BC7_UNORM_BLOCK:
-	case VK_FORMAT_BC7_SRGB_BLOCK:
-		decodeBC(subresource);
-		break;
-	case VK_FORMAT_ASTC_4x4_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_5x4_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_5x5_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_6x5_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_6x6_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_8x5_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_8x6_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_8x8_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_10x5_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_10x6_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_10x8_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_10x10_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_12x10_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_12x12_UNORM_BLOCK:
-	case VK_FORMAT_ASTC_4x4_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_5x4_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_5x5_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_6x5_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_6x6_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_8x5_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_8x6_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_8x8_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_10x5_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_10x6_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_10x8_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_10x10_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_12x10_SRGB_BLOCK:
-	case VK_FORMAT_ASTC_12x12_SRGB_BLOCK:
-		decodeASTC(subresource);
-		break;
-	default:
-		UNSUPPORTED("Compressed format %d", (VkFormat)format);
-		break;
+		switch(format)
+		{
+			case VK_FORMAT_EAC_R11_UNORM_BLOCK:
+			case VK_FORMAT_EAC_R11_SNORM_BLOCK:
+			case VK_FORMAT_EAC_R11G11_UNORM_BLOCK:
+			case VK_FORMAT_EAC_R11G11_SNORM_BLOCK:
+			case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK:
+			case VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK:
+			case VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK:
+			case VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK:
+			case VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK:
+			case VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK:
+				decodeETC2(subresource);
+				break;
+			case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+			case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
+			case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+			case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+			case VK_FORMAT_BC2_UNORM_BLOCK:
+			case VK_FORMAT_BC2_SRGB_BLOCK:
+			case VK_FORMAT_BC3_UNORM_BLOCK:
+			case VK_FORMAT_BC3_SRGB_BLOCK:
+			case VK_FORMAT_BC4_UNORM_BLOCK:
+			case VK_FORMAT_BC4_SNORM_BLOCK:
+			case VK_FORMAT_BC5_UNORM_BLOCK:
+			case VK_FORMAT_BC5_SNORM_BLOCK:
+			case VK_FORMAT_BC6H_UFLOAT_BLOCK:
+			case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+			case VK_FORMAT_BC7_UNORM_BLOCK:
+			case VK_FORMAT_BC7_SRGB_BLOCK:
+				decodeBC(subresource);
+				break;
+			case VK_FORMAT_ASTC_4x4_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_5x4_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_5x5_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_6x5_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_6x6_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_8x5_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_8x6_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_8x8_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_10x5_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_10x6_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_10x8_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_10x10_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_12x10_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_12x12_UNORM_BLOCK:
+			case VK_FORMAT_ASTC_4x4_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_5x4_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_5x5_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_6x5_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_6x6_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_8x5_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_8x6_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_8x8_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_10x5_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_10x6_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_10x8_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_10x10_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_12x10_SRGB_BLOCK:
+			case VK_FORMAT_ASTC_12x12_SRGB_BLOCK:
+				decodeASTC(subresource);
+				break;
+			default:
+				break;
+		}
 	}
 }
 
-void Image::decodeETC2(const VkImageSubresource &subresource) const
+bool Image::updateCube(const VkImageSubresource &subres)
+{
+	if(isCube() && (arrayLayers >= 6))
+	{
+		VkImageSubresource subresource = subres;
+
+		// Update the borders of all the groups of 6 layers that can be part of a cubemaps but don't
+		// touch leftover layers that cannot be part of cubemaps.
+		for(subresource.arrayLayer = 0; subresource.arrayLayer < arrayLayers - 5; subresource.arrayLayer += 6)
+		{
+			device->getBlitter()->updateBorders(decompressedImage ? decompressedImage : this, subresource);
+		}
+
+		return true;
+	}
+
+	return false;
+}
+
+void Image::decodeETC2(const VkImageSubresource &subresource)
 {
 	ASSERT(decompressedImage);
 
@@ -1396,7 +1351,7 @@ void Image::decodeETC2(const VkImageSubresource &subresource) const
 	}
 }
 
-void Image::decodeBC(const VkImageSubresource &subresource) const
+void Image::decodeBC(const VkImageSubresource &subresource)
 {
 	ASSERT(decompressedImage);
 
@@ -1419,7 +1374,7 @@ void Image::decodeBC(const VkImageSubresource &subresource) const
 	}
 }
 
-void Image::decodeASTC(const VkImageSubresource &subresource) const
+void Image::decodeASTC(const VkImageSubresource &subresource)
 {
 	ASSERT(decompressedImage);
 

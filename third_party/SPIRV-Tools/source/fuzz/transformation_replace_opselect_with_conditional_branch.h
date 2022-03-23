@@ -24,7 +24,8 @@ class TransformationReplaceOpSelectWithConditionalBranch
     : public Transformation {
  public:
   explicit TransformationReplaceOpSelectWithConditionalBranch(
-      protobufs::TransformationReplaceOpSelectWithConditionalBranch message);
+      const protobufs::TransformationReplaceOpSelectWithConditionalBranch&
+          message);
 
   TransformationReplaceOpSelectWithConditionalBranch(uint32_t select_id,
                                                      uint32_t true_block_id,

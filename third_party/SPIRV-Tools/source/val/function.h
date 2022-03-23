@@ -73,8 +73,8 @@ class Function {
 
   /// Registers a variable in the current block
   ///
-  /// @param[in] type_id The type ID of the variable
-  /// @param[in] id      The ID of the variable
+  /// @param[in] type_id The type ID of the varaible
+  /// @param[in] id      The ID of the varaible
   /// @param[in] storage The storage of the variable
   /// @param[in] init_id The initializer ID of the variable
   ///
@@ -197,10 +197,10 @@ class Function {
   /// been identified and dominators have been computed.
   int GetBlockDepth(BasicBlock* bb);
 
-  /// Prints a GraphViz digraph of the CFG of the current function
+  /// Prints a GraphViz digraph of the CFG of the current funciton
   void PrintDotGraph() const;
 
-  /// Prints a directed graph of the CFG of the current function
+  /// Prints a directed graph of the CFG of the current funciton
   void PrintBlocks() const;
 
   /// Registers execution model limitation such as "Feature X is only available
@@ -285,7 +285,7 @@ class Function {
   /// The type of the return value
   uint32_t result_type_id_;
 
-  /// The control fo the function
+  /// The control fo the funciton
   SpvFunctionControlMask function_control_;
 
   /// The type of declaration of each function

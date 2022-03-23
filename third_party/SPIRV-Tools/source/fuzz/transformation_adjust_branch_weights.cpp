@@ -28,8 +28,8 @@ const uint32_t kBranchWeightForFalseLabelIndex = 4;
 }  // namespace
 
 TransformationAdjustBranchWeights::TransformationAdjustBranchWeights(
-    protobufs::TransformationAdjustBranchWeights message)
-    : message_(std::move(message)) {}
+    const spvtools::fuzz::protobufs::TransformationAdjustBranchWeights& message)
+    : message_(message) {}
 
 TransformationAdjustBranchWeights::TransformationAdjustBranchWeights(
     const protobufs::InstructionDescriptor& instruction_descriptor,

@@ -85,6 +85,14 @@ namespace sw
 		return (float&)fp32i;
 	}
 
+	half &half::operator=(half h)
+	{
+		fp16i = h.fp16i;
+
+		return *this;
+	}
+
+
 	half &half::operator=(float f)
 	{
 		*this = half(f);

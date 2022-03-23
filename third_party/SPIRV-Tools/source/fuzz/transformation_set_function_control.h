@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationSetFunctionControl : public Transformation {
  public:
   explicit TransformationSetFunctionControl(
-      protobufs::TransformationSetFunctionControl message);
+      const protobufs::TransformationSetFunctionControl& message);
 
   TransformationSetFunctionControl(uint32_t function_id,
                                    uint32_t function_control);

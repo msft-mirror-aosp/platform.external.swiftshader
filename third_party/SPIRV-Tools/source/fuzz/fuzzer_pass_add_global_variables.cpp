@@ -23,10 +23,11 @@ namespace fuzz {
 FuzzerPassAddGlobalVariables::FuzzerPassAddGlobalVariables(
     opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
-    protobufs::TransformationSequence* transformations,
-    bool ignore_inapplicable_transformations)
+    protobufs::TransformationSequence* transformations)
     : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations, ignore_inapplicable_transformations) {}
+                 transformations) {}
+
+FuzzerPassAddGlobalVariables::~FuzzerPassAddGlobalVariables() = default;
 
 void FuzzerPassAddGlobalVariables::Apply() {
   SpvStorageClass variable_storage_class = SpvStorageClassPrivate;
@@ -48,10 +49,6 @@ void FuzzerPassAddGlobalVariables::Apply() {
 
   // These are the basic types that are available to this fuzzer pass.
   auto& basic_types = basic_type_ids_and_pointers.first;
-  if (basic_types.empty()) {
-    // There are no basic types, so there is nothing this fuzzer pass can do.
-    return;
-  }
 
   // These are the pointers to those basic types that are *initially* available
   // to the fuzzer pass.  The fuzzer pass might add pointer types in cases where

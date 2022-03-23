@@ -48,7 +48,7 @@ const (
 	requestDone
 )
 
-// Request is sent to a server to represent a Call or Notify operation.
+// Request is sent to a server to represent a Call or Notify operaton.
 type Request struct {
 	conn        *Conn
 	cancel      context.CancelFunc
