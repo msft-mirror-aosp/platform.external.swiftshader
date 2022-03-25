@@ -421,6 +421,8 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_SPEC_VERSION } },
 	{ { VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_FEEDBACK_SPEC_VERSION } },
 	{ { VK_EXT_PRIVATE_DATA_EXTENSION_NAME, VK_EXT_PRIVATE_DATA_SPEC_VERSION } },
+	{ { VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME, VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_SPEC_VERSION } },
+	{ { VK_KHR_SHADER_TERMINATE_INVOCATION_EXTENSION_NAME, VK_KHR_SHADER_TERMINATE_INVOCATION_SPEC_VERSION } },
 	{ { VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME, VK_EXT_SUBGROUP_SIZE_CONTROL_SPEC_VERSION } },
 	{ { VK_EXT_TOOLING_INFO_EXTENSION_NAME, VK_EXT_TOOLING_INFO_SPEC_VERSION } },
 	{ { VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME, VK_KHR_COPY_COMMANDS_2_SPEC_VERSION } },
@@ -990,6 +992,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 			{
 				const auto *shaderDemoteToHelperInvocationFeatures = reinterpret_cast<const VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures *>(extensionCreateInfo);
 				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(shaderDemoteToHelperInvocationFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_TERMINATE_INVOCATION_FEATURES:
+			{
+				const auto *shaderTerminateInvocationFeatures = reinterpret_cast<const VkPhysicalDeviceShaderTerminateInvocationFeatures *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(shaderTerminateInvocationFeatures);
 				if(!hasFeatures)
 				{
 					return VK_ERROR_FEATURE_NOT_PRESENT;
