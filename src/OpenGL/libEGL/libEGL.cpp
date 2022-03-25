@@ -14,24 +14,24 @@
 
 // libEGL.cpp: Implements the exported EGL functions.
 
-#include "main.h"
+#include "Common/Version.h"
+#include "Context.hpp"
 #include "Display.h"
 #include "Surface.hpp"
 #include "Texture.hpp"
-#include "Context.hpp"
 #include "common/Image.hpp"
 #include "common/debug.h"
-#include "Common/Version.h"
+#include "main.h"
 
 #if defined(__ANDROID__) && !defined(ANDROID_NDK_BUILD)
 #include <vndk/window.h>
-#elif defined(USE_X11)
+#elif defined(SWIFTSHADER_USE_X11)
 #include "Main/libX11.hpp"
 #endif
 
 #include <algorithm>
-#include <vector>
 #include <string.h>
+#include <vector>
 
 namespace egl
 {
@@ -154,7 +154,7 @@ EGLDisplay EGLAPIENTRY GetDisplay(EGLNativeDisplayType display_id)
 	}
 
 	#if defined(__linux__) && !defined(__ANDROID__)
-		#if defined(USE_X11)
+		#if defined(SWIFTSHADER_USE_X11)
 		if(!libX11)
 		#endif  // Non X11 linux is headless only
 		{
@@ -219,7 +219,7 @@ const char *EGLAPIENTRY QueryString(EGLDisplay dpy, EGLint name)
 #if defined(__linux__) && !defined(__ANDROID__)
 			"EGL_KHR_platform_gbm "
 #endif
-#if defined(USE_X11)
+#if defined(SWIFTSHADER_USE_X11)
 			"EGL_KHR_platform_x11 "
 #endif
 			"EGL_EXT_client_extensions "
@@ -361,7 +361,7 @@ EGLSurface EGLAPIENTRY CreatePlatformWindowSurface(EGLDisplay dpy, EGLConfig con
 		return EGL_NO_SURFACE;
 	}
 
-	#if defined(USE_X11)
+	#if defined(SWIFTSHADER_USE_X11)
 		native_window = (void *)(*(::Window*)native_window);
 	#endif
 
@@ -389,7 +389,7 @@ EGLSurface EGLAPIENTRY CreateWindowSurface(EGLDisplay dpy, EGLConfig config, EGL
 
 	EGLAttribs attribs(attrib_list);
 
-	#if defined(USE_X11)
+	#if defined(SWIFTSHADER_USE_X11)
 		return CreatePlatformWindowSurface(dpy, config, (void*)&window, &attribs);
 	#else
 		return CreatePlatformWindowSurface(dpy, config, (void*)window, &attribs);
@@ -1121,7 +1121,7 @@ EGLBoolean EGLAPIENTRY WaitNative(EGLint engine)
 
 	if(context)
 	{
-		#if defined(USE_X11)
+		#if defined(SWIFTSHADER_USE_X11)
 			egl::Display *display = context->getDisplay();
 
 			if(!display)
@@ -1310,7 +1310,7 @@ EGLDisplay EGLAPIENTRY GetPlatformDisplay(EGLenum platform, void *native_display
 	#if defined(__linux__) && !defined(__ANDROID__)
 		switch(platform)
 		{
-		#if defined(USE_X11)
+		#if defined(SWIFTSHADER_USE_X11)
 		case EGL_PLATFORM_X11_EXT: break;
 		#endif
 		case EGL_PLATFORM_GBM_KHR: break;
@@ -1332,7 +1332,7 @@ EGLDisplay EGLAPIENTRY GetPlatformDisplay(EGLenum platform, void *native_display
 
 			return success(HEADLESS_DISPLAY);
 		}
-		#if defined(USE_X11)
+		#if defined(SWIFTSHADER_USE_X11)
 		else if(platform == EGL_PLATFORM_X11_EXT)
 		{
 			if(!libX11)
@@ -1612,12 +1612,6 @@ __eglMustCastToProperFunctionPointerType EGLAPIENTRY GetProcAddress(const char *
 	if(libGLESv2)
 	{
 		__eglMustCastToProperFunctionPointerType proc = libGLESv2->es2GetProcAddress(procname);
-		if(proc) return success(proc);
-	}
-
-	if(libGLES_CM)
-	{
-		__eglMustCastToProperFunctionPointerType proc =  libGLES_CM->es1GetProcAddress(procname);
 		if(proc) return success(proc);
 	}
 
