@@ -420,6 +420,9 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME, VK_EXT_INLINE_UNIFORM_BLOCK_SPEC_VERSION } },
 	{ { VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_SPEC_VERSION } },
 	{ { VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_FEEDBACK_SPEC_VERSION } },
+	{ { VK_EXT_PRIVATE_DATA_EXTENSION_NAME, VK_EXT_PRIVATE_DATA_SPEC_VERSION } },
+	{ { VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME, VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_SPEC_VERSION } },
+	{ { VK_KHR_SHADER_TERMINATE_INVOCATION_EXTENSION_NAME, VK_KHR_SHADER_TERMINATE_INVOCATION_SPEC_VERSION } },
 	{ { VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME, VK_EXT_SUBGROUP_SIZE_CONTROL_SPEC_VERSION } },
 	{ { VK_EXT_TOOLING_INFO_EXTENSION_NAME, VK_EXT_TOOLING_INFO_SPEC_VERSION } },
 	{ { VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME, VK_KHR_COPY_COMMANDS_2_SPEC_VERSION } },
@@ -929,6 +932,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 				}
 			}
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES:
+			{
+				const auto *vk13Features = reinterpret_cast<const VkPhysicalDeviceVulkan13Features *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(vk13Features);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT:
 			{
 				const auto *depthClipFeatures = reinterpret_cast<const VkPhysicalDeviceDepthClipEnableFeaturesEXT *>(extensionCreateInfo);
@@ -959,10 +972,46 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 				}
 			}
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIVATE_DATA_FEATURES:
+			{
+				const auto *privateDataFeatures = reinterpret_cast<const VkPhysicalDevicePrivateDataFeatures *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(privateDataFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
+		case VK_STRUCTURE_TYPE_DEVICE_PRIVATE_DATA_CREATE_INFO:
+			{
+				const auto *privateDataCreateInfo = reinterpret_cast<const VkDevicePrivateDataCreateInfo *>(extensionCreateInfo);
+				(void)privateDataCreateInfo->privateDataSlotRequestCount;
+			}
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXTURE_COMPRESSION_ASTC_HDR_FEATURES:
 			{
 				const auto *textureCompressionASTCHDRFeatures = reinterpret_cast<const VkPhysicalDeviceTextureCompressionASTCHDRFeatures *>(extensionCreateInfo);
 				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(textureCompressionASTCHDRFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES:
+			{
+				const auto *shaderDemoteToHelperInvocationFeatures = reinterpret_cast<const VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(shaderDemoteToHelperInvocationFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_TERMINATE_INVOCATION_FEATURES:
+			{
+				const auto *shaderTerminateInvocationFeatures = reinterpret_cast<const VkPhysicalDeviceShaderTerminateInvocationFeatures *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(shaderTerminateInvocationFeatures);
 				if(!hasFeatures)
 				{
 					return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -3547,6 +3596,12 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 				vk::Cast(physicalDevice)->getProperties(properties);
 			}
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES:
+			{
+				auto properties = reinterpret_cast<VkPhysicalDeviceVulkan13Properties *>(extensionProperties);
+				vk::Cast(physicalDevice)->getProperties(properties);
+			}
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES:
 			{
 				auto properties = reinterpret_cast<VkPhysicalDeviceDescriptorIndexingProperties *>(extensionProperties);
@@ -4108,13 +4163,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreatePrivateDataSlot(VkDevice device, const Vk
 	TRACE("(VkDevice device = %p, const VkPrivateDataSlotCreateInfo* pCreateInfo = %p, const VkAllocationCallbacks* pAllocator = %p, VkPrivateDataSlot* pPrivateDataSlot = %p)",
 	      device, pCreateInfo, pAllocator, pPrivateDataSlot);
 
-	return VK_SUCCESS;
+	return vk::PrivateData::Create(pAllocator, pCreateInfo, pPrivateDataSlot);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkDestroyPrivateDataSlot(VkDevice device, VkPrivateDataSlot privateDataSlot, const VkAllocationCallbacks *pAllocator)
 {
 	TRACE("(VkDevice device = %p, VkPrivateDataSlot privateDataSlot = %p, const VkAllocationCallbacks* pAllocator = %p)",
 	      device, static_cast<void *>(privateDataSlot), pAllocator);
+
+	vk::Cast(device)->removePrivateDataSlot(vk::Cast(privateDataSlot));
+	vk::destroy(privateDataSlot, pAllocator);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkSetPrivateData(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkPrivateDataSlot privateDataSlot, uint64_t data)
@@ -4122,13 +4180,15 @@ VKAPI_ATTR VkResult VKAPI_CALL vkSetPrivateData(VkDevice device, VkObjectType ob
 	TRACE("(VkDevice device = %p, VkObjectType objectType = %d, uint64_t objectHandle = %" PRIu64 ", VkPrivateDataSlot privateDataSlot = %p, uint64_t data = %" PRIu64 ")",
 	      device, objectType, objectHandle, static_cast<void *>(privateDataSlot), data);
 
-	return VK_SUCCESS;
+	return vk::Cast(device)->setPrivateData(objectType, objectHandle, vk::Cast(privateDataSlot), data);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkGetPrivateData(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkPrivateDataSlot privateDataSlot, uint64_t *pData)
 {
 	TRACE("(VkDevice device = %p, VkObjectType objectType = %d, uint64_t objectHandle = %" PRIu64 ", VkPrivateDataSlot privateDataSlot = %p, uint64_t data = %p)",
 	      device, objectType, objectHandle, static_cast<void *>(privateDataSlot), pData);
+
+	vk::Cast(device)->getPrivateData(objectType, objectHandle, vk::Cast(privateDataSlot), pData);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkGetDeviceBufferMemoryRequirements(VkDevice device, const VkDeviceBufferMemoryRequirements *pInfo, VkMemoryRequirements2 *pMemoryRequirements)
