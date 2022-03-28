@@ -231,16 +231,19 @@ SpirvShader::SpirvShader(
 			}
 			break;
 
+		// Termination instructions:
+		case spv::OpKill:
+		case spv::OpTerminateInvocation:
+			analysis.ContainsKill = true;
+			// [[fallthrough]]
+
+		case spv::OpUnreachable:
+
 		// Branch Instructions (subset of Termination Instructions):
 		case spv::OpBranch:
 		case spv::OpBranchConditional:
 		case spv::OpSwitch:
 		case spv::OpReturn:
-			// [[fallthrough]]
-
-		// Termination instruction:
-		case spv::OpKill:
-		case spv::OpUnreachable:
 			{
 				ASSERT(currentBlock != 0);
 				ASSERT(currentFunction != 0);
@@ -249,12 +252,11 @@ SpirvShader::SpirvShader(
 				blockEnd++;
 				functions[currentFunction].blocks[currentBlock] = Block(blockStart, blockEnd);
 				currentBlock = Block::ID(0);
-
-				if(opcode == spv::OpKill)
-				{
-					analysis.ContainsKill = true;
-				}
 			}
+			break;
+
+		case spv::OpDemoteToHelperInvocation:
+			analysis.ContainsKill = true;
 			break;
 
 		case spv::OpLoopMerge:
@@ -441,6 +443,7 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityGroupNonUniformShuffleRelative: capabilities.GroupNonUniformShuffleRelative = true; break;
 				case spv::CapabilityDeviceGroup: capabilities.DeviceGroup = true; break;
 				case spv::CapabilityMultiView: capabilities.MultiView = true; break;
+				case spv::CapabilityDemoteToHelperInvocation: capabilities.DemoteToHelperInvocation = true; break;
 				case spv::CapabilityStencilExportEXT: capabilities.StencilExportEXT = true; break;
 				case spv::CapabilityVulkanMemoryModel: capabilities.VulkanMemoryModel = true; break;
 				case spv::CapabilityVulkanMemoryModelDeviceScope: capabilities.VulkanMemoryModelDeviceScope = true; break;
@@ -748,6 +751,7 @@ SpirvShader::SpirvShader(
 		case spv::OpCopyObject:
 		case spv::OpCopyLogical:
 		case spv::OpArrayLength:
+		case spv::OpIsHelperInvocationEXT:
 			// Instructions that yield an intermediate value or divergent pointer
 			DefineResult(insn);
 			break;
@@ -795,6 +799,8 @@ SpirvShader::SpirvShader(
 				if(!strcmp(ext, "SPV_KHR_variable_pointers")) break;
 				if(!strcmp(ext, "SPV_KHR_device_group")) break;
 				if(!strcmp(ext, "SPV_KHR_multiview")) break;
+				if(!strcmp(ext, "SPV_EXT_demote_to_helper_invocation")) break;
+				if(!strcmp(ext, "SPV_KHR_terminate_invocation")) break;
 				if(!strcmp(ext, "SPV_EXT_shader_stencil_export")) break;
 				if(!strcmp(ext, "SPV_KHR_float_controls")) break;
 				if(!strcmp(ext, "SPV_KHR_integer_dot_product")) break;
@@ -2085,7 +2091,14 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 		return EmitFunctionCall(insn, state);
 
 	case spv::OpKill:
+	case spv::OpTerminateInvocation:
 		return EmitKill(insn, state);
+
+	case spv::OpDemoteToHelperInvocation:
+		return EmitDemoteToHelperInvocation(insn, state);
+
+	case spv::OpIsHelperInvocationEXT:
+		return EmitIsHelperInvocation(insn, state);
 
 	case spv::OpImageSampleImplicitLod:
 	case spv::OpImageSampleExplicitLod:
