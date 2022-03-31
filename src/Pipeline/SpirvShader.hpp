@@ -674,6 +674,10 @@ public:
 		bool StorageImageExtendedFormats : 1;
 		bool ImageQuery : 1;
 		bool DerivativeControl : 1;
+		bool DotProductInputAll : 1;
+		bool DotProductInput4x8Bit : 1;
+		bool DotProductInput4x8BitPacked : 1;
+		bool DotProduct : 1;
 		bool InterpolationFunction : 1;
 		bool StorageImageWriteWithoutFormat : 1;
 		bool GroupNonUniform : 1;
@@ -684,6 +688,7 @@ public:
 		bool GroupNonUniformArithmetic : 1;
 		bool DeviceGroup : 1;
 		bool MultiView : 1;
+		bool DemoteToHelperInvocation : 1;
 		bool StencilExportEXT : 1;
 		bool VulkanMemoryModel : 1;
 		bool VulkanMemoryModelDeviceScope : 1;
@@ -1261,6 +1266,7 @@ private:
 
 	// Updates the current active lane mask.
 	void SetActiveLaneMask(RValue<SIMD::Int> mask, EmitState *state) const;
+	void SetStoresAndAtomicsMask(RValue<SIMD::Int> mask, EmitState *state) const;
 
 	// Emit all the unvisited blocks (except for ignore) in DFS order,
 	// starting with id.
@@ -1304,6 +1310,8 @@ private:
 	EmitResult EmitUnreachable(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitReturn(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitKill(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitDemoteToHelperInvocation(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitIsHelperInvocation(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitFunctionCall(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitPhi(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitImageSample(const ImageInstruction &instruction, EmitState *state) const;
@@ -1387,7 +1395,12 @@ private:
 	static bool HasTypeAndResult(spv::Op op);
 
 	// Helper as we often need to take dot products as part of doing other things.
-	SIMD::Float Dot(unsigned numComponents, Operand const &x, Operand const &y) const;
+	static SIMD::Float FDot(unsigned numComponents, Operand const &x, Operand const &y);
+	static SIMD::Int SDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum);
+	static SIMD::UInt UDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum);
+	static SIMD::Int SUDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum);
+	static SIMD::Int AddSat(RValue<SIMD::Int> a, RValue<SIMD::Int> b);
+	static SIMD::UInt AddSat(RValue<SIMD::UInt> a, RValue<SIMD::UInt> b);
 
 	// Splits x into a floating-point significand in the range [0.5, 1.0)
 	// and an integral exponent of two, such that:
