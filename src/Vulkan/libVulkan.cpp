@@ -2248,7 +2248,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreatePipelineLayout(VkDevice device, const VkP
 	TRACE("(VkDevice device = %p, const VkPipelineLayoutCreateInfo* pCreateInfo = %p, const VkAllocationCallbacks* pAllocator = %p, VkPipelineLayout* pPipelineLayout = %p)",
 	      device, pCreateInfo, pAllocator, pPipelineLayout);
 
-	if(pCreateInfo->flags != 0)
+	if((pCreateInfo->flags != 0) &&
+	   // FIXME(b/228307968) : VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT is used by dEQP
+	   //                      without checking if VK_EXT_graphics_pipeline_library is present
+	   (pCreateInfo->flags != VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT))
 	{
 		// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
 		UNSUPPORTED("pCreateInfo->flags %d", int(pCreateInfo->flags));
@@ -3831,14 +3834,26 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties2(VkPhysi
 		extensionProperties = extensionProperties->pNext;
 	}
 
-	VkFormat format = pImageFormatInfo->format;
+	vk::Format format = pImageFormatInfo->format;
 	VkImageType type = pImageFormatInfo->type;
 	VkImageTiling tiling = pImageFormatInfo->tiling;
 	VkImageUsageFlags usage = pImageFormatInfo->usage;
 	VkImageCreateFlags flags = pImageFormatInfo->flags;
 
-	VkFormatProperties properties;
+	VkFormatProperties properties = {};
 	vk::PhysicalDevice::GetFormatProperties(format, &properties);
+
+	if(flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT)
+	{
+		for(vk::Format f : format.getCompatibleFormats())
+		{
+			VkFormatProperties extendedProperties = {};
+			vk::PhysicalDevice::GetFormatProperties(f, &extendedProperties);
+			properties.linearTilingFeatures |= extendedProperties.linearTilingFeatures;
+			properties.optimalTilingFeatures |= extendedProperties.optimalTilingFeatures;
+			properties.bufferFeatures |= extendedProperties.bufferFeatures;
+		}
+	}
 
 	VkFormatFeatureFlags features;
 	switch(tiling)
