@@ -20,8 +20,7 @@
  */
 
 #include "astc_codec_internals.h"
-
-#include <cassert>
+#include "System/Debug.hpp"
 
 static int rgb_delta_unpack(
 	const int input[6],
@@ -908,8 +907,7 @@ void unpack_color_endpoints(
 		break;
 
 	default:
-		assert(false && "Unreachable");
-		break;
+		UNREACHABLE("endpoint_format %d", int(format));
 	}
 
 	if (*alpha_hdr == -1)

@@ -310,7 +310,7 @@ func (l *lexer) operator() {
 	tok := &Token{Type: Operator, Range: Range{Start: l.pos, End: l.pos}}
 	for l.e == nil {
 		switch l.next() {
-		case '=', '|':
+		case '=':
 			tok.Range.End = l.pos
 			l.toks = append(l.toks, tok)
 			return
@@ -356,7 +356,7 @@ func lex(source string) ([]*Token, []Diagnostic, error) {
 
 	lastPos := Position{}
 	for l.e == nil {
-		// Integrity check that the parser is making progress
+		// Sanity check the parser is making progress
 		if l.pos == lastPos {
 			log.Panicf("Parsing stuck at %v", l.pos)
 		}
@@ -374,7 +374,7 @@ func lex(source string) ([]*Token, []Diagnostic, error) {
 		case r == '"':
 			l.restore(s)
 			l.string()
-		case r == '=', r == '|':
+		case r == '=':
 			l.restore(s)
 			l.operator()
 		case r == ';':
@@ -556,34 +556,21 @@ func (p *parser) operand(n string, k *schema.OperandKind, i int, optional bool) 
 		s := tok.Text(p.lines)
 		for _, e := range k.Enumerants {
 			if e.Enumerant == s {
-				count := 1
+				n := 1
 				for _, param := range e.Parameters {
-					p, c := p.operand(param.Name, param.Kind, i+count, false)
+					p, c := p.operand(param.Name, param.Kind, i+n, false)
 					if p != nil {
 						op.Tokens = append(op.Tokens, p.Tokens...)
 						op.Parameters = append(op.Parameters, p)
 					}
-					count += c
+					n += c
 				}
-
-				// Handle bitfield '|' chains
-				if p.tok(i+count).Text(p.lines) == "|" {
-					count++ // '|'
-					p, c := p.operand(n, k, i+count, false)
-					if p != nil {
-						op.Tokens = append(op.Tokens, p.Tokens...)
-						op.Parameters = append(op.Parameters, p)
-					}
-					count += c
-				}
-
-				return op, count
+				return op, n
 			}
 		}
 		if !optional {
 			p.err(p.tok(i), "invalid operand value '%s'", s)
 		}
-
 		return nil, 0
 
 	case schema.OperandCategoryID:

@@ -17,6 +17,7 @@
 #ifndef SOURCE_FUZZ_TRANSFORMATION_REPLACE_CONSTANT_WITH_UNIFORM_H_
 #define SOURCE_FUZZ_TRANSFORMATION_REPLACE_CONSTANT_WITH_UNIFORM_H_
 
+#include "source/fuzz/fact_manager.h"
 #include "source/fuzz/id_use_descriptor.h"
 #include "source/fuzz/protobufs/spirvfuzz_protobufs.h"
 #include "source/fuzz/transformation.h"
@@ -57,9 +58,8 @@ class TransformationReplaceConstantWithUniform : public Transformation {
   //     - According to the fact manager, the uniform data element specified by
   //       |message_.uniform_descriptor| holds a value with the same type and
   //       value as %C
-  bool IsApplicable(
-      opt::IRContext* ir_context,
-      const TransformationContext& transformation_context) const override;
+  bool IsApplicable(opt::IRContext* context,
+                    const FactManager& fact_manager) const override;
 
   // - Introduces two new instructions:
   //   - An access chain targeting the uniform data element specified by
@@ -68,10 +68,7 @@ class TransformationReplaceConstantWithUniform : public Transformation {
   //   - A load from this access chain, with id |message_.fresh_id_for_load|
   // - Replaces the id use specified by |message_.id_use_descriptor| with
   //   |message_.fresh_id_for_load|
-  void Apply(opt::IRContext* ir_context,
-             TransformationContext* transformation_context) const override;
-
-  std::unordered_set<uint32_t> GetFreshIds() const override;
+  void Apply(opt::IRContext* context, FactManager* fact_manager) const override;
 
   protobufs::Transformation ToMessage() const override;
 
@@ -79,16 +76,11 @@ class TransformationReplaceConstantWithUniform : public Transformation {
   // Helper method to create an access chain for the uniform element associated
   // with the transformation.
   std::unique_ptr<opt::Instruction> MakeAccessChainInstruction(
-      spvtools::opt::IRContext* ir_context, uint32_t constant_type_id) const;
+      spvtools::opt::IRContext* context, uint32_t constant_type_id) const;
 
   // Helper to create a load instruction.
   std::unique_ptr<opt::Instruction> MakeLoadInstruction(
-      spvtools::opt::IRContext* ir_context, uint32_t constant_type_id) const;
-
-  // OpAccessChain and OpLoad will be inserted above the instruction returned
-  // by this function. Returns nullptr if no such instruction is present.
-  opt::Instruction* GetInsertBeforeInstruction(
-      opt::IRContext* ir_context) const;
+      spvtools::opt::IRContext* context, uint32_t constant_type_id) const;
 
   protobufs::TransformationReplaceConstantWithUniform message_;
 };

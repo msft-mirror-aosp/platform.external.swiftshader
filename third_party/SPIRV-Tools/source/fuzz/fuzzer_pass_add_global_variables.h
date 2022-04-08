@@ -25,7 +25,7 @@ namespace fuzz {
 class FuzzerPassAddGlobalVariables : public FuzzerPass {
  public:
   FuzzerPassAddGlobalVariables(
-      opt::IRContext* ir_context, TransformationContext* transformation_context,
+      opt::IRContext* ir_context, FactManager* fact_manager,
       FuzzerContext* fuzzer_context,
       protobufs::TransformationSequence* transformations);
 

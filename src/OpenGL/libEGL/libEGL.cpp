@@ -24,7 +24,7 @@
 #include "Common/Version.h"
 
 #if defined(__ANDROID__) && !defined(ANDROID_NDK_BUILD)
-#include <vndk/window.h>
+#include <system/window.h>
 #elif defined(USE_X11)
 #include "Main/libX11.hpp"
 #endif
@@ -361,10 +361,6 @@ EGLSurface EGLAPIENTRY CreatePlatformWindowSurface(EGLDisplay dpy, EGLConfig con
 		return EGL_NO_SURFACE;
 	}
 
-	#if defined(USE_X11)
-		native_window = (void *)(*(::Window*)native_window);
-	#endif
-
 	if(!display->isValidWindow((EGLNativeWindowType)native_window))
 	{
 		return error(EGL_BAD_NATIVE_WINDOW, EGL_NO_SURFACE);
@@ -388,12 +384,7 @@ EGLSurface EGLAPIENTRY CreateWindowSurface(EGLDisplay dpy, EGLConfig config, EGL
 	      "const EGLint *attrib_list = %p)", dpy, config, window, attrib_list);
 
 	EGLAttribs attribs(attrib_list);
-
-	#if defined(USE_X11)
-		return CreatePlatformWindowSurface(dpy, config, (void*)&window, &attribs);
-	#else
-		return CreatePlatformWindowSurface(dpy, config, (void*)window, &attribs);
-	#endif
+	return CreatePlatformWindowSurface(dpy, config, (void*)window, &attribs);
 }
 
 EGLSurface EGLAPIENTRY CreatePbufferSurface(EGLDisplay dpy, EGLConfig config, const EGLint *attrib_list)

@@ -509,9 +509,7 @@ int floatsuffix_check(TParseContext* context)
         return 0;
     }
 
-    std::string text = yytext;
-    text.resize(text.size() - 1);  // Drop the suffix
-    if(!atof_clamp(text.c_str(), &(yylval->lex.f)))
+    if (!atof_clamp(yytext, &(yylval->lex.f)))
         yyextra->warning(*yylloc, "Float overflow", yytext, "");
 
     return(FLOATCONSTANT);

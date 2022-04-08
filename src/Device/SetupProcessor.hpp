@@ -21,8 +21,6 @@
 #include "System/Types.hpp"
 #include <Pipeline/SpirvShader.hpp>
 
-#include <memory>
-
 namespace sw {
 
 struct Primitive;
@@ -48,10 +46,7 @@ public:
 		bool isDrawPoint : 1;
 		bool isDrawLine : 1;
 		bool isDrawTriangle : 1;
-		bool fixedPointDepthBuffer : 1;
-		bool applyConstantDepthBias : 1;
 		bool applySlopeDepthBias : 1;
-		bool applyDepthBiasClamp : 1;
 		bool interpolateZ : 1;
 		bool interpolateW : 1;
 		VkFrontFace frontFace : BITS(VK_FRONT_FACE_MAX_ENUM);
@@ -76,29 +71,19 @@ public:
 
 	SetupProcessor();
 
-	State update(const vk::GraphicsState &pipelineState, const sw::SpirvShader *fragmentShader, const sw::SpirvShader *vertexShader, const vk::Attachments &attachments) const;
+	~SetupProcessor();
+
+protected:
+	State update(const sw::Context *context) const;
 	RoutineType routine(const State &state);
 
 	void setRoutineCacheSize(int cacheSize);
 
 private:
-	using RoutineCacheType = RoutineCache<State, SetupFunction::CFunctionType>;
-	std::unique_ptr<RoutineCacheType> routineCache;
+	using RoutineCacheType = RoutineCacheT<State, SetupFunction::CFunctionType>;
+	RoutineCacheType *routineCache;
 };
 
 }  // namespace sw
-
-namespace std {
-
-template<>
-struct hash<sw::SetupProcessor::State>
-{
-	uint64_t operator()(const sw::SetupProcessor::State &state) const
-	{
-		return state.hash;
-	}
-};
-
-}  // namespace std
 
 #endif  // sw_SetupProcessor_hpp

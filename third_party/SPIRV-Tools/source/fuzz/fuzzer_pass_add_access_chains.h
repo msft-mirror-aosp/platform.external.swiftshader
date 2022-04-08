@@ -26,7 +26,7 @@ namespace fuzz {
 class FuzzerPassAddAccessChains : public FuzzerPass {
  public:
   FuzzerPassAddAccessChains(opt::IRContext* ir_context,
-                            TransformationContext* transformation_context,
+                            FactManager* fact_manager,
                             FuzzerContext* fuzzer_context,
                             protobufs::TransformationSequence* transformations);
 

@@ -31,12 +31,13 @@ TransformationAddTypeVector::TransformationAddTypeVector(
 }
 
 bool TransformationAddTypeVector::IsApplicable(
-    opt::IRContext* ir_context, const TransformationContext& /*unused*/) const {
-  if (!fuzzerutil::IsFreshId(ir_context, message_.fresh_id())) {
+    opt::IRContext* context,
+    const spvtools::fuzz::FactManager& /*unused*/) const {
+  if (!fuzzerutil::IsFreshId(context, message_.fresh_id())) {
     return false;
   }
   auto component_type =
-      ir_context->get_type_mgr()->GetType(message_.component_type_id());
+      context->get_type_mgr()->GetType(message_.component_type_id());
   if (!component_type) {
     return false;
   }
@@ -45,24 +46,23 @@ bool TransformationAddTypeVector::IsApplicable(
 }
 
 void TransformationAddTypeVector::Apply(
-    opt::IRContext* ir_context, TransformationContext* /*unused*/) const {
-  fuzzerutil::AddVectorType(ir_context, message_.fresh_id(),
-                            message_.component_type_id(),
-                            message_.component_count());
+    opt::IRContext* context, spvtools::fuzz::FactManager* /*unused*/) const {
+  opt::Instruction::OperandList in_operands;
+  in_operands.push_back({SPV_OPERAND_TYPE_ID, {message_.component_type_id()}});
+  in_operands.push_back(
+      {SPV_OPERAND_TYPE_LITERAL_INTEGER, {message_.component_count()}});
+  context->module()->AddType(MakeUnique<opt::Instruction>(
+      context, SpvOpTypeVector, 0, message_.fresh_id(), in_operands));
+  fuzzerutil::UpdateModuleIdBound(context, message_.fresh_id());
   // We have added an instruction to the module, so need to be careful about the
   // validity of existing analyses.
-  ir_context->InvalidateAnalysesExceptFor(
-      opt::IRContext::Analysis::kAnalysisNone);
+  context->InvalidateAnalysesExceptFor(opt::IRContext::Analysis::kAnalysisNone);
 }
 
 protobufs::Transformation TransformationAddTypeVector::ToMessage() const {
   protobufs::Transformation result;
   *result.mutable_add_type_vector() = message_;
   return result;
-}
-
-std::unordered_set<uint32_t> TransformationAddTypeVector::GetFreshIds() const {
-  return {message_.fresh_id()};
 }
 
 }  // namespace fuzz

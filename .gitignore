@@ -18,6 +18,8 @@ cmake-build-debug/
 !/build
 /build/*
 
+# Boost is downloaded and extracted to /third_party
+/third_party/boost*
 
 # Ignored files #
 *.obj

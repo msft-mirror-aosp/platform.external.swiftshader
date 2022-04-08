@@ -25,8 +25,7 @@
 #include "source/reduce/remove_block_reduction_opportunity_finder.h"
 #include "source/reduce/remove_function_reduction_opportunity_finder.h"
 #include "source/reduce/remove_selection_reduction_opportunity_finder.h"
-#include "source/reduce/remove_unused_instruction_reduction_opportunity_finder.h"
-#include "source/reduce/remove_unused_struct_member_reduction_opportunity_finder.h"
+#include "source/reduce/remove_unreferenced_instruction_reduction_opportunity_finder.h"
 #include "source/reduce/simple_conditional_branch_to_branch_opportunity_finder.h"
 #include "source/reduce/structured_loop_to_selection_reduction_opportunity_finder.h"
 #include "source/spirv_reducer_options.h"
@@ -104,8 +103,8 @@ Reducer::ReductionResultStatus Reducer::Run(
 
 void Reducer::AddDefaultReductionPasses() {
   AddReductionPass(
-      spvtools::MakeUnique<RemoveUnusedInstructionReductionOpportunityFinder>(
-          false));
+      spvtools::MakeUnique<
+          RemoveUnreferencedInstructionReductionOpportunityFinder>(false));
   AddReductionPass(
       spvtools::MakeUnique<OperandToUndefReductionOpportunityFinder>());
   AddReductionPass(
@@ -127,14 +126,12 @@ void Reducer::AddDefaultReductionPasses() {
           ConditionalBranchToSimpleConditionalBranchOpportunityFinder>());
   AddReductionPass(
       spvtools::MakeUnique<SimpleConditionalBranchToBranchOpportunityFinder>());
-  AddReductionPass(spvtools::MakeUnique<
-                   RemoveUnusedStructMemberReductionOpportunityFinder>());
 
   // Cleanup passes.
 
   AddCleanupReductionPass(
-      spvtools::MakeUnique<RemoveUnusedInstructionReductionOpportunityFinder>(
-          true));
+      spvtools::MakeUnique<
+          RemoveUnreferencedInstructionReductionOpportunityFinder>(true));
 }
 
 void Reducer::AddReductionPass(
@@ -183,8 +180,7 @@ Reducer::ReductionResultStatus Reducer::RunPasses(
       consumer_(SPV_MSG_INFO, nullptr, {},
                 ("Trying pass " + pass->GetName() + ".").c_str());
       do {
-        auto maybe_result =
-            pass->TryApplyReduction(*current_binary, options->target_function);
+        auto maybe_result = pass->TryApplyReduction(*current_binary);
         if (maybe_result.empty()) {
           // For this round, the pass has no more opportunities (chunks) to
           // apply, so move on to the next pass.

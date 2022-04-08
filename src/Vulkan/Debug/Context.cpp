@@ -20,65 +20,73 @@
 #include "Variable.hpp"
 #include "WeakMap.hpp"
 
-#include "System/Debug.hpp"
-
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
-#if !defined(NDEBUG) || defined(DCHECK_ALWAYS_ON)
-#	define CHECK_REENTRANT_CONTEXT_LOCKS 1
-#else
-#	define CHECK_REENTRANT_CONTEXT_LOCKS 0
-#endif
-
 namespace {
 
-#if CHECK_REENTRANT_CONTEXT_LOCKS
-thread_local std::unordered_set<const void *> contextsWithLock;
-#endif
-
-////////////////////////////////////////////////////////////////////////////////
-// Broadcaster - template base class for ServerEventBroadcaster and
-// ClientEventBroadcaster
-////////////////////////////////////////////////////////////////////////////////
-template<typename Listener>
-class Broadcaster : public Listener
+class Broadcaster : public vk::dbg::EventListener
 {
 public:
-	void add(Listener *);
-	void remove(Listener *);
+	using Thread = vk::dbg::Thread;
 
-protected:
+	// EventListener
+	void onThreadStarted(Thread::ID) override;
+	void onThreadStepped(Thread::ID) override;
+	void onLineBreakpointHit(Thread::ID) override;
+	void onFunctionBreakpointHit(Thread::ID) override;
+
+	void add(EventListener *);
+	void remove(EventListener *);
+
+private:
 	template<typename F>
 	inline void foreach(F &&);
 
 	template<typename F>
 	inline void modify(F &&);
 
-	using ListenerSet = std::unordered_set<Listener *>;
+	using ListenerSet = std::unordered_set<EventListener *>;
 	std::recursive_mutex mutex;
 	std::shared_ptr<ListenerSet> listeners = std::make_shared<ListenerSet>();
 	int listenersInUse = 0;
 };
 
-template<typename Listener>
-void Broadcaster<Listener>::add(Listener *l)
+void Broadcaster::onThreadStarted(Thread::ID id)
+{
+	foreach([&](EventListener *l) { l->onThreadStarted(id); });
+}
+
+void Broadcaster::onThreadStepped(Thread::ID id)
+{
+	foreach([&](EventListener *l) { l->onThreadStepped(id); });
+}
+
+void Broadcaster::onLineBreakpointHit(Thread::ID id)
+{
+	foreach([&](EventListener *l) { l->onLineBreakpointHit(id); });
+}
+
+void Broadcaster::onFunctionBreakpointHit(Thread::ID id)
+{
+	foreach([&](EventListener *l) { l->onFunctionBreakpointHit(id); });
+}
+
+void Broadcaster::add(EventListener *l)
 {
 	modify([&]() { listeners->emplace(l); });
 }
 
-template<typename Listener>
-void Broadcaster<Listener>::remove(Listener *l)
+void Broadcaster::remove(EventListener *l)
 {
 	modify([&]() { listeners->erase(l); });
 }
 
-template<typename Listener>
 template<typename F>
-void Broadcaster<Listener>::foreach(F &&f)
+void Broadcaster::foreach(F &&f)
 {
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	++listenersInUse;
@@ -87,9 +95,8 @@ void Broadcaster<Listener>::foreach(F &&f)
 	--listenersInUse;
 }
 
-template<typename Listener>
 template<typename F>
-void Broadcaster<Listener>::modify(F &&f)
+void Broadcaster::modify(F &&f)
 {
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	if(listenersInUse > 0)
@@ -100,57 +107,6 @@ void Broadcaster<Listener>::modify(F &&f)
 	}
 	f();
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// ServerEventBroadcaster
-////////////////////////////////////////////////////////////////////////////////
-class ServerEventBroadcaster : public Broadcaster<vk::dbg::ServerEventListener>
-{
-public:
-	using Thread = vk::dbg::Thread;
-
-	void onThreadStarted(Thread::ID id) override
-	{
-		foreach([&](auto *l) { l->onThreadStarted(id); });
-	}
-
-	void onThreadStepped(Thread::ID id) override
-	{
-		foreach([&](auto *l) { l->onThreadStepped(id); });
-	}
-
-	void onLineBreakpointHit(Thread::ID id) override
-	{
-		foreach([&](auto *l) { l->onLineBreakpointHit(id); });
-	}
-
-	void onFunctionBreakpointHit(Thread::ID id) override
-	{
-		foreach([&](auto *l) { l->onFunctionBreakpointHit(id); });
-	}
-};
-
-////////////////////////////////////////////////////////////////////////////////
-// ClientEventBroadcaster
-////////////////////////////////////////////////////////////////////////////////
-class ClientEventBroadcaster : public Broadcaster<vk::dbg::ClientEventListener>
-{
-public:
-	void onSetBreakpoint(const vk::dbg::Location &location, bool &handled) override
-	{
-		foreach([&](auto *l) { l->onSetBreakpoint(location, handled); });
-	}
-
-	void onSetBreakpoint(const std::string &func, bool &handled) override
-	{
-		foreach([&](auto *l) { l->onSetBreakpoint(func, handled); });
-	}
-
-	void onBreakpointsChanged() override
-	{
-		foreach([&](auto *l) { l->onBreakpointsChanged(); });
-	}
-};
 
 }  // namespace
 
@@ -165,19 +121,16 @@ class Context::Impl : public Context
 public:
 	// Context compliance
 	Lock lock() override;
-	void addListener(ClientEventListener *) override;
-	void removeListener(ClientEventListener *) override;
-	ClientEventListener *clientEventBroadcast() override;
-	void addListener(ServerEventListener *) override;
-	void removeListener(ServerEventListener *) override;
-	ServerEventListener *serverEventBroadcast() override;
+	void addListener(EventListener *) override;
+	void removeListener(EventListener *) override;
+	EventListener *broadcast() override;
 
 	void addFile(const std::shared_ptr<File> &file);
 
-	ServerEventBroadcaster serverEventBroadcaster;
-	ClientEventBroadcaster clientEventBroadcaster;
+	Broadcaster broadcaster;
 
 	std::mutex mutex;
+	std::vector<EventListener *> eventListeners;
 	std::unordered_map<std::thread::id, std::shared_ptr<Thread>> threadsByStdId;
 	std::unordered_set<std::string> functionBreakpoints;
 	std::unordered_map<std::string, std::vector<int>> pendingBreakpoints;
@@ -185,11 +138,12 @@ public:
 	WeakMap<File::ID, File> files;
 	WeakMap<Frame::ID, Frame> frames;
 	WeakMap<Scope::ID, Scope> scopes;
-	WeakMap<Variables::ID, Variables> variables;
+	WeakMap<VariableContainer::ID, VariableContainer> variableContainers;
 	Thread::ID nextThreadID = 1;
 	File::ID nextFileID = 1;
 	Frame::ID nextFrameID = 1;
 	Scope::ID nextScopeID = 1;
+	VariableContainer::ID nextVariableContainerID = 1;
 };
 
 Context::Lock Context::Impl::lock()
@@ -197,34 +151,19 @@ Context::Lock Context::Impl::lock()
 	return Lock(this);
 }
 
-void Context::Impl::addListener(ClientEventListener *l)
+void Context::Impl::addListener(EventListener *l)
 {
-	clientEventBroadcaster.add(l);
+	broadcaster.add(l);
 }
 
-void Context::Impl::removeListener(ClientEventListener *l)
+void Context::Impl::removeListener(EventListener *l)
 {
-	clientEventBroadcaster.remove(l);
+	broadcaster.remove(l);
 }
 
-ClientEventListener *Context::Impl::clientEventBroadcast()
+EventListener *Context::Impl::broadcast()
 {
-	return &clientEventBroadcaster;
-}
-
-void Context::Impl::addListener(ServerEventListener *l)
-{
-	serverEventBroadcaster.add(l);
-}
-
-void Context::Impl::removeListener(ServerEventListener *l)
-{
-	serverEventBroadcaster.remove(l);
-}
-
-ServerEventListener *Context::Impl::serverEventBroadcast()
-{
-	return &serverEventBroadcaster;
+	return &broadcaster;
 }
 
 void Context::Impl::addFile(const std::shared_ptr<File> &file)
@@ -255,10 +194,6 @@ std::shared_ptr<Context> Context::create()
 Context::Lock::Lock(Impl *ctx)
     : ctx(ctx)
 {
-#if CHECK_REENTRANT_CONTEXT_LOCKS
-	ASSERT_MSG(contextsWithLock.count(ctx) == 0, "Attempting to acquire Context lock twice on same thread. This will deadlock");
-	contextsWithLock.emplace(ctx);
-#endif
 	ctx->mutex.lock();
 }
 
@@ -284,10 +219,6 @@ void Context::Lock::unlock()
 {
 	if(ctx)
 	{
-#if CHECK_REENTRANT_CONTEXT_LOCKS
-		contextsWithLock.erase(ctx);
-#endif
-
 		ctx->mutex.unlock();
 		ctx = nullptr;
 	}
@@ -309,7 +240,7 @@ std::shared_ptr<Thread> Context::Lock::currentThread()
 	thread->setName(name);
 	ctx->threadsByStdId.emplace(std::this_thread::get_id(), thread);
 
-	ctx->serverEventBroadcast()->onThreadStarted(id);
+	ctx->broadcast()->onThreadStarted(id);
 
 	return thread;
 }
@@ -350,19 +281,6 @@ std::shared_ptr<File> Context::Lock::get(File::ID id)
 	return ctx->files.get(id);
 }
 
-std::shared_ptr<File> Context::Lock::findFile(const std::string &path)
-{
-	for(auto it : ctx->files)
-	{
-		auto &file = it.second;
-		if(file->path() == path)
-		{
-			return file;
-		}
-	}
-	return nullptr;
-}
-
 std::vector<std::shared_ptr<File>> Context::Lock::files()
 {
 	std::vector<std::shared_ptr<File>> out;
@@ -383,7 +301,6 @@ std::shared_ptr<Frame> Context::Lock::createFrame(
 	frame->locals = createScope(file);
 	frame->registers = createScope(file);
 	frame->hovers = createScope(file);
-	frame->location.file = file;
 	return frame;
 }
 
@@ -395,7 +312,7 @@ std::shared_ptr<Frame> Context::Lock::get(Frame::ID id)
 std::shared_ptr<Scope> Context::Lock::createScope(
     const std::shared_ptr<File> &file)
 {
-	auto scope = std::make_shared<Scope>(ctx->nextScopeID++, file, std::make_shared<VariableContainer>());
+	auto scope = std::make_shared<Scope>(ctx->nextScopeID++, file, createVariableContainer());
 	ctx->scopes.add(scope->id, scope);
 	return scope;
 }
@@ -405,19 +322,16 @@ std::shared_ptr<Scope> Context::Lock::get(Scope::ID id)
 	return ctx->scopes.get(id);
 }
 
-void Context::Lock::track(const std::shared_ptr<Variables> &vars)
+std::shared_ptr<VariableContainer> Context::Lock::createVariableContainer()
 {
-	ctx->variables.add(vars->id, vars);
+	auto container = std::make_shared<VariableContainer>(ctx->nextVariableContainerID++);
+	ctx->variableContainers.add(container->id, container);
+	return container;
 }
 
-std::shared_ptr<Variables> Context::Lock::get(Variables::ID id)
+std::shared_ptr<VariableContainer> Context::Lock::get(VariableContainer::ID id)
 {
-	return ctx->variables.get(id);
-}
-
-void Context::Lock::clearFunctionBreakpoints()
-{
-	ctx->functionBreakpoints.clear();
+	return ctx->variableContainers.get(id);
 }
 
 void Context::Lock::addFunctionBreakpoint(const std::string &name)
@@ -433,11 +347,6 @@ void Context::Lock::addPendingBreakpoints(const std::string &filename, const std
 bool Context::Lock::isFunctionBreakpoint(const std::string &name)
 {
 	return ctx->functionBreakpoints.count(name) > 0;
-}
-
-std::unordered_set<std::string> Context::Lock::getFunctionBreakpoints()
-{
-	return ctx->functionBreakpoints;
 }
 
 }  // namespace dbg

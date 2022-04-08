@@ -43,7 +43,7 @@
 namespace vk {
 namespace dbg {
 
-class Server::Impl : public Server, public ServerEventListener
+class Server::Impl : public Server, public EventListener
 {
 public:
 	Impl(const std::shared_ptr<Context> &ctx, int port);
@@ -55,7 +55,7 @@ public:
 	void onLineBreakpointHit(ID<Thread>) override;
 	void onFunctionBreakpointHit(ID<Thread>) override;
 
-	dap::Scope scope(Context::Lock &lock, const char *type, Scope *);
+	dap::Scope scope(const char *type, Scope *);
 	dap::Source source(File *);
 	std::shared_ptr<File> file(const dap::Source &source);
 
@@ -100,28 +100,14 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 	session->registerHandler(
 	    [this](const dap::SetFunctionBreakpointsRequest &req) {
 		    DAP_LOG("SetFunctionBreakpointsRequest receieved");
-
+		    auto lock = ctx->lock();
 		    dap::SetFunctionBreakpointsResponse response;
-		    for(auto const &reqBP : req.breakpoints)
+		    for(auto const &bp : req.breakpoints)
 		    {
-			    DAP_LOG("Setting breakpoint for function '%s'", reqBP.name.c_str());
-
-			    bool verified = false;
-			    ctx->clientEventBroadcast()->onSetBreakpoint(reqBP.name, verified);
-
-			    dap::Breakpoint resBP{};
-			    resBP.verified = verified;
-			    response.breakpoints.emplace_back(std::move(resBP));
+			    DAP_LOG("Setting breakpoint for function '%s'", bp.name.c_str());
+			    lock.addFunctionBreakpoint(bp.name.c_str());
+			    response.breakpoints.push_back({});
 		    }
-		    {
-			    auto lock = ctx->lock();
-			    lock.clearFunctionBreakpoints();
-			    for(auto const &reqBP : req.breakpoints)
-			    {
-				    lock.addFunctionBreakpoint(reqBP.name.c_str());
-			    }
-		    }
-		    ctx->clientEventBroadcast()->onBreakpointsChanged();
 		    return response;
 	    });
 
@@ -129,6 +115,7 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 	    [this](const dap::SetBreakpointsRequest &req)
 	        -> dap::ResponseOrError<dap::SetBreakpointsResponse> {
 		    DAP_LOG("SetBreakpointsRequest receieved");
+		    bool verified = false;
 
 		    size_t numBreakpoints = 0;
 		    if(req.breakpoints.has_value())
@@ -137,27 +124,14 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 			    numBreakpoints = breakpoints.size();
 			    if(auto file = this->file(req.source))
 			    {
-				    dap::SetBreakpointsResponse response;
 				    file->clearBreakpoints();
-				    for(size_t i = 0; i < numBreakpoints; i++)
+				    for(auto const &bp : breakpoints)
 				    {
-					    auto &reqBP = breakpoints[i];
-					    Location location{ file, static_cast<int>(reqBP.line) };
-					    file->addBreakpoint(location.line);
-
-					    bool verified = false;
-					    ctx->clientEventBroadcast()->onSetBreakpoint(location, verified);
-
-					    dap::Breakpoint respBP;
-					    respBP.verified = verified;
-					    respBP.source = req.source;
-					    response.breakpoints.push_back(respBP);
+					    file->addBreakpoint(bp.line);
 				    }
-				    ctx->clientEventBroadcast()->onBreakpointsChanged();
-				    return response;
+				    verified = true;
 			    }
-
-			    if(req.source.name.has_value())
+			    else if(req.source.name.has_value())
 			    {
 				    std::vector<int> lines;
 				    lines.reserve(breakpoints.size());
@@ -170,16 +144,14 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 			    }
 		    }
 
-		    // Generic response.
 		    dap::SetBreakpointsResponse response;
 		    for(size_t i = 0; i < numBreakpoints; i++)
 		    {
 			    dap::Breakpoint bp;
-			    bp.verified = false;
+			    bp.verified = verified;
 			    bp.source = req.source;
 			    response.breakpoints.push_back(bp);
 		    }
-		    ctx->clientEventBroadcast()->onBreakpointsChanged();
 		    return response;
 	    });
 
@@ -258,9 +230,9 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 
 		dap::ScopesResponse response;
 		response.scopes = {
-			scope(lock, "locals", frame->locals.get()),
-			scope(lock, "arguments", frame->arguments.get()),
-			scope(lock, "registers", frame->registers.get()),
+			scope("locals", frame->locals.get()),
+			scope("arguments", frame->arguments.get()),
+			scope("registers", frame->registers.get()),
 		};
 		return response;
 	});
@@ -270,7 +242,7 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 		DAP_LOG("VariablesRequest receieved");
 
 		auto lock = ctx->lock();
-		auto vars = lock.get(Variables::ID(req.variablesReference));
+		auto vars = lock.get(VariableContainer::ID(req.variablesReference));
 		if(!vars)
 		{
 			return dap::Error("VariablesReference %d not found",
@@ -282,15 +254,14 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 			dap::Variable out;
 			out.evaluateName = v.name;
 			out.name = v.name;
-			out.type = v.value->type();
-			out.value = v.value->get();
-			if(auto children = v.value->children())
+			out.type = v.value->type()->string();
+			out.value = v.value->string();
+			if(v.value->type()->kind == Kind::VariableContainer)
 			{
-				out.variablesReference = children->id.value();
-				lock.track(children);
+				auto const vc = static_cast<const VariableContainer *>(v.value.get());
+				out.variablesReference = vc->id.value();
 			}
 			response.variables.push_back(out);
-			return true;
 		});
 		return response;
 	});
@@ -336,9 +307,13 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 
 			// Workaround for
 			// https://github.com/microsoft/VSDebugAdapterHost/issues/11
-			if(clientIsVisualStudio && !threads.empty())
+			if(clientIsVisualStudio)
 			{
-				event.threadId = threads.front()->id.value();
+				for(auto thread : threads)
+				{
+					event.threadId = thread->id.value();
+					break;
+				}
 			}
 		}
 
@@ -447,8 +422,12 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 			}
 
 			dap::EvaluateResponse response;
+			auto findHandler = [&](const Variable &var) {
+				response.result = var.value->string(fmt);
+				response.type = var.value->type()->string();
+			};
 
-			std::vector<std::shared_ptr<vk::dbg::Variables>> variables = {
+			std::vector<std::shared_ptr<vk::dbg::VariableContainer>> variables = {
 				frame->locals->variables,
 				frame->arguments->variables,
 				frame->registers->variables,
@@ -457,12 +436,7 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 
 			for(auto const &vars : variables)
 			{
-				if(auto val = vars->get(req.expression))
-				{
-					response.result = val->get(fmt);
-					response.type = val->type();
-					return response;
-				}
+				if(vars->find(req.expression, findHandler)) { return response; }
 			}
 
 			// HACK: VSCode does not appear to include the % in %123 tokens
@@ -471,12 +445,7 @@ Server::Impl::Impl(const std::shared_ptr<Context> &context, int port)
 			auto withPercent = "%" + req.expression;
 			for(auto const &vars : variables)
 			{
-				if(auto val = vars->get(withPercent))
-				{
-					response.result = val->get(fmt);
-					response.type = val->type();
-					return response;
-				}
+				if(vars->find(withPercent, findHandler)) { return response; }
 			}
 		}
 
@@ -547,7 +516,7 @@ void Server::Impl::onFunctionBreakpointHit(ID<Thread> id)
 	session->send(event);
 }
 
-dap::Scope Server::Impl::scope(Context::Lock &lock, const char *type, Scope *s)
+dap::Scope Server::Impl::scope(const char *type, Scope *s)
 {
 	dap::Scope out;
 	// out.line = s->startLine;
@@ -556,7 +525,6 @@ dap::Scope Server::Impl::scope(Context::Lock &lock, const char *type, Scope *s)
 	out.name = type;
 	out.presentationHint = type;
 	out.variablesReference = s->variables->id.value();
-	lock.track(s->variables);
 	return out;
 }
 
@@ -568,7 +536,10 @@ dap::Source Server::Impl::source(File *file)
 	{
 		out.sourceReference = file->id.value();
 	}
-	out.path = file->path();
+	else
+	{
+		out.path = file->path();
+	}
 	return out;
 }
 

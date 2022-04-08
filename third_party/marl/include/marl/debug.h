@@ -15,8 +15,6 @@
 #ifndef marl_debug_h
 #define marl_debug_h
 
-#include "export.h"
-
 #if !defined(MARL_DEBUG_ENABLED)
 #if !defined(NDEBUG) || defined(DCHECK_ALWAYS_ON)
 #define MARL_DEBUG_ENABLED 1
@@ -27,13 +25,8 @@
 
 namespace marl {
 
-MARL_EXPORT
 void fatal(const char* msg, ...);
-
-MARL_EXPORT
 void warn(const char* msg, ...);
-
-MARL_EXPORT
 void assert_has_bound_scheduler(const char* feature);
 
 #if MARL_DEBUG_ENABLED

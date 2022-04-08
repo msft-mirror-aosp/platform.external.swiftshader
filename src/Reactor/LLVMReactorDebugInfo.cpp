@@ -56,16 +56,7 @@ __pragma(warning(push))
 
 	std::pair<llvm::StringRef, llvm::StringRef> splitPath(const char *path)
 	{
-#	ifdef _WIN32
-		auto dirAndFile = llvm::StringRef(path).rsplit('\\');
-#	else
-	auto dirAndFile = llvm::StringRef(path).rsplit('/');
-#	endif
-		if(dirAndFile.second == "")
-		{
-			dirAndFile.second = "<unknown>";
-		}
-		return dirAndFile;
+		return llvm::StringRef(path).rsplit('/');
 	}
 
 	// Note: createGDBRegistrationListener() returns a pointer to a singleton.
@@ -91,11 +82,11 @@ DebugInfo::DebugInfo(
 
 	auto location = getCallerLocation();
 
-	auto dirAndFile = splitPath(location.function.file.c_str());
+	auto fileAndDir = splitPath(location.function.file.c_str());
 	diBuilder.reset(new llvm::DIBuilder(*module));
 	diCU = diBuilder->createCompileUnit(
 	    llvm::dwarf::DW_LANG_C,
-	    diBuilder->createFile(dirAndFile.second, dirAndFile.first),
+	    diBuilder->createFile(fileAndDir.first, fileAndDir.second),
 	    "Reactor",
 	    0, "", 0);
 
@@ -106,15 +97,17 @@ DebugInfo::DebugInfo(
 
 	auto file = getOrCreateFile(location.function.file.c_str());
 	auto sp = diBuilder->createFunction(
-	    file,                           // scope
-	    "ReactorFunction",              // function name
-	    "ReactorFunction",              // linkage
-	    file,                           // file
-	    location.line,                  // line
-	    funcTy,                         // type
-	    location.line,                  // scope line
-	    DINode::FlagPrototyped,         // flags
-	    DISubprogram::SPFlagDefinition  // subprogram flags
+	    file,                    // scope
+	    "ReactorFunction",       // function name
+	    "ReactorFunction",       // linkage
+	    file,                    // file
+	    location.line,           // line
+	    funcTy,                  // type
+	    false,                   // internal linkage
+	    true,                    // definition
+	    location.line,           // scope line
+	    DINode::FlagPrototyped,  // flags
+	    false                    // is optimized
 	);
 	diSubprogram = sp;
 	function->setSubprogram(sp);
@@ -139,21 +132,19 @@ void DebugInfo::EmitLocation()
 	auto const &backtrace = getCallerBacktrace();
 	syncScope(backtrace);
 	builder->SetCurrentDebugLocation(getLocation(backtrace, backtrace.size() - 1));
+
+#	ifdef ENABLE_RR_EMIT_PRINT_LOCATION
 	emitPrintLocation(backtrace);
+#	endif  // ENABLE_RR_EMIT_PRINT_LOCATION
 }
 
 void DebugInfo::Flush()
 {
-	if(!diScope.empty())
-	{
-		emitPending(diScope.back(), builder);
-	}
+	emitPending(diScope.back(), builder);
 }
 
 void DebugInfo::syncScope(Backtrace const &backtrace)
 {
-	using namespace ::llvm;
-
 	auto shrink = [this](size_t newsize) {
 		while(diScope.size() > newsize)
 		{
@@ -194,7 +185,7 @@ void DebugInfo::syncScope(Backtrace const &backtrace)
 			LOG("  STACK(%d): Jumped backwards %d -> %d. di: %p -> %p", int(i),
 			    oldLocation.line, newLocation.line, scope.di, di);
 			emitPending(scope, builder);
-			scope = { newLocation, di, {}, {} };
+			scope = { newLocation, di };
 			shrink(i + 1);
 			break;
 		}
@@ -216,17 +207,19 @@ void DebugInfo::syncScope(Backtrace const &backtrace)
 		auto name = "jit!" + (status == 0 ? std::string(buf) : location.function.name);
 
 		auto func = diBuilder->createFunction(
-		    file,                           // scope
-		    name,                           // function name
-		    "",                             // linkage
-		    file,                           // file
-		    location.line,                  // line
-		    funcTy,                         // type
-		    location.line,                  // scope line
-		    DINode::FlagPrototyped,         // flags
-		    DISubprogram::SPFlagDefinition  // subprogram flags
+		    file,                          // scope
+		    name,                          // function name
+		    "",                            // linkage
+		    file,                          // file
+		    location.line,                 // line
+		    funcTy,                        // type
+		    false,                         // internal linkage
+		    true,                          // definition
+		    location.line,                 // scope line
+		    llvm::DINode::FlagPrototyped,  // flags
+		    false                          // is optimized
 		);
-		diScope.push_back({ location, func, {}, {} });
+		diScope.push_back({ location, func });
 		LOG("+ STACK(%d): di: %p, location: %s:%d", int(i), di,
 		    location.function.file.c_str(), int(location.line));
 	}
@@ -388,16 +381,16 @@ void DebugInfo::emitPending(Scope &scope, IRBuilder *builder)
 	scope.pending = Pending{};
 }
 
-void DebugInfo::NotifyObjectEmitted(uint64_t key, const llvm::object::ObjectFile &obj, const llvm::LoadedObjectInfo &l)
+void DebugInfo::NotifyObjectEmitted(const llvm::object::ObjectFile &Obj, const llvm::LoadedObjectInfo &L)
 {
 	std::unique_lock<std::mutex> lock(jitEventListenerMutex);
-	jitEventListener->notifyObjectLoaded(key, obj, static_cast<const llvm::RuntimeDyld::LoadedObjectInfo &>(l));
+	jitEventListener->NotifyObjectEmitted(Obj, static_cast<const llvm::RuntimeDyld::LoadedObjectInfo &>(L));
 }
 
-void DebugInfo::NotifyFreeingObject(uint64_t key)
+void DebugInfo::NotifyFreeingObject(const llvm::object::ObjectFile &Obj)
 {
 	std::unique_lock<std::mutex> lock(jitEventListenerMutex);
-	jitEventListener->notifyFreeingObject(key);
+	jitEventListener->NotifyFreeingObject(Obj);
 }
 
 void DebugInfo::registerBasicTypes()
@@ -409,41 +402,40 @@ void DebugInfo::registerBasicTypes()
 	auto vec8 = diBuilder->getOrCreateArray(diBuilder->getOrCreateSubrange(0, 8));
 	auto vec16 = diBuilder->getOrCreateArray(diBuilder->getOrCreateSubrange(0, 16));
 
-	diTypes.emplace(T(Bool::type()), diBuilder->createBasicType("Bool", sizeof(bool), dwarf::DW_ATE_boolean));
-	diTypes.emplace(T(Byte::type()), diBuilder->createBasicType("Byte", 8, dwarf::DW_ATE_unsigned_char));
-	diTypes.emplace(T(SByte::type()), diBuilder->createBasicType("SByte", 8, dwarf::DW_ATE_signed_char));
-	diTypes.emplace(T(Short::type()), diBuilder->createBasicType("Short", 16, dwarf::DW_ATE_signed));
-	diTypes.emplace(T(UShort::type()), diBuilder->createBasicType("UShort", 16, dwarf::DW_ATE_unsigned));
-	diTypes.emplace(T(Int::type()), diBuilder->createBasicType("Int", 32, dwarf::DW_ATE_signed));
-	diTypes.emplace(T(UInt::type()), diBuilder->createBasicType("UInt", 32, dwarf::DW_ATE_unsigned));
-	diTypes.emplace(T(Long::type()), diBuilder->createBasicType("Long", 64, dwarf::DW_ATE_signed));
-	diTypes.emplace(T(Half::type()), diBuilder->createBasicType("Half", 16, dwarf::DW_ATE_float));
-	diTypes.emplace(T(Float::type()), diBuilder->createBasicType("Float", 32, dwarf::DW_ATE_float));
+	diTypes.emplace(T(Bool::getType()), diBuilder->createBasicType("Bool", sizeof(bool), dwarf::DW_ATE_boolean));
+	diTypes.emplace(T(Byte::getType()), diBuilder->createBasicType("Byte", 8, dwarf::DW_ATE_unsigned_char));
+	diTypes.emplace(T(SByte::getType()), diBuilder->createBasicType("SByte", 8, dwarf::DW_ATE_signed_char));
+	diTypes.emplace(T(Short::getType()), diBuilder->createBasicType("Short", 16, dwarf::DW_ATE_signed));
+	diTypes.emplace(T(UShort::getType()), diBuilder->createBasicType("UShort", 16, dwarf::DW_ATE_unsigned));
+	diTypes.emplace(T(Int::getType()), diBuilder->createBasicType("Int", 32, dwarf::DW_ATE_signed));
+	diTypes.emplace(T(UInt::getType()), diBuilder->createBasicType("UInt", 32, dwarf::DW_ATE_unsigned));
+	diTypes.emplace(T(Long::getType()), diBuilder->createBasicType("Long", 64, dwarf::DW_ATE_signed));
+	diTypes.emplace(T(Half::getType()), diBuilder->createBasicType("Half", 16, dwarf::DW_ATE_float));
+	diTypes.emplace(T(Float::getType()), diBuilder->createBasicType("Float", 32, dwarf::DW_ATE_float));
 
-	diTypes.emplace(T(Byte4::type()), diBuilder->createVectorType(128, 128, diTypes[T(Byte::type())], { vec16 }));
-	diTypes.emplace(T(SByte4::type()), diBuilder->createVectorType(128, 128, diTypes[T(SByte::type())], { vec16 }));
-	diTypes.emplace(T(Byte8::type()), diBuilder->createVectorType(128, 128, diTypes[T(Byte::type())], { vec16 }));
-	diTypes.emplace(T(SByte8::type()), diBuilder->createVectorType(128, 128, diTypes[T(SByte::type())], { vec16 }));
-	diTypes.emplace(T(Byte16::type()), diBuilder->createVectorType(128, 128, diTypes[T(Byte::type())], { vec16 }));
-	diTypes.emplace(T(SByte16::type()), diBuilder->createVectorType(128, 128, diTypes[T(SByte::type())], { vec16 }));
-	diTypes.emplace(T(Short2::type()), diBuilder->createVectorType(128, 128, diTypes[T(Short::type())], { vec8 }));
-	diTypes.emplace(T(UShort2::type()), diBuilder->createVectorType(128, 128, diTypes[T(UShort::type())], { vec8 }));
-	diTypes.emplace(T(Short4::type()), diBuilder->createVectorType(128, 128, diTypes[T(Short::type())], { vec8 }));
-	diTypes.emplace(T(UShort4::type()), diBuilder->createVectorType(128, 128, diTypes[T(UShort::type())], { vec8 }));
-	diTypes.emplace(T(Short8::type()), diBuilder->createVectorType(128, 128, diTypes[T(Short::type())], { vec8 }));
-	diTypes.emplace(T(UShort8::type()), diBuilder->createVectorType(128, 128, diTypes[T(UShort::type())], { vec8 }));
-	diTypes.emplace(T(Int2::type()), diBuilder->createVectorType(128, 128, diTypes[T(Int::type())], { vec4 }));
-	diTypes.emplace(T(UInt2::type()), diBuilder->createVectorType(128, 128, diTypes[T(UInt::type())], { vec4 }));
-	diTypes.emplace(T(Int4::type()), diBuilder->createVectorType(128, 128, diTypes[T(Int::type())], { vec4 }));
-	diTypes.emplace(T(UInt4::type()), diBuilder->createVectorType(128, 128, diTypes[T(UInt::type())], { vec4 }));
-	diTypes.emplace(T(Float2::type()), diBuilder->createVectorType(128, 128, diTypes[T(Float::type())], { vec4 }));
-	diTypes.emplace(T(Float4::type()), diBuilder->createVectorType(128, 128, diTypes[T(Float::type())], { vec4 }));
+	diTypes.emplace(T(Byte4::getType()), diBuilder->createVectorType(128, 128, diTypes[T(Byte::getType())], { vec16 }));
+	diTypes.emplace(T(SByte4::getType()), diBuilder->createVectorType(128, 128, diTypes[T(SByte::getType())], { vec16 }));
+	diTypes.emplace(T(Byte8::getType()), diBuilder->createVectorType(128, 128, diTypes[T(Byte::getType())], { vec16 }));
+	diTypes.emplace(T(SByte8::getType()), diBuilder->createVectorType(128, 128, diTypes[T(SByte::getType())], { vec16 }));
+	diTypes.emplace(T(Byte16::getType()), diBuilder->createVectorType(128, 128, diTypes[T(Byte::getType())], { vec16 }));
+	diTypes.emplace(T(SByte16::getType()), diBuilder->createVectorType(128, 128, diTypes[T(SByte::getType())], { vec16 }));
+	diTypes.emplace(T(Short2::getType()), diBuilder->createVectorType(128, 128, diTypes[T(Short::getType())], { vec8 }));
+	diTypes.emplace(T(UShort2::getType()), diBuilder->createVectorType(128, 128, diTypes[T(UShort::getType())], { vec8 }));
+	diTypes.emplace(T(Short4::getType()), diBuilder->createVectorType(128, 128, diTypes[T(Short::getType())], { vec8 }));
+	diTypes.emplace(T(UShort4::getType()), diBuilder->createVectorType(128, 128, diTypes[T(UShort::getType())], { vec8 }));
+	diTypes.emplace(T(Short8::getType()), diBuilder->createVectorType(128, 128, diTypes[T(Short::getType())], { vec8 }));
+	diTypes.emplace(T(UShort8::getType()), diBuilder->createVectorType(128, 128, diTypes[T(UShort::getType())], { vec8 }));
+	diTypes.emplace(T(Int2::getType()), diBuilder->createVectorType(128, 128, diTypes[T(Int::getType())], { vec4 }));
+	diTypes.emplace(T(UInt2::getType()), diBuilder->createVectorType(128, 128, diTypes[T(UInt::getType())], { vec4 }));
+	diTypes.emplace(T(Int4::getType()), diBuilder->createVectorType(128, 128, diTypes[T(Int::getType())], { vec4 }));
+	diTypes.emplace(T(UInt4::getType()), diBuilder->createVectorType(128, 128, diTypes[T(UInt::getType())], { vec4 }));
+	diTypes.emplace(T(Float2::getType()), diBuilder->createVectorType(128, 128, diTypes[T(Float::getType())], { vec4 }));
+	diTypes.emplace(T(Float4::getType()), diBuilder->createVectorType(128, 128, diTypes[T(Float::getType())], { vec4 }));
 }
 
 Location DebugInfo::getCallerLocation() const
 {
-	auto backtrace = getCallerBacktrace(1);
-	return backtrace.empty() ? Location{} : backtrace[0];
+	return getCallerBacktrace(1)[0];
 }
 
 Backtrace DebugInfo::getCallerBacktrace(size_t limit /* = 0 */) const
@@ -513,7 +505,7 @@ DebugInfo::LineTokens const *DebugInfo::getOrParseFileTokens(const char *path)
 			{
 				if(match.str(1) == "return")
 				{
-					(*tokens)[lineCount] = Token{ Token::Return, "" };
+					(*tokens)[lineCount] = Token{ Token::Return };
 				}
 				else
 				{

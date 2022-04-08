@@ -41,9 +41,9 @@ size_t XlibSurfaceKHR::ComputeRequiredAllocationSize(const VkXlibSurfaceCreateIn
 	return 0;
 }
 
-VkResult XlibSurfaceKHR::getSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities) const
+void XlibSurfaceKHR::getSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities) const
 {
-	setCommonSurfaceCapabilities(pSurfaceCapabilities);
+	SurfaceKHR::getSurfaceCapabilities(pSurfaceCapabilities);
 
 	XWindowAttributes attr;
 	libX11->XGetWindowAttributes(pDisplay, window, &attr);
@@ -52,7 +52,6 @@ VkResult XlibSurfaceKHR::getSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfa
 	pSurfaceCapabilities->currentExtent = extent;
 	pSurfaceCapabilities->minImageExtent = extent;
 	pSurfaceCapabilities->maxImageExtent = extent;
-	return VK_SUCCESS;
 }
 
 void XlibSurfaceKHR::attachImage(PresentImage *image)
@@ -60,7 +59,7 @@ void XlibSurfaceKHR::attachImage(PresentImage *image)
 	XWindowAttributes attr;
 	libX11->XGetWindowAttributes(pDisplay, window, &attr);
 
-	const VkExtent3D &extent = image->getImage()->getExtent();
+	VkExtent3D extent = image->getImage()->getMipLevelExtent(VK_IMAGE_ASPECT_COLOR_BIT, 0);
 
 	int bytes_per_line = image->getImage()->rowPitchBytes(VK_IMAGE_ASPECT_COLOR_BIT, 0);
 	char *buffer = static_cast<char *>(image->getImageMemory()->getOffsetPointer(0));
@@ -78,7 +77,7 @@ void XlibSurfaceKHR::detachImage(PresentImage *image)
 		XImage *xImage = it->second;
 		xImage->data = nullptr;  // the XImage does not actually own the buffer
 		XDestroyImage(xImage);
-		imageMap.erase(it);
+		imageMap.erase(image);
 	}
 }
 
@@ -94,7 +93,7 @@ VkResult XlibSurfaceKHR::present(PresentImage *image)
 			XWindowAttributes attr;
 			libX11->XGetWindowAttributes(pDisplay, window, &attr);
 			VkExtent2D windowExtent = { static_cast<uint32_t>(attr.width), static_cast<uint32_t>(attr.height) };
-			const VkExtent3D &extent = image->getImage()->getExtent();
+			VkExtent3D extent = image->getImage()->getMipLevelExtent(VK_IMAGE_ASPECT_COLOR_BIT, 0);
 
 			if(windowExtent.width != extent.width || windowExtent.height != extent.height)
 			{

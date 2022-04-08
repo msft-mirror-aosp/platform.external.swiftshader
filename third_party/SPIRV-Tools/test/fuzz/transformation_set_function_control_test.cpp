@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #include "source/fuzz/transformation_set_function_control.h"
-
-#include "gtest/gtest.h"
-#include "source/fuzz/fuzzer_util.h"
 #include "test/fuzz/fuzz_test_util.h"
 
 namespace spvtools {
@@ -120,51 +117,42 @@ TEST(TransformationSetFunctionControlTest, VariousScenarios) {
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
 
-  spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(
-      MakeUnique<FactManager>(context.get()), validator_options);
+  FactManager fact_manager;
+
   // %36 is not a function
   ASSERT_FALSE(TransformationSetFunctionControl(36, SpvFunctionControlMaskNone)
-                   .IsApplicable(context.get(), transformation_context));
+                   .IsApplicable(context.get(), fact_manager));
   // Cannot add the Pure function control to %4 as it did not already have it
   ASSERT_FALSE(TransformationSetFunctionControl(4, SpvFunctionControlPureMask)
-                   .IsApplicable(context.get(), transformation_context));
+                   .IsApplicable(context.get(), fact_manager));
   // Cannot add the Const function control to %21 as it did not already
   // have it
   ASSERT_FALSE(TransformationSetFunctionControl(21, SpvFunctionControlConstMask)
-                   .IsApplicable(context.get(), transformation_context));
+                   .IsApplicable(context.get(), fact_manager));
 
   // Set to None, removing Const
   TransformationSetFunctionControl transformation1(11,
                                                    SpvFunctionControlMaskNone);
-  ASSERT_TRUE(
-      transformation1.IsApplicable(context.get(), transformation_context));
-  ApplyAndCheckFreshIds(transformation1, context.get(),
-                        &transformation_context);
+  ASSERT_TRUE(transformation1.IsApplicable(context.get(), fact_manager));
+  transformation1.Apply(context.get(), &fact_manager);
 
   // Set to Inline; silly to do it on an entry point, but it is allowed
   TransformationSetFunctionControl transformation2(
       4, SpvFunctionControlInlineMask);
-  ASSERT_TRUE(
-      transformation2.IsApplicable(context.get(), transformation_context));
-  ApplyAndCheckFreshIds(transformation2, context.get(),
-                        &transformation_context);
+  ASSERT_TRUE(transformation2.IsApplicable(context.get(), fact_manager));
+  transformation2.Apply(context.get(), &fact_manager);
 
   // Set to Pure, removing DontInline
   TransformationSetFunctionControl transformation3(17,
                                                    SpvFunctionControlPureMask);
-  ASSERT_TRUE(
-      transformation3.IsApplicable(context.get(), transformation_context));
-  ApplyAndCheckFreshIds(transformation3, context.get(),
-                        &transformation_context);
+  ASSERT_TRUE(transformation3.IsApplicable(context.get(), fact_manager));
+  transformation3.Apply(context.get(), &fact_manager);
 
   // Change from Inline to DontInline
   TransformationSetFunctionControl transformation4(
       13, SpvFunctionControlDontInlineMask);
-  ASSERT_TRUE(
-      transformation4.IsApplicable(context.get(), transformation_context));
-  ApplyAndCheckFreshIds(transformation4, context.get(),
-                        &transformation_context);
+  ASSERT_TRUE(transformation4.IsApplicable(context.get(), fact_manager));
+  transformation4.Apply(context.get(), &fact_manager);
 
   std::string after_transformation = R"(
                OpCapability Shader

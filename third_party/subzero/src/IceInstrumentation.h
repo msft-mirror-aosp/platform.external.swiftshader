@@ -67,7 +67,8 @@ private:
   virtual void instrumentIcmp(LoweringContext &, class InstIcmp *) {}
   virtual void instrumentInsertElement(LoweringContext &,
                                        class InstInsertElement *) {}
-  virtual void instrumentIntrinsic(LoweringContext &, class InstIntrinsic *) {}
+  virtual void instrumentIntrinsicCall(LoweringContext &,
+                                       class InstIntrinsicCall *) {}
   virtual void instrumentLoad(LoweringContext &, class InstLoad *) {}
   virtual void instrumentPhi(LoweringContext &, class InstPhi *) {}
   virtual void instrumentRet(LoweringContext &, class InstRet *) {}

@@ -15,10 +15,11 @@
 #ifndef VK_COMMAND_BUFFER_HPP_
 #define VK_COMMAND_BUFFER_HPP_
 
-#include "VkConfig.hpp"
+#include "VkConfig.h"
 #include "VkDescriptorSet.hpp"
-#include "VkPipeline.hpp"
-#include "System/Synchronization.hpp"
+#include "VkObject.hpp"
+#include "Device/Color.hpp"
+#include "Device/Context.hpp"
 
 #include <memory>
 #include <vector>
@@ -27,6 +28,7 @@ namespace sw {
 
 class Context;
 class Renderer;
+class TaskEvents;
 
 }  // namespace sw
 
@@ -53,6 +55,11 @@ public:
 
 	CommandBuffer(Device *device, VkCommandBufferLevel pLevel);
 
+	static inline CommandBuffer *Cast(VkCommandBuffer object)
+	{
+		return reinterpret_cast<CommandBuffer *>(object);
+	}
+
 	void destroy(const VkAllocationCallbacks *pAllocator);
 
 	VkResult begin(VkCommandBufferUsageFlags flags, const VkCommandBufferInheritanceInfo *pInheritanceInfo);
@@ -60,8 +67,7 @@ public:
 	VkResult reset(VkCommandPoolResetFlags flags);
 
 	void beginRenderPass(RenderPass *renderPass, Framebuffer *framebuffer, VkRect2D renderArea,
-	                     uint32_t clearValueCount, const VkClearValue *pClearValues, VkSubpassContents contents,
-	                     const VkRenderPassAttachmentBeginInfo *attachmentBeginInfo);
+	                     uint32_t clearValueCount, const VkClearValue *pClearValues, VkSubpassContents contents);
 	void nextSubpass(VkSubpassContents contents);
 	void endRenderPass();
 	void executeCommands(uint32_t commandBufferCount, const VkCommandBuffer *pCommandBuffers);
@@ -133,50 +139,60 @@ public:
 	void drawIndirect(Buffer *buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
 	void drawIndexedIndirect(Buffer *buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
 
-	void beginDebugUtilsLabel(const VkDebugUtilsLabelEXT *pLabelInfo);
-	void endDebugUtilsLabel();
-	void insertDebugUtilsLabel(const VkDebugUtilsLabelEXT *pLabelInfo);
-
 	// TODO(sugoi): Move ExecutionState out of CommandBuffer (possibly into Device)
 	struct ExecutionState
 	{
 		struct PipelineState
 		{
 			Pipeline *pipeline = nullptr;
-			vk::DescriptorSet::Array descriptorSetObjects = {};
 			vk::DescriptorSet::Bindings descriptorSets = {};
 			vk::DescriptorSet::DynamicOffsets descriptorDynamicOffsets = {};
 		};
 
 		sw::Renderer *renderer = nullptr;
-		sw::CountedEvent *events = nullptr;
+		sw::TaskEvents *events = nullptr;
 		RenderPass *renderPass = nullptr;
 		Framebuffer *renderPassFramebuffer = nullptr;
-		std::array<PipelineState, vk::VK_PIPELINE_BIND_POINT_RANGE_SIZE> pipelineState;
+		std::array<PipelineState, VK_PIPELINE_BIND_POINT_RANGE_SIZE> pipelineState;
 
-		vk::DynamicState dynamicState;
+		struct DynamicState
+		{
+			VkViewport viewport;
+			VkRect2D scissor;
+			sw::Color<float> blendConstants;
+			float depthBiasConstantFactor = 0.0f;
+			float depthBiasClamp = 0.0f;
+			float depthBiasSlopeFactor = 0.0f;
+			float minDepthBounds = 0.0f;
+			float maxDepthBounds = 0.0f;
 
-		vk::Pipeline::PushConstantStorage pushConstants;
+			uint32_t compareMask[2] = { 0 };
+			uint32_t writeMask[2] = { 0 };
+			uint32_t reference[2] = { 0 };
+		};
+		DynamicState dynamicState;
 
+		sw::PushConstantStorage pushConstants;
+
+		struct VertexInputBinding
+		{
+			Buffer *buffer;
+			VkDeviceSize offset;
+		};
 		VertexInputBinding vertexInputBindings[MAX_VERTEX_INPUT_BINDINGS] = {};
 		VertexInputBinding indexBufferBinding;
 		VkIndexType indexType;
 
 		uint32_t subpassIndex = 0;
 
-		void bindAttachments(Attachments *attachments);
+		void bindAttachments(sw::Context &context);
+		void bindVertexInputs(sw::Context &context, int firstInstance);
 	};
 
 	void submit(CommandBuffer::ExecutionState &executionState);
 	void submitSecondary(CommandBuffer::ExecutionState &executionState) const;
 
-	class Command
-	{
-	public:
-		virtual void play(ExecutionState &executionState) = 0;
-		virtual std::string description() = 0;
-		virtual ~Command() {}
-	};
+	class Command;
 
 private:
 	void resetState();
@@ -197,7 +213,7 @@ private:
 	VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
 	// FIXME (b/119409619): replace this vector by an allocator so we can control all memory allocations
-	std::vector<std::unique_ptr<Command>> commands;
+	std::vector<std::unique_ptr<Command>> *commands;
 
 #ifdef ENABLE_VK_DEBUGGER
 	std::shared_ptr<vk::dbg::File> debuggerFile;

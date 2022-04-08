@@ -135,11 +135,13 @@ public:
 	// executable code. After calling, no more reactor functions may be
 	// called without building a new rr::Function or rr::Coroutine.
 	// While automatically called by operator(), finalize() should be called
-	// as soon as possible once the coroutine has been fully built.
-	// finalize() *must* be called explicitly on the same thread that
-	// instantiates the Coroutine instance if operator() is to be invoked on
-	// different threads.
-	inline void finalize(const char *name = "coroutine", const Config::Edit &cfg = Config::Edit::None);
+	// as early as possible to release the global Reactor mutex lock.
+	// It must also be called explicitly on the same thread that instantiates
+	// the Coroutine instance if operator() is invoked on separate threads.
+	// This is because presently, Reactor backends use a global mutex scoped
+	// to the generation of routines, and these must be locked/unlocked on the
+	// same thread.
+	inline void finalize(const Config::Edit &cfg = Config::Edit::None);
 
 	// Starts execution of the coroutine and returns a unique_ptr to a
 	// Stream<> that exposes the await() function for obtaining yielded
@@ -154,26 +156,27 @@ protected:
 
 template<typename Return, typename... Arguments>
 Coroutine<Return(Arguments...)>::Coroutine()
-    : core(new Nucleus())
 {
-	std::vector<Type *> types = { CToReactorT<Arguments>::type()... };
+	core.reset(new Nucleus());
+
+	std::vector<Type *> types = { CToReactorT<Arguments>::getType()... };
 	for(auto type : types)
 	{
-		if(type != Void::type())
+		if(type != Void::getType())
 		{
 			arguments.push_back(type);
 		}
 	}
 
-	Nucleus::createCoroutine(CToReactorT<Return>::type(), arguments);
+	Nucleus::createCoroutine(CToReactorT<Return>::getType(), arguments);
 }
 
 template<typename Return, typename... Arguments>
-void Coroutine<Return(Arguments...)>::finalize(const char *name /*= "coroutine"*/, const Config::Edit &cfg /* = Config::Edit::None */)
+void Coroutine<Return(Arguments...)>::finalize(const Config::Edit &cfg /* = Config::Edit::None */)
 {
 	if(core != nullptr)
 	{
-		routine = core->acquireCoroutine(name, cfg);
+		routine = core->acquireCoroutine("coroutine", cfg);
 		core.reset(nullptr);
 	}
 }

@@ -28,9 +28,9 @@ TransformationSetFunctionControl::TransformationSetFunctionControl(
 }
 
 bool TransformationSetFunctionControl::IsApplicable(
-    opt::IRContext* ir_context, const TransformationContext& /*unused*/) const {
+    opt::IRContext* context, const FactManager& /*unused*/) const {
   opt::Instruction* function_def_instruction =
-      FindFunctionDefInstruction(ir_context);
+      FindFunctionDefInstruction(context);
   if (!function_def_instruction) {
     // The given function id does not correspond to any function.
     return false;
@@ -69,10 +69,10 @@ bool TransformationSetFunctionControl::IsApplicable(
   return true;
 }
 
-void TransformationSetFunctionControl::Apply(
-    opt::IRContext* ir_context, TransformationContext* /*unused*/) const {
+void TransformationSetFunctionControl::Apply(opt::IRContext* context,
+                                             FactManager* /*unused*/) const {
   opt::Instruction* function_def_instruction =
-      FindFunctionDefInstruction(ir_context);
+      FindFunctionDefInstruction(context);
   function_def_instruction->SetInOperand(0, {message_.function_control()});
 }
 
@@ -83,22 +83,17 @@ protobufs::Transformation TransformationSetFunctionControl::ToMessage() const {
 }
 
 opt::Instruction* TransformationSetFunctionControl ::FindFunctionDefInstruction(
-    opt::IRContext* ir_context) const {
+    opt::IRContext* context) const {
   // Look through all functions for a function whose defining instruction's
   // result id matches |message_.function_id|, returning the defining
   // instruction if found.
-  for (auto& function : *ir_context->module()) {
+  for (auto& function : *context->module()) {
     if (function.DefInst().result_id() == message_.function_id()) {
       return &function.DefInst();
     }
   }
   // A nullptr result indicates that no match was found.
   return nullptr;
-}
-
-std::unordered_set<uint32_t> TransformationSetFunctionControl::GetFreshIds()
-    const {
-  return std::unordered_set<uint32_t>();
 }
 
 }  // namespace fuzz

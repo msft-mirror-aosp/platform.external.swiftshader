@@ -15,7 +15,7 @@
 #ifndef VK_BUFFER_VIEW_HPP_
 #define VK_BUFFER_VIEW_HPP_
 
-#include "VkFormat.hpp"
+#include "VkFormat.h"
 #include "VkImageView.hpp"
 #include "VkObject.hpp"
 
@@ -38,8 +38,7 @@ public:
 	uint32_t getRangeInBytes() const { return static_cast<uint32_t>(range); }
 	VkFormat getFormat() const { return format; }
 
-	const Identifier id;
-
+	const uint32_t id = ImageView::nextID++;  // ID space for sampling function cache, shared with imageviews
 private:
 	Buffer *buffer;
 	VkFormat format;

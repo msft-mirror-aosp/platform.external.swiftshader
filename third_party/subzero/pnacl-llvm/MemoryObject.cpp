@@ -9,5 +9,6 @@
 
 #include "llvm/Support/MemoryObject.h"
 using namespace llvm;
-
-MemoryObject::~MemoryObject() {}
+  
+MemoryObject::~MemoryObject() {
+}

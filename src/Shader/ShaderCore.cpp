@@ -276,12 +276,6 @@ namespace sw
 		return sine_pi(y, pp);
 	}
 
-	// Assumes x is a finite floating point value
-	static RValue<Float4> clamp(const Float4 &x, const Float4 &min, const Float4 &max)
-	{
-		return Min(Max(x, min), max);
-	}
-
 	Float4 sine(RValue<Float4> x, bool pp)
 	{
 		// Reduce to [-0.5, 0.5] range
@@ -317,9 +311,6 @@ namespace sw
 			sin = sin * (Abs(sin) * D + C);
 		}
 
-		// TODO(b/151461290): Fix precision loss instead of clamping.
-		sin = clamp(sin, Float4(-1.0f), Float4(1.0f));
-
 		return sin;
 	}
 
@@ -327,12 +318,7 @@ namespace sw
 	{
 		// cos(x) = sin(x + pi/2)
 		Float4 y = x + Float4(1.57079632e+0f);
-		auto cos = sine(y, pp);
-		
-		// TODO(b/151461290): Fix precision loss instead of clamping.
-		cos = clamp(cos, Float4(-1.0f), Float4(1.0f));
-		
-		return cos;
+		return sine(y, pp);
 	}
 
 	Float4 tangent(RValue<Float4> x, bool pp)

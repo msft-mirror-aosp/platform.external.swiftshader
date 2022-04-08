@@ -365,14 +365,27 @@ void TargetLowering::doAddressOpt() {
   else if (llvm::isa<InstStore>(*Context.getCur()))
     doAddressOptStore();
   else if (auto *Intrinsic =
-               llvm::dyn_cast<InstIntrinsic>(&*Context.getCur())) {
-    if (Intrinsic->getIntrinsicID() == Intrinsics::LoadSubVector)
+               llvm::dyn_cast<InstIntrinsicCall>(&*Context.getCur())) {
+    if (Intrinsic->getIntrinsicInfo().ID == Intrinsics::LoadSubVector)
       doAddressOptLoadSubVector();
-    else if (Intrinsic->getIntrinsicID() == Intrinsics::StoreSubVector)
+    else if (Intrinsic->getIntrinsicInfo().ID == Intrinsics::StoreSubVector)
       doAddressOptStoreSubVector();
   }
   Context.advanceCur();
   Context.advanceNext();
+}
+
+void TargetLowering::doNopInsertion(RandomNumberGenerator &RNG) {
+  Inst *I = iteratorToInst(Context.getCur());
+  bool ShouldSkip = llvm::isa<InstFakeUse>(I) || llvm::isa<InstFakeDef>(I) ||
+                    llvm::isa<InstFakeKill>(I) || I->isRedundantAssign() ||
+                    I->isDeleted();
+  if (!ShouldSkip) {
+    int Probability = getFlags().getNopProbabilityAsPercentage();
+    for (int I = 0; I < getFlags().getMaxNopsPerInstruction(); ++I) {
+      randomlyInsertNop(Probability / 100.0, RNG);
+    }
+  }
 }
 
 // Lowers a single instruction according to the information in Context, by
@@ -431,11 +444,11 @@ void TargetLowering::lower() {
     case Inst::InsertElement:
       lowerInsertElement(llvm::cast<InstInsertElement>(Instr));
       break;
-    case Inst::Intrinsic: {
-      auto *Intrinsic = llvm::cast<InstIntrinsic>(Instr);
-      if (Intrinsic->getIntrinsicInfo().ReturnsTwice)
+    case Inst::IntrinsicCall: {
+      auto *Call = llvm::cast<InstIntrinsicCall>(Instr);
+      if (Call->getIntrinsicInfo().ReturnsTwice)
         setCallsReturnsTwice(true);
-      lowerIntrinsic(Intrinsic);
+      lowerIntrinsicCall(Call);
       break;
     }
     case Inst::Load:
@@ -511,7 +524,7 @@ void TargetLowering::regAlloc(RegAllocKind Kind) {
   CfgSet<Variable *> EmptySet;
   do {
     LinearScan.init(Kind, EmptySet);
-    LinearScan.scan(RegMask);
+    LinearScan.scan(RegMask, getFlags().getRandomizeRegisterAllocation());
     if (!LinearScan.hasEvictions())
       Repeat = false;
     Kind = RAK_SecondChance;
@@ -554,7 +567,7 @@ CfgVector<Inst *> getInstructionsInRange(CfgNode *Node, InstNumberT Start,
   // instructions.
   return Result;
 }
-} // namespace
+}
 
 void TargetLowering::postRegallocSplitting(const SmallBitVector &RegMask) {
   // Splits the live ranges of global(/multi block) variables and runs the
@@ -640,7 +653,7 @@ void TargetLowering::postRegallocSplitting(const SmallBitVector &RegMask) {
   // Run the register allocator with all these new variables included
   LinearScan RegAlloc(Func);
   RegAlloc.init(RAK_Global, SplitCandidates);
-  RegAlloc.scan(RegMask);
+  RegAlloc.scan(RegMask, getFlags().getRandomizeRegisterAllocation());
 
   // Modify the Cfg to use the new variables that now have registers.
   for (auto *ExtraVar : ExtraVars) {
@@ -942,11 +955,9 @@ void TargetLowering::scalarizeArithmetic(InstArithmetic::OpKind Kind,
                                          Variable *Dest, Operand *Src0,
                                          Operand *Src1) {
   scalarizeInstruction(
-      Dest,
-      [this, Kind](Variable *Dest, Operand *Src0, Operand *Src1) {
+      Dest, [this, Kind](Variable *Dest, Operand *Src0, Operand *Src1) {
         return Context.insert<InstArithmetic>(Kind, Dest, Src0, Src1);
-      },
-      Src0, Src1);
+      }, Src0, Src1);
 }
 
 void TargetLowering::emitWithoutPrefix(const ConstantRelocatable *C,

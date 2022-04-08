@@ -24,34 +24,23 @@ TransformationAddGlobalVariable::TransformationAddGlobalVariable(
     : message_(message) {}
 
 TransformationAddGlobalVariable::TransformationAddGlobalVariable(
-    uint32_t fresh_id, uint32_t type_id, SpvStorageClass storage_class,
-    uint32_t initializer_id, bool value_is_irrelevant) {
+    uint32_t fresh_id, uint32_t type_id, uint32_t initializer_id,
+    bool value_is_irrelevant) {
   message_.set_fresh_id(fresh_id);
   message_.set_type_id(type_id);
-  message_.set_storage_class(storage_class);
   message_.set_initializer_id(initializer_id);
   message_.set_value_is_irrelevant(value_is_irrelevant);
 }
 
 bool TransformationAddGlobalVariable::IsApplicable(
-    opt::IRContext* ir_context, const TransformationContext& /*unused*/) const {
+    opt::IRContext* context,
+    const spvtools::fuzz::FactManager& /*unused*/) const {
   // The result id must be fresh.
-  if (!fuzzerutil::IsFreshId(ir_context, message_.fresh_id())) {
+  if (!fuzzerutil::IsFreshId(context, message_.fresh_id())) {
     return false;
   }
-
-  // The storage class must be Private or Workgroup.
-  auto storage_class = static_cast<SpvStorageClass>(message_.storage_class());
-  switch (storage_class) {
-    case SpvStorageClassPrivate:
-    case SpvStorageClassWorkgroup:
-      break;
-    default:
-      assert(false && "Unsupported storage class.");
-      return false;
-  }
   // The type id must correspond to a type.
-  auto type = ir_context->get_type_mgr()->GetType(message_.type_id());
+  auto type = context->get_type_mgr()->GetType(message_.type_id());
   if (!type) {
     return false;
   }
@@ -60,53 +49,63 @@ bool TransformationAddGlobalVariable::IsApplicable(
   if (!pointer_type) {
     return false;
   }
-  // ... with the right storage class.
-  if (pointer_type->storage_class() != storage_class) {
+  // ... with Private storage class.
+  if (pointer_type->storage_class() != SpvStorageClassPrivate) {
     return false;
   }
-  if (message_.initializer_id()) {
-    // An initializer is not allowed if the storage class is Workgroup.
-    if (storage_class == SpvStorageClassWorkgroup) {
-      assert(false &&
-             "By construction this transformation should not have an "
-             "initializer when Workgroup storage class is used.");
-      return false;
-    }
-    // The initializer id must be the id of a constant.  Check this with the
-    // constant manager.
-    auto constant_id = ir_context->get_constant_mgr()->GetConstantsFromIds(
-        {message_.initializer_id()});
-    if (constant_id.empty()) {
-      return false;
-    }
-    assert(constant_id.size() == 1 &&
-           "We asked for the constant associated with a single id; we should "
-           "get a single constant.");
-    // The type of the constant must match the pointee type of the pointer.
-    if (pointer_type->pointee_type() != constant_id[0]->type()) {
-      return false;
-    }
+  // The initializer id must be the id of a constant.  Check this with the
+  // constant manager.
+  auto constant_id = context->get_constant_mgr()->GetConstantsFromIds(
+      {message_.initializer_id()});
+  if (constant_id.empty()) {
+    return false;
+  }
+  assert(constant_id.size() == 1 &&
+         "We asked for the constant associated with a single id; we should "
+         "get a single constant.");
+  // The type of the constant must match the pointee type of the pointer.
+  if (pointer_type->pointee_type() != constant_id[0]->type()) {
+    return false;
   }
   return true;
 }
 
 void TransformationAddGlobalVariable::Apply(
-    opt::IRContext* ir_context,
-    TransformationContext* transformation_context) const {
-  fuzzerutil::AddGlobalVariable(
-      ir_context, message_.fresh_id(), message_.type_id(),
-      static_cast<SpvStorageClass>(message_.storage_class()),
-      message_.initializer_id());
+    opt::IRContext* context, spvtools::fuzz::FactManager* fact_manager) const {
+  opt::Instruction::OperandList input_operands;
+  input_operands.push_back(
+      {SPV_OPERAND_TYPE_STORAGE_CLASS, {SpvStorageClassPrivate}});
+  if (message_.initializer_id()) {
+    input_operands.push_back(
+        {SPV_OPERAND_TYPE_ID, {message_.initializer_id()}});
+  }
+  context->module()->AddGlobalValue(
+      MakeUnique<opt::Instruction>(context, SpvOpVariable, message_.type_id(),
+                                   message_.fresh_id(), input_operands));
+  fuzzerutil::UpdateModuleIdBound(context, message_.fresh_id());
+
+  if (PrivateGlobalsMustBeDeclaredInEntryPointInterfaces(context)) {
+    // Conservatively add this global to the interface of every entry point in
+    // the module.  This means that the global is available for other
+    // transformations to use.
+    //
+    // A downside of this is that the global will be in the interface even if it
+    // ends up never being used.
+    //
+    // TODO(https://github.com/KhronosGroup/SPIRV-Tools/issues/3111) revisit
+    //  this if a more thorough approach to entry point interfaces is taken.
+    for (auto& entry_point : context->module()->entry_points()) {
+      entry_point.AddOperand({SPV_OPERAND_TYPE_ID, {message_.fresh_id()}});
+    }
+  }
+
+  if (message_.value_is_irrelevant()) {
+    fact_manager->AddFactValueOfPointeeIsIrrelevant(message_.fresh_id());
+  }
 
   // We have added an instruction to the module, so need to be careful about the
   // validity of existing analyses.
-  ir_context->InvalidateAnalysesExceptFor(
-      opt::IRContext::Analysis::kAnalysisNone);
-
-  if (message_.value_is_irrelevant()) {
-    transformation_context->GetFactManager()->AddFactValueOfPointeeIsIrrelevant(
-        message_.fresh_id());
-  }
+  context->InvalidateAnalysesExceptFor(opt::IRContext::Analysis::kAnalysisNone);
 }
 
 protobufs::Transformation TransformationAddGlobalVariable::ToMessage() const {
@@ -115,9 +114,21 @@ protobufs::Transformation TransformationAddGlobalVariable::ToMessage() const {
   return result;
 }
 
-std::unordered_set<uint32_t> TransformationAddGlobalVariable::GetFreshIds()
-    const {
-  return {message_.fresh_id()};
+bool TransformationAddGlobalVariable::
+    PrivateGlobalsMustBeDeclaredInEntryPointInterfaces(
+        opt::IRContext* context) {
+  // TODO(afd): We capture the universal environments for which this requirement
+  //  holds.  The check should be refined on demand for other target
+  //  environments.
+  switch (context->grammar().target_env()) {
+    case SPV_ENV_UNIVERSAL_1_0:
+    case SPV_ENV_UNIVERSAL_1_1:
+    case SPV_ENV_UNIVERSAL_1_2:
+    case SPV_ENV_UNIVERSAL_1_3:
+      return false;
+    default:
+      return true;
+  }
 }
 
 }  // namespace fuzz

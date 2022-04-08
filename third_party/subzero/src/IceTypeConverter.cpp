@@ -57,4 +57,4 @@ Type TypeConverter::convertToIceTypeOther(llvm::Type *LLVMTy) const {
   }
 }
 
-} // namespace Ice
+} // end of Ice namespace.

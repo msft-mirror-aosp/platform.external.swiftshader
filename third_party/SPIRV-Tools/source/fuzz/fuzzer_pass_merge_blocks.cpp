@@ -22,11 +22,10 @@ namespace spvtools {
 namespace fuzz {
 
 FuzzerPassMergeBlocks::FuzzerPassMergeBlocks(
-    opt::IRContext* ir_context, TransformationContext* transformation_context,
+    opt::IRContext* ir_context, FactManager* fact_manager,
     FuzzerContext* fuzzer_context,
     protobufs::TransformationSequence* transformations)
-    : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations) {}
+    : FuzzerPass(ir_context, fact_manager, fuzzer_context, transformations) {}
 
 FuzzerPassMergeBlocks::~FuzzerPassMergeBlocks() = default;
 
@@ -45,17 +44,20 @@ void FuzzerPassMergeBlocks::Apply() {
       // For other blocks, we add a transformation to merge the block into its
       // predecessor if that transformation would be applicable.
       TransformationMergeBlocks transformation(block.id());
-      if (transformation.IsApplicable(GetIRContext(),
-                                      *GetTransformationContext())) {
+      if (transformation.IsApplicable(GetIRContext(), *GetFactManager())) {
         potential_transformations.push_back(transformation);
       }
     }
   }
 
   while (!potential_transformations.empty()) {
-    auto transformation =
-        GetFuzzerContext()->RemoveAtRandomIndex(&potential_transformations);
-    MaybeApplyTransformation(transformation);
+    uint32_t index = GetFuzzerContext()->RandomIndex(potential_transformations);
+    auto transformation = potential_transformations.at(index);
+    potential_transformations.erase(potential_transformations.begin() + index);
+    if (transformation.IsApplicable(GetIRContext(), *GetFactManager())) {
+      transformation.Apply(GetIRContext(), GetFactManager());
+      *GetTransformations()->add_transformation() = transformation.ToMessage();
+    }
   }
 }
 

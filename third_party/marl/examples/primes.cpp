@@ -20,8 +20,6 @@
 #include "marl/thread.h"
 #include "marl/ticket.h"
 
-#include <vector>
-
 #include <math.h>
 
 // searchMax defines the upper limit on primes to find.
@@ -44,7 +42,8 @@ bool isPrime(int i) {
 int main() {
   // Create a marl scheduler using the full number of logical cpus.
   // Bind this scheduler to the main thread so we can call marl::schedule()
-  marl::Scheduler scheduler(marl::Scheduler::Config::allCores());
+  marl::Scheduler scheduler;
+  scheduler.setWorkerThreadCount(marl::Thread::numLogicalCPUs());
   scheduler.bind();
   defer(scheduler.unbind());  // unbind before destructing the scheduler.
 

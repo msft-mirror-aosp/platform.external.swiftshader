@@ -15,17 +15,15 @@
 #ifndef VK_DEVICE_MEMORY_HPP_
 #define VK_DEVICE_MEMORY_HPP_
 
-#include "VkConfig.hpp"
+#include "VkConfig.h"
 #include "VkObject.hpp"
 
 namespace vk {
 
-class Device;
-
 class DeviceMemory : public Object<DeviceMemory, VkDeviceMemory>
 {
 public:
-	DeviceMemory(const VkMemoryAllocateInfo *pCreateInfo, void *mem, Device *pDevice);
+	DeviceMemory(const VkMemoryAllocateInfo *pCreateInfo, void *mem);
 
 	static size_t ComputeRequiredAllocationSize(const VkMemoryAllocateInfo *pCreateInfo);
 
@@ -34,12 +32,8 @@ public:
 #endif
 
 #if SWIFTSHADER_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER
-	VkResult exportAndroidHardwareBuffer(struct AHardwareBuffer **pAhb) const;
-	static VkResult GetAndroidHardwareBufferProperties(VkDevice &device, const struct AHardwareBuffer *buffer, VkAndroidHardwareBufferPropertiesANDROID *pProperties);
-#endif
-
-#if VK_USE_PLATFORM_FUCHSIA
-	VkResult exportHandle(zx_handle_t *pHandle) const;
+	VkResult exportAhb(struct AHardwareBuffer **pAhb) const;
+	static VkResult getAhbProperties(const struct AHardwareBuffer *buffer, VkAndroidHardwareBufferPropertiesANDROID *pProperties);
 #endif
 
 	void destroy(const VkAllocationCallbacks *pAllocator);
@@ -57,16 +51,11 @@ public:
 	// Internal implementation class for external memory. Platform-specific.
 	class ExternalBase;
 
-	bool hasExternalImageProperties() const;
-	int externalImageRowPitchBytes(VkImageAspectFlagBits aspect) const;
-	VkDeviceSize externalImageMemoryOffset(VkImageAspectFlagBits aspect) const;
-
 private:
 	void *buffer = nullptr;
 	VkDeviceSize size = 0;
 	uint32_t memoryTypeIndex = 0;
 	ExternalBase *external = nullptr;
-	Device *device;
 };
 
 static inline DeviceMemory *Cast(VkDeviceMemory object)

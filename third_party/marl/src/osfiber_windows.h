@@ -64,10 +64,10 @@ OSFiber::~OSFiber() {
 Allocator::unique_ptr<OSFiber> OSFiber::createFiberFromCurrentThread(
     Allocator* allocator) {
   auto out = allocator->make_unique<OSFiber>();
-  out->fiber = ConvertThreadToFiberEx(nullptr, FIBER_FLAG_FLOAT_SWITCH);
+  out->fiber = ConvertThreadToFiber(nullptr);
   out->isFiberFromThread = true;
   MARL_ASSERT(out->fiber != nullptr,
-              "ConvertThreadToFiberEx() failed with error 0x%x",
+              "ConvertThreadToFiber() failed with error 0x%x",
               int(GetLastError()));
   return out;
 }
@@ -77,12 +77,9 @@ Allocator::unique_ptr<OSFiber> OSFiber::createFiber(
     size_t stackSize,
     const std::function<void()>& func) {
   auto out = allocator->make_unique<OSFiber>();
-  // stackSize is rounded up to the system's allocation granularity (typically
-  // 64 KB).
-  out->fiber = CreateFiberEx(stackSize - 1, stackSize, FIBER_FLAG_FLOAT_SWITCH,
-                             &OSFiber::run, out.get());
+  out->fiber = CreateFiber(stackSize, &OSFiber::run, out.get());
   out->target = func;
-  MARL_ASSERT(out->fiber != nullptr, "CreateFiberEx() failed with error 0x%x",
+  MARL_ASSERT(out->fiber != nullptr, "CreateFiber() failed with error 0x%x",
               int(GetLastError()));
   return out;
 }

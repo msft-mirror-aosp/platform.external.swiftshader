@@ -149,7 +149,8 @@ constexpr float cy = 0.156f;
 int main() {
   // Create a marl scheduler using the full number of logical cpus.
   // Bind this scheduler to the main thread so we can call marl::schedule()
-  marl::Scheduler scheduler(marl::Scheduler::Config::allCores());
+  marl::Scheduler scheduler;
+  scheduler.setWorkerThreadCount(marl::Thread::numLogicalCPUs());
   scheduler.bind();
   defer(scheduler.unbind());  // unbind before destructing the scheduler.
 

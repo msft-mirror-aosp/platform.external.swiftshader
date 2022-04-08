@@ -186,9 +186,6 @@ namespace sw
 
 		virtual ~VertexProcessor();
 
-		void *operator new(size_t size);
-		void operator delete(void *mem);
-
 		void setInputStream(int index, const Stream &stream);
 		void resetInputStreams(bool preTransformed);
 

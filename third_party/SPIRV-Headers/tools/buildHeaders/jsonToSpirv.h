@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2020 The Khronos Group Inc.
+// Copyright (c) 2014-2019 The Khronos Group Inc.
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and/or associated documentation files (the "Materials"),
@@ -51,7 +51,6 @@ enum OperandClass {
     OperandVariableLiterals,
     OperandVariableIdLiteral,
     OperandVariableLiteralId,
-    OperandAnySizeLiteralNumber,
     OperandLiteralNumber,
     OperandLiteralString,
     OperandSource,
@@ -69,8 +68,6 @@ enum OperandClass {
     OperandImageOperands,
     OperandFPFastMath,
     OperandFPRoundingMode,
-    OperandFPDenormMode,
-    OperandFPOperationMode,
     OperandLinkageType,
     OperandAccessQualifier,
     OperandFuncParamAttr,
@@ -82,15 +79,10 @@ enum OperandClass {
     OperandMemorySemantics,
     OperandMemoryOperands,
     OperandScope,
-    OperandGroupOperation,
+	OperandGroupOperation,
     OperandKernelEnqueueFlags,
     OperandKernelProfilingInfo,
     OperandCapability,
-    OperandRayFlags,
-    OperandRayQueryIntersection,
-    OperandRayQueryCommittedIntersectionType,
-    OperandRayQueryCandidateIntersectionType,
-    OperandFragmentShadingRate,
 
     OperandOpcode,
 

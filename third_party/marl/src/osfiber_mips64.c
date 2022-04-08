@@ -16,14 +16,10 @@
 
 #include "osfiber_asm_mips64.h"
 
-#include "marl/export.h"
-
-MARL_EXPORT
 void marl_fiber_trampoline(void (*target)(void*), void* arg) {
   target(arg);
 }
 
-MARL_EXPORT
 void marl_fiber_set_target(struct marl_fiber_context* ctx,
                            void* stack,
                            uint32_t stack_size,
@@ -36,4 +32,4 @@ void marl_fiber_set_target(struct marl_fiber_context* ctx,
   ctx->sp = ((uintptr_t)stack_top) & ~(uintptr_t)15;
 }
 
-#endif  // defined(__mips__) && _MIPS_SIM == _ABI64
+#endif // defined(__mips__) && _MIPS_SIM == _ABI64

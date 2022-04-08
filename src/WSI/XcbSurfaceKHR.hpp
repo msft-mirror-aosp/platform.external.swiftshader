@@ -17,8 +17,7 @@
 
 #include "VkSurfaceKHR.hpp"
 #include "Vulkan/VkObject.hpp"
-
-#include <vulkan/vulkan_xcb.h>
+#include "vulkan/vulkan_xcb.h"
 #include <xcb/xcb.h>
 
 #include <unordered_map>
@@ -34,13 +33,11 @@ public:
 
 	static size_t ComputeRequiredAllocationSize(const VkXcbSurfaceCreateInfoKHR *pCreateInfo);
 
-	VkResult getSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities) const override;
+	void getSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities) const override;
 
 	virtual void attachImage(PresentImage *image) override;
 	virtual void detachImage(PresentImage *image) override;
 	VkResult present(PresentImage *image) override;
-
-	static bool hasLibXCB();
 
 private:
 	xcb_connection_t *connection;

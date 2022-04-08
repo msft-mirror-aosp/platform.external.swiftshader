@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #include "source/fuzz/transformation_set_selection_control.h"
-
-#include "gtest/gtest.h"
-#include "source/fuzz/fuzzer_util.h"
 #include "test/fuzz/fuzz_test_util.h"
 
 namespace spvtools {
@@ -105,49 +102,40 @@ TEST(TransformationSetSelectionControlTest, VariousScenarios) {
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
 
-  spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(
-      MakeUnique<FactManager>(context.get()), validator_options);
+  FactManager fact_manager;
+
   // %44 is not a block
   ASSERT_FALSE(
       TransformationSetSelectionControl(44, SpvSelectionControlFlattenMask)
-          .IsApplicable(context.get(), transformation_context));
+          .IsApplicable(context.get(), fact_manager));
   // %13 does not end with OpSelectionMerge
   ASSERT_FALSE(
       TransformationSetSelectionControl(13, SpvSelectionControlMaskNone)
-          .IsApplicable(context.get(), transformation_context));
+          .IsApplicable(context.get(), fact_manager));
   // %10 ends in OpLoopMerge, not OpSelectionMerge
   ASSERT_FALSE(
       TransformationSetSelectionControl(10, SpvSelectionControlMaskNone)
-          .IsApplicable(context.get(), transformation_context));
+          .IsApplicable(context.get(), fact_manager));
 
   TransformationSetSelectionControl transformation1(
       11, SpvSelectionControlDontFlattenMask);
-  ASSERT_TRUE(
-      transformation1.IsApplicable(context.get(), transformation_context));
-  ApplyAndCheckFreshIds(transformation1, context.get(),
-                        &transformation_context);
+  ASSERT_TRUE(transformation1.IsApplicable(context.get(), fact_manager));
+  transformation1.Apply(context.get(), &fact_manager);
 
   TransformationSetSelectionControl transformation2(
       23, SpvSelectionControlFlattenMask);
-  ASSERT_TRUE(
-      transformation2.IsApplicable(context.get(), transformation_context));
-  ApplyAndCheckFreshIds(transformation2, context.get(),
-                        &transformation_context);
+  ASSERT_TRUE(transformation2.IsApplicable(context.get(), fact_manager));
+  transformation2.Apply(context.get(), &fact_manager);
 
   TransformationSetSelectionControl transformation3(
       31, SpvSelectionControlMaskNone);
-  ASSERT_TRUE(
-      transformation3.IsApplicable(context.get(), transformation_context));
-  ApplyAndCheckFreshIds(transformation3, context.get(),
-                        &transformation_context);
+  ASSERT_TRUE(transformation3.IsApplicable(context.get(), fact_manager));
+  transformation3.Apply(context.get(), &fact_manager);
 
   TransformationSetSelectionControl transformation4(
       31, SpvSelectionControlFlattenMask);
-  ASSERT_TRUE(
-      transformation4.IsApplicable(context.get(), transformation_context));
-  ApplyAndCheckFreshIds(transformation4, context.get(),
-                        &transformation_context);
+  ASSERT_TRUE(transformation4.IsApplicable(context.get(), fact_manager));
+  transformation4.Apply(context.get(), &fact_manager);
 
   std::string after_transformation = R"(
                OpCapability Shader

@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <cstdlib>
 #include <stdint.h>
+#include <cstdlib>
 
 #include "test_global.h"
 

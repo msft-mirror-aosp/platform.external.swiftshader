@@ -23,22 +23,22 @@ namespace dbg {
 
 Thread::Thread(ID id, Context *ctx)
     : id(id)
-    , ctx(ctx)
+    , broadcast(ctx->broadcast())
 {}
 
 void Thread::setName(const std::string &name)
 {
-	marl::lock lock(mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 	name_ = name;
 }
 
 std::string Thread::name() const
 {
-	marl::lock lock(mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 	return name_;
 }
 
-void Thread::onLocationUpdate(marl::lock &lock)
+void Thread::onLocationUpdate(std::unique_lock<std::mutex> &lock)
 {
 	auto location = frames.back()->location;
 
@@ -46,7 +46,7 @@ void Thread::onLocationUpdate(marl::lock &lock)
 	{
 		if(location.file->hasBreakpoint(location.line))
 		{
-			ctx->serverEventBroadcast()->onLineBreakpointHit(id);
+			broadcast->onLineBreakpointHit(id);
 			state_ = State::Paused;
 		}
 	}
@@ -55,29 +55,18 @@ void Thread::onLocationUpdate(marl::lock &lock)
 	{
 		case State::Paused:
 		{
-			lock.wait(stateCV, [this]() REQUIRES(mutex) { return state_ != State::Paused; });
+			stateCV.wait(lock, [this] { return state_ != State::Paused; });
 			break;
 		}
 
 		case State::Stepping:
 		{
-			bool pause = false;
-
+			if(!pauseAtFrame || pauseAtFrame == frames.back())
 			{
-				auto frame = pauseAtFrame.lock();
-				pause = !frame;             // Pause if there's no pause-at-frame...
-				if(frame == frames.back())  // ... or if we've reached the pause-at-frame
-				{
-					pause = true;
-					pauseAtFrame.reset();
-				}
-			}
-
-			if(pause)
-			{
-				ctx->serverEventBroadcast()->onThreadStepped(id);
+				broadcast->onThreadStepped(id);
 				state_ = State::Paused;
-				lock.wait(stateCV, [this]() REQUIRES(mutex) { return state_ != State::Paused; });
+				stateCV.wait(lock, [this] { return state_ != State::Paused; });
+				pauseAtFrame = 0;
 			}
 			break;
 		}
@@ -87,70 +76,47 @@ void Thread::onLocationUpdate(marl::lock &lock)
 	}
 }
 
-void Thread::enter(const std::shared_ptr<File> &file, const std::string &function, const UpdateFrame &f)
+void Thread::enter(Context::Lock &ctxlck, const std::shared_ptr<File> &file, const std::string &function)
 {
-	std::shared_ptr<Frame> frame;
-	bool isFunctionBreakpoint;
+	auto frame = ctxlck.createFrame(file, function);
+	auto isFunctionBreakpoint = ctxlck.isFunctionBreakpoint(function);
+
+	std::unique_lock<std::mutex> lock(mutex);
+	frames.push_back(frame);
+	if(isFunctionBreakpoint)
 	{
-		auto lock = ctx->lock();
-		frame = lock.createFrame(file, function);
-		isFunctionBreakpoint = lock.isFunctionBreakpoint(function);
-	}
-
-	{
-		marl::lock lock(mutex);
-		frames.push_back(frame);
-
-		if(f) { f(*frame); }
-
-		if(isFunctionBreakpoint)
-		{
-			ctx->serverEventBroadcast()->onFunctionBreakpointHit(id);
-			state_ = State::Paused;
-		}
-
-		onLocationUpdate(lock);
+		broadcast->onFunctionBreakpointHit(id);
+		state_ = State::Paused;
 	}
 }
 
-void Thread::exit(bool isStep /* = false */)
+void Thread::exit()
 {
-	marl::lock lock(mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 	frames.pop_back();
-	if(isStep)
-	{
-		onLocationUpdate(lock);
-	}
 }
 
-void Thread::update(bool isStep, const UpdateFrame &f)
+void Thread::update(std::function<void(Frame &)> f)
 {
-	marl::lock lock(mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 	auto &frame = *frames.back();
-	if(isStep)
+	auto oldLocation = frame.location;
+	f(frame);
+	if(frame.location != oldLocation)
 	{
-		auto oldLocation = frame.location;
-		f(frame);
-		if(frame.location != oldLocation)
-		{
-			onLocationUpdate(lock);
-		}
-	}
-	else
-	{
-		f(frame);
+		onLocationUpdate(lock);
 	}
 }
 
 Frame Thread::frame() const
 {
-	marl::lock lock(mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 	return *frames.back();
 }
 
 std::vector<Frame> Thread::stack() const
 {
-	marl::lock lock(mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 	std::vector<Frame> out;
 	out.reserve(frames.size());
 	for(auto frame : frames)
@@ -160,36 +126,29 @@ std::vector<Frame> Thread::stack() const
 	return out;
 }
 
-size_t Thread::depth() const
-{
-	marl::lock lock(mutex);
-	return frames.size();
-}
-
 Thread::State Thread::state() const
 {
-	marl::lock lock(mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 	return state_;
 }
 
 void Thread::resume()
 {
-	{
-		marl::lock lock(mutex);
-		state_ = State::Running;
-	}
+	std::unique_lock<std::mutex> lock(mutex);
+	state_ = State::Running;
+	lock.unlock();
 	stateCV.notify_all();
 }
 
 void Thread::pause()
 {
-	marl::lock lock(mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 	state_ = State::Paused;
 }
 
 void Thread::stepIn()
 {
-	marl::lock lock(mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 	state_ = State::Stepping;
 	pauseAtFrame.reset();
 	stateCV.notify_all();
@@ -197,7 +156,7 @@ void Thread::stepIn()
 
 void Thread::stepOver()
 {
-	marl::lock lock(mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 	state_ = State::Stepping;
 	pauseAtFrame = frames.back();
 	stateCV.notify_all();
@@ -205,9 +164,9 @@ void Thread::stepOver()
 
 void Thread::stepOut()
 {
-	marl::lock lock(mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 	state_ = State::Stepping;
-	pauseAtFrame = (frames.size() > 1) ? frames[frames.size() - 2] : nullptr;
+	pauseAtFrame = (frames.size() > 1) ? frames[frames.size() - 1] : nullptr;
 	stateCV.notify_all();
 }
 

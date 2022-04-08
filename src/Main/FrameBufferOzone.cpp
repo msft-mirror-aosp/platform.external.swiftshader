@@ -47,3 +47,8 @@ namespace sw
 		copy(source);
 	}
 }
+
+NO_SANITIZE_FUNCTION sw::FrameBuffer *createFrameBuffer(void* display, intptr_t window, int width, int height)
+{
+	return new sw::FrameBufferOzone((intptr_t)display, window, width, height);
+}

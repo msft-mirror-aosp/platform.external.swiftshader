@@ -25,8 +25,7 @@ namespace fuzz {
 // are known not to affect the module's overall behaviour.
 class FuzzerPassAddStores : public FuzzerPass {
  public:
-  FuzzerPassAddStores(opt::IRContext* ir_context,
-                      TransformationContext* transformation_context,
+  FuzzerPassAddStores(opt::IRContext* ir_context, FactManager* fact_manager,
                       FuzzerContext* fuzzer_context,
                       protobufs::TransformationSequence* transformations);
 

@@ -19,14 +19,12 @@
 
 namespace vk {
 
-class DebugUtilsMessenger;
-
 class Instance
 {
 public:
 	static constexpr VkSystemAllocationScope GetAllocationScope() { return VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE; }
 
-	Instance(const VkInstanceCreateInfo *pCreateInfo, void *mem, VkPhysicalDevice physicalDevice, DebugUtilsMessenger *messenger);
+	Instance(const VkInstanceCreateInfo *pCreateInfo, void *mem, VkPhysicalDevice physicalDevice);
 	void destroy(const VkAllocationCallbacks *pAllocator);
 
 	static size_t ComputeRequiredAllocationSize(const VkInstanceCreateInfo *) { return 0; }
@@ -35,11 +33,8 @@ public:
 	VkResult getPhysicalDeviceGroups(uint32_t *pPhysicalDeviceGroupCount,
 	                                 VkPhysicalDeviceGroupProperties *pPhysicalDeviceGroupProperties) const;
 
-	void submitDebugUtilsMessage(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData);
-
 private:
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-	DebugUtilsMessenger *messenger = nullptr;
 };
 
 using DispatchableInstance = DispatchableObject<Instance, VkInstance>;

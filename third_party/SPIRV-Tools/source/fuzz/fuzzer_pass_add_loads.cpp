@@ -21,16 +21,15 @@ namespace spvtools {
 namespace fuzz {
 
 FuzzerPassAddLoads::FuzzerPassAddLoads(
-    opt::IRContext* ir_context, TransformationContext* transformation_context,
+    opt::IRContext* ir_context, FactManager* fact_manager,
     FuzzerContext* fuzzer_context,
     protobufs::TransformationSequence* transformations)
-    : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations) {}
+    : FuzzerPass(ir_context, fact_manager, fuzzer_context, transformations) {}
 
 FuzzerPassAddLoads::~FuzzerPassAddLoads() = default;
 
 void FuzzerPassAddLoads::Apply() {
-  ForEachInstructionWithInstructionDescriptor(
+  MaybeAddTransformationBeforeEachInstruction(
       [this](opt::Function* function, opt::BasicBlock* block,
              opt::BasicBlock::iterator inst_it,
              const protobufs::InstructionDescriptor& instruction_descriptor)
@@ -60,7 +59,7 @@ void FuzzerPassAddLoads::Apply() {
                   if (!instruction->result_id() || !instruction->type_id()) {
                     return false;
                   }
-                  switch (instruction->opcode()) {
+                  switch (instruction->result_id()) {
                     case SpvOpConstantNull:
                     case SpvOpUndef:
                       // Do not allow loading from a null or undefined pointer;

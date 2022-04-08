@@ -8,7 +8,7 @@
 // Generated from the TEXTINCLUDE 2 resource.
 //
 #include <windows.h>
-#include "Version.hpp"
+#include "Version.h"
 
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
@@ -36,7 +36,7 @@ END
 2 TEXTINCLUDE
 BEGIN
     "#include ""afxres.h""\r\n"
-    "#include ""Version.hpp""\0"
+    "#include ""Version.h""\0"
 END
 
 3 TEXTINCLUDE

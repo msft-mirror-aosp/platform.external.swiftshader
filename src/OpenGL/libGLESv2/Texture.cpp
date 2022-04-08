@@ -720,11 +720,6 @@ bool Texture2D::isBaseLevelDefined() const
 // Tests for 2D texture sampling completeness. [OpenGL ES 3.0.5] section 3.8.13 page 160.
 bool Texture2D::isSamplerComplete(Sampler *sampler) const
 {
-	if(mImmutableFormat == GL_TRUE)
-	{
-		return true;
-	}
-
 	if(!isBaseLevelDefined())
 	{
 		return false;
@@ -1109,11 +1104,6 @@ bool TextureCubeMap::isBaseLevelDefined() const
 // Tests for cube map sampling completeness. [OpenGL ES 3.0.5] section 3.8.13 page 161.
 bool TextureCubeMap::isSamplerComplete(Sampler *sampler) const
 {
-	if(mImmutableFormat == GL_TRUE)
-	{
-		return true;
-	}
-
 	if(!isBaseLevelDefined())
 	{
 		return false;
@@ -1748,11 +1738,6 @@ bool Texture3D::isBaseLevelDefined() const
 // Tests for 3D texture sampling completeness. [OpenGL ES 3.0.5] section 3.8.13 page 160.
 bool Texture3D::isSamplerComplete(Sampler *sampler) const
 {
-	if(mImmutableFormat == GL_TRUE)
-	{
-		return true;
-	}
-
 	if(!isBaseLevelDefined())
 	{
 		return false;

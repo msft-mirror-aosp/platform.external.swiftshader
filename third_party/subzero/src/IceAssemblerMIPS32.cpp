@@ -737,9 +737,7 @@ void AssemblerMIPS32::lw(const Operand *OpRt, const Operand *OpBase,
     emitFtRsImm16(Opcode, OpRt, OpBase, Offset, "ldc1");
     break;
   }
-  default: {
-    UnimplementedError(getFlags());
-  }
+  default: { UnimplementedError(getFlags()); }
   }
 }
 
@@ -827,9 +825,7 @@ void AssemblerMIPS32::move(const Operand *OpRd, const Operand *OpRs) {
       emitInst(Opcode);
       break;
     }
-    default: {
-      UnimplementedError(getFlags());
-    }
+    default: { UnimplementedError(getFlags()); }
     }
   }
 }
@@ -1119,9 +1115,7 @@ void AssemblerMIPS32::sw(const Operand *OpRt, const Operand *OpBase,
     emitFtRsImm16(Opcode, OpRt, OpBase, Offset, "sdc1");
     break;
   }
-  default: {
-    UnimplementedError(getFlags());
-  }
+  default: { UnimplementedError(getFlags()); }
   }
 }
 

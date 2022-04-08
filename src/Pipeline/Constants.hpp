@@ -17,13 +17,13 @@
 
 #include "System/Math.hpp"
 #include "System/Types.hpp"
-#include "Vulkan/VkConfig.hpp"
+#include "Vulkan/VkConfig.h"
 
 namespace sw {
 
 struct Constants
 {
-	static const Constants &Get();
+	Constants();
 
 	unsigned int transposeBit0[16];
 	unsigned int transposeBit1[16];
@@ -127,6 +127,8 @@ struct Constants
 	dword minZ[16];
 	dword fini[16];
 
+	dword4 maxPos;
+
 	float4 unscaleByte;
 	float4 unscaleSByte;
 	float4 unscaleShort;
@@ -136,10 +138,9 @@ struct Constants
 	float4 unscaleFixed;
 
 	float half2float[65536];
-
-private:
-	Constants();
 };
+
+extern Constants constants;
 
 }  // namespace sw
 

@@ -102,7 +102,8 @@ struct TypeAttributeFields {
 
 const struct TypeAttributeFields TypeAttributes[] = {
 #define X(tag, sizeLog2, align, elts, elty, str, rcstr)                        \
-  {sizeLog2, align, elts, IceType_##elty, str, rcstr},
+  { sizeLog2, align, elts, IceType_##elty, str, rcstr }                        \
+  ,
     ICETYPE_TABLE
 #undef X
 };
@@ -124,9 +125,12 @@ struct TypePropertyFields {
 const TypePropertyFields TypePropertiesTable[] = {
 #define X(tag, IsVec, IsInt, IsFloat, IsIntArith, IsBoolean, IsParam,          \
           CompareResult)                                                       \
-  {IsVec,      IsInt,   IsInt & !IsVec,         IsInt & IsVec,                 \
-   IsIntArith, IsFloat, IsFloat & !IsVec,       IsFloat & IsVec,               \
-   IsBoolean,  IsParam, IceType_##CompareResult},
+  {                                                                            \
+    IsVec, IsInt, IsInt & !IsVec, IsInt & IsVec, IsIntArith, IsFloat,          \
+        IsFloat & !IsVec, IsFloat & IsVec, IsBoolean, IsParam,                 \
+        IceType_##CompareResult                                                \
+  }                                                                            \
+  ,
     ICETYPE_PROPS_TABLE
 #undef X
 };

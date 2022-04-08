@@ -253,8 +253,7 @@ void dumpHelper(Ostream &Str, const DumpMapType &Map, double TotalTime,
           << I.second << "\n";
     } else {
       Str << llvm::format("  %10.6f %4.1f%% ", I.first,
-                          I.first * 100 / TotalTime)
-          << I.second << "\n";
+                          I.first * 100 / TotalTime) << I.second << "\n";
     }
   }
 }
@@ -270,9 +269,8 @@ void TimerStack::dump(Ostream &Str, bool DumpCumulative) {
   assert(TotalTime);
   char PrefixStr[30];
   if (DumpCumulative) {
-    Str << Name
-        << " - Cumulative times:\n"
-           "     Seconds   Pct  EventCnt TimerPath\n";
+    Str << Name << " - Cumulative times:\n"
+                   "     Seconds   Pct  EventCnt TimerPath\n";
     DumpMapType CumulativeMap;
     for (TTindex i = 1; i < Nodes.size(); ++i) {
       TTindex Prefix = i;
@@ -292,9 +290,8 @@ void TimerStack::dump(Ostream &Str, bool DumpCumulative) {
     constexpr bool NoAddPercents = false;
     dumpHelper(Str, CumulativeMap, TotalTime, NoAddPercents);
   }
-  Str << Name
-      << " - Flat times:\n"
-         "     Seconds   Pct CumPct  EventCnt TimerName\n";
+  Str << Name << " - Flat times:\n"
+                 "     Seconds   Pct CumPct  EventCnt TimerName\n";
   DumpMapType FlatMap;
   for (TimerIdT i = 0; i < LeafTimes.size(); ++i) {
     if (LeafCounts[i]) {

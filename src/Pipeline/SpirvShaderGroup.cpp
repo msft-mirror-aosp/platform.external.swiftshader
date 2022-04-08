@@ -34,11 +34,11 @@ struct SpirvShader::Impl::Group
 	    const I identityValue,
 	    APPLY &&apply)
 	{
-		SpirvShader::Operand value(shader, state, insn.word(5));
+		SpirvShader::GenericValue value(shader, state, insn.word(5));
 		auto &type = shader->getType(SpirvShader::Type::ID(insn.word(1)));
-		for(auto i = 0u; i < type.componentCount; i++)
+		for(auto i = 0u; i < type.sizeInComponents; i++)
 		{
-			auto mask = As<SIMD::UInt>(state->activeLaneMask());  // Considers helper invocations active. See b/151137030
+			auto mask = As<SIMD::UInt>(state->activeLaneMask());
 			auto identity = TYPE(identityValue);
 			SIMD::UInt v_uint = (value.UInt(i) & mask) | (As<SIMD::UInt>(identity) & ~mask);
 			TYPE v = As<TYPE>(v_uint);
@@ -70,7 +70,7 @@ struct SpirvShader::Impl::Group
 				}
 				default:
 					UNSUPPORTED("EmitGroupNonUniform op: %s Group operation: %d",
-					            SpirvShader::OpcodeName(type.opcode()), insn.word(4));
+					            SpirvShader::OpcodeName(type.opcode()).c_str(), insn.word(4));
 			}
 		}
 	}
@@ -85,7 +85,7 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 	auto scope = spv::Scope(GetConstScalarInt(insn.word(3)));
 	ASSERT_MSG(scope == spv::ScopeSubgroup, "Scope for Non Uniform Group Operations must be Subgroup for Vulkan 1.1");
 
-	auto &dst = state->createIntermediate(resultId, type.componentCount);
+	auto &dst = state->createIntermediate(resultId, type.sizeInComponents);
 
 	switch(insn.opcode())
 	{
@@ -93,7 +93,7 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 		{
 			// Result is true only in the active invocation with the lowest id
 			// in the group, otherwise result is false.
-			SIMD::Int active = state->activeLaneMask();  // Considers helper invocations active. See b/151137030
+			SIMD::Int active = state->activeLaneMask();
 			// TODO: Would be nice if we could write this as:
 			//   elect = active & ~(active.Oxyz | active.OOxy | active.OOOx)
 			auto v0111 = SIMD::Int(0, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
@@ -104,25 +104,25 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 
 		case spv::OpGroupNonUniformAll:
 		{
-			Operand predicate(this, state, insn.word(4));
-			dst.move(0, AndAll(predicate.UInt(0) | ~As<SIMD::UInt>(state->activeLaneMask())));  // Considers helper invocations active. See b/151137030
+			GenericValue predicate(this, state, insn.word(4));
+			dst.move(0, AndAll(predicate.UInt(0) | ~As<SIMD::UInt>(state->activeLaneMask())));
 			break;
 		}
 
 		case spv::OpGroupNonUniformAny:
 		{
-			Operand predicate(this, state, insn.word(4));
-			dst.move(0, OrAll(predicate.UInt(0) & As<SIMD::UInt>(state->activeLaneMask())));  // Considers helper invocations active. See b/151137030
+			GenericValue predicate(this, state, insn.word(4));
+			dst.move(0, OrAll(predicate.UInt(0) & As<SIMD::UInt>(state->activeLaneMask())));
 			break;
 		}
 
 		case spv::OpGroupNonUniformAllEqual:
 		{
-			Operand value(this, state, insn.word(4));
+			GenericValue value(this, state, insn.word(4));
 			auto res = SIMD::UInt(0xffffffff);
-			SIMD::UInt active = As<SIMD::UInt>(state->activeLaneMask());  // Considers helper invocations active. See b/151137030
+			SIMD::UInt active = As<SIMD::UInt>(state->activeLaneMask());
 			SIMD::UInt inactive = ~active;
-			for(auto i = 0u; i < type.componentCount; i++)
+			for(auto i = 0u; i < type.sizeInComponents; i++)
 			{
 				SIMD::UInt v = value.UInt(i) & active;
 				SIMD::UInt filled = v;
@@ -139,39 +139,12 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 		case spv::OpGroupNonUniformBroadcast:
 		{
 			auto valueId = Object::ID(insn.word(4));
-			auto idId = Object::ID(insn.word(5));
-			Operand value(this, state, valueId);
-
-			// Decide between the fast path for constants and the slow path for
-			// intermediates.
-			if(getObject(idId).kind == SpirvShader::Object::Kind::Constant)
+			auto id = SIMD::Int(GetConstScalarInt(insn.word(5)));
+			GenericValue value(this, state, valueId);
+			auto mask = CmpEQ(id, SIMD::Int(0, 1, 2, 3));
+			for(auto i = 0u; i < type.sizeInComponents; i++)
 			{
-				auto id = SIMD::Int(GetConstScalarInt(insn.word(5)));
-				auto mask = CmpEQ(id, SIMD::Int(0, 1, 2, 3));
-				for(auto i = 0u; i < type.componentCount; i++)
-				{
-					dst.move(i, OrAll(value.Int(i) & mask));
-				}
-			}
-			else
-			{
-				Operand id(this, state, idId);
-
-				SIMD::UInt active = As<SIMD::UInt>(state->activeLaneMask());  // Considers helper invocations active. See b/151137030
-				SIMD::UInt inactive = ~active;
-				SIMD::UInt filled = id.UInt(0) & active;
-
-				for(int j = 0; j < SIMD::Width - 1; j++)
-				{
-					filled |= filled.yzwx & inactive;  // Populate inactive 'holes' with a live value
-				}
-
-				auto mask = CmpEQ(filled, SIMD::UInt(0, 1, 2, 3));
-
-				for(uint32_t i = 0u; i < type.componentCount; i++)
-				{
-					dst.move(i, OrAll(value.UInt(i) & mask));
-				}
+				dst.move(i, OrAll(value.Int(i) & mask));
 			}
 			break;
 		}
@@ -179,15 +152,15 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 		case spv::OpGroupNonUniformBroadcastFirst:
 		{
 			auto valueId = Object::ID(insn.word(4));
-			Operand value(this, state, valueId);
+			GenericValue value(this, state, valueId);
 			// Result is true only in the active invocation with the lowest id
 			// in the group, otherwise result is false.
-			SIMD::Int active = state->activeLaneMask();  // Considers helper invocations active. See b/151137030
+			SIMD::Int active = state->activeLaneMask();
 			// TODO: Would be nice if we could write this as:
 			//   elect = active & ~(active.Oxyz | active.OOxy | active.OOOx)
 			auto v0111 = SIMD::Int(0, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 			auto elect = active & ~(v0111 & (active.xxyz | active.xxxy | active.xxxx));
-			for(auto i = 0u; i < type.componentCount; i++)
+			for(auto i = 0u; i < type.sizeInComponents; i++)
 			{
 				dst.move(i, OrAll(value.Int(i) & elect));
 			}
@@ -196,9 +169,9 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 
 		case spv::OpGroupNonUniformBallot:
 		{
-			ASSERT(type.componentCount == 4);
-			Operand predicate(this, state, insn.word(4));
-			dst.move(0, SIMD::Int(SignMask(state->activeLaneMask() & predicate.Int(0))));  // Considers helper invocations active. See b/151137030
+			ASSERT(type.sizeInComponents == 4);
+			GenericValue predicate(this, state, insn.word(4));
+			dst.move(0, SIMD::Int(SignMask(state->activeLaneMask() & predicate.Int(0))));
 			dst.move(1, SIMD::Int(0));
 			dst.move(2, SIMD::Int(0));
 			dst.move(3, SIMD::Int(0));
@@ -208,9 +181,9 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 		case spv::OpGroupNonUniformInverseBallot:
 		{
 			auto valueId = Object::ID(insn.word(4));
-			ASSERT(type.componentCount == 1);
-			ASSERT(getType(getObject(valueId)).componentCount == 4);
-			Operand value(this, state, valueId);
+			ASSERT(type.sizeInComponents == 1);
+			ASSERT(getType(getObject(valueId).type).sizeInComponents == 4);
+			GenericValue value(this, state, valueId);
 			auto bit = (value.Int(0) >> SIMD::Int(0, 1, 2, 3)) & SIMD::Int(1);
 			dst.move(0, -bit);
 			break;
@@ -220,11 +193,11 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 		{
 			auto valueId = Object::ID(insn.word(4));
 			auto indexId = Object::ID(insn.word(5));
-			ASSERT(type.componentCount == 1);
-			ASSERT(getType(getObject(valueId)).componentCount == 4);
-			ASSERT(getType(getObject(indexId)).componentCount == 1);
-			Operand value(this, state, valueId);
-			Operand index(this, state, indexId);
+			ASSERT(type.sizeInComponents == 1);
+			ASSERT(getType(getObject(valueId).type).sizeInComponents == 4);
+			ASSERT(getType(getObject(indexId).type).sizeInComponents == 1);
+			GenericValue value(this, state, valueId);
+			GenericValue index(this, state, indexId);
 			auto vecIdx = index.Int(0) / SIMD::Int(32);
 			auto bitIdx = index.Int(0) & SIMD::Int(31);
 			auto bits = (value.Int(0) & CmpEQ(vecIdx, SIMD::Int(0))) |
@@ -239,9 +212,9 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 		{
 			auto operation = spv::GroupOperation(insn.word(4));
 			auto valueId = Object::ID(insn.word(5));
-			ASSERT(type.componentCount == 1);
-			ASSERT(getType(getObject(valueId)).componentCount == 4);
-			Operand value(this, state, valueId);
+			ASSERT(type.sizeInComponents == 1);
+			ASSERT(getType(getObject(valueId).type).sizeInComponents == 4);
+			GenericValue value(this, state, valueId);
 			switch(operation)
 			{
 				case spv::GroupOperationReduce:
@@ -262,9 +235,9 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 		case spv::OpGroupNonUniformBallotFindLSB:
 		{
 			auto valueId = Object::ID(insn.word(4));
-			ASSERT(type.componentCount == 1);
-			ASSERT(getType(getObject(valueId)).componentCount == 4);
-			Operand value(this, state, valueId);
+			ASSERT(type.sizeInComponents == 1);
+			ASSERT(getType(getObject(valueId).type).sizeInComponents == 4);
+			GenericValue value(this, state, valueId);
 			dst.move(0, Cttz(value.UInt(0) & SIMD::UInt(15), true));
 			break;
 		}
@@ -272,22 +245,22 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 		case spv::OpGroupNonUniformBallotFindMSB:
 		{
 			auto valueId = Object::ID(insn.word(4));
-			ASSERT(type.componentCount == 1);
-			ASSERT(getType(getObject(valueId)).componentCount == 4);
-			Operand value(this, state, valueId);
+			ASSERT(type.sizeInComponents == 1);
+			ASSERT(getType(getObject(valueId).type).sizeInComponents == 4);
+			GenericValue value(this, state, valueId);
 			dst.move(0, SIMD::UInt(31) - Ctlz(value.UInt(0) & SIMD::UInt(15), false));
 			break;
 		}
 
 		case spv::OpGroupNonUniformShuffle:
 		{
-			Operand value(this, state, insn.word(4));
-			Operand id(this, state, insn.word(5));
+			GenericValue value(this, state, insn.word(4));
+			GenericValue id(this, state, insn.word(5));
 			auto x = CmpEQ(SIMD::Int(0), id.Int(0));
 			auto y = CmpEQ(SIMD::Int(1), id.Int(0));
 			auto z = CmpEQ(SIMD::Int(2), id.Int(0));
 			auto w = CmpEQ(SIMD::Int(3), id.Int(0));
-			for(auto i = 0u; i < type.componentCount; i++)
+			for(auto i = 0u; i < type.sizeInComponents; i++)
 			{
 				SIMD::Int v = value.Int(i);
 				dst.move(i, (x & v.xxxx) | (y & v.yyyy) | (z & v.zzzz) | (w & v.wwww));
@@ -297,13 +270,13 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 
 		case spv::OpGroupNonUniformShuffleXor:
 		{
-			Operand value(this, state, insn.word(4));
-			Operand mask(this, state, insn.word(5));
+			GenericValue value(this, state, insn.word(4));
+			GenericValue mask(this, state, insn.word(5));
 			auto x = CmpEQ(SIMD::Int(0), SIMD::Int(0, 1, 2, 3) ^ mask.Int(0));
 			auto y = CmpEQ(SIMD::Int(1), SIMD::Int(0, 1, 2, 3) ^ mask.Int(0));
 			auto z = CmpEQ(SIMD::Int(2), SIMD::Int(0, 1, 2, 3) ^ mask.Int(0));
 			auto w = CmpEQ(SIMD::Int(3), SIMD::Int(0, 1, 2, 3) ^ mask.Int(0));
-			for(auto i = 0u; i < type.componentCount; i++)
+			for(auto i = 0u; i < type.sizeInComponents; i++)
 			{
 				SIMD::Int v = value.Int(i);
 				dst.move(i, (x & v.xxxx) | (y & v.yyyy) | (z & v.zzzz) | (w & v.wwww));
@@ -313,13 +286,13 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 
 		case spv::OpGroupNonUniformShuffleUp:
 		{
-			Operand value(this, state, insn.word(4));
-			Operand delta(this, state, insn.word(5));
+			GenericValue value(this, state, insn.word(4));
+			GenericValue delta(this, state, insn.word(5));
 			auto d0 = CmpEQ(SIMD::Int(0), delta.Int(0));
 			auto d1 = CmpEQ(SIMD::Int(1), delta.Int(0));
 			auto d2 = CmpEQ(SIMD::Int(2), delta.Int(0));
 			auto d3 = CmpEQ(SIMD::Int(3), delta.Int(0));
-			for(auto i = 0u; i < type.componentCount; i++)
+			for(auto i = 0u; i < type.sizeInComponents; i++)
 			{
 				SIMD::Int v = value.Int(i);
 				dst.move(i, (d0 & v.xyzw) | (d1 & v.xxyz) | (d2 & v.xxxy) | (d3 & v.xxxx));
@@ -329,13 +302,13 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 
 		case spv::OpGroupNonUniformShuffleDown:
 		{
-			Operand value(this, state, insn.word(4));
-			Operand delta(this, state, insn.word(5));
+			GenericValue value(this, state, insn.word(4));
+			GenericValue delta(this, state, insn.word(5));
 			auto d0 = CmpEQ(SIMD::Int(0), delta.Int(0));
 			auto d1 = CmpEQ(SIMD::Int(1), delta.Int(0));
 			auto d2 = CmpEQ(SIMD::Int(2), delta.Int(0));
 			auto d3 = CmpEQ(SIMD::Int(3), delta.Int(0));
-			for(auto i = 0u; i < type.componentCount; i++)
+			for(auto i = 0u; i < type.sizeInComponents; i++)
 			{
 				SIMD::Int v = value.Int(i);
 				dst.move(i, (d0 & v.xyzw) | (d1 & v.yzww) | (d2 & v.zwww) | (d3 & v.wwww));
@@ -449,7 +422,7 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 			break;
 
 		default:
-			UNSUPPORTED("EmitGroupNonUniform op: %s", OpcodeName(type.opcode()));
+			UNSUPPORTED("EmitGroupNonUniform op: %s", OpcodeName(type.opcode()).c_str());
 	}
 	return EmitResult::Continue;
 }

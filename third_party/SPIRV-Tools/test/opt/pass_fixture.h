@@ -176,11 +176,9 @@ class PassTest : public TestT {
   // result, using checks parsed from |original|.  Always skips OpNop.
   // This does *not* involve pass manager.  Callers are suggested to use
   // SCOPED_TRACE() for better messages.
-  // Returns a tuple of disassembly string and the boolean value from the pass
-  // Process() function.
   template <typename PassT, typename... Args>
-  std::tuple<std::string, Pass::Status> SinglePassRunAndMatch(
-      const std::string& original, bool do_validation, Args&&... args) {
+  void SinglePassRunAndMatch(const std::string& original, bool do_validation,
+                             Args&&... args) {
     const bool skip_nop = true;
     auto pass_result = SinglePassRunAndDisassemble<PassT>(
         original, skip_nop, do_validation, std::forward<Args>(args)...);
@@ -189,7 +187,6 @@ class PassTest : public TestT {
     EXPECT_EQ(effcee::Result::Status::Ok, match_result.status())
         << match_result.message() << "\nChecking result:\n"
         << disassembly;
-    return pass_result;
   }
 
   // Runs a single pass of class |PassT| on the binary assembled from the

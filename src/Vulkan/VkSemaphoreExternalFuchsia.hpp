@@ -26,89 +26,79 @@
 
 namespace vk {
 
-class ZirconEventExternalSemaphore : public BinarySemaphore::External
+class Semaphore::External
 {
 public:
-	~ZirconEventExternalSemaphore()
+	// The type of external semaphore handle types supported by this implementation.
+	static const VkExternalSemaphoreHandleTypeFlags kExternalSemaphoreHandleType =
+	    VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA;
+
+	// Default constructor. Note that one should call either init() or
+	// importFd() before any call to wait() or signal().
+	External() = default;
+
+	~External()
 	{
 		zx_handle_close(handle);
 	}
 
-	VkResult init(bool initialValue) override
+	void init()
 	{
 		zx_status_t status = zx_event_create(0, &handle);
 		if(status != ZX_OK)
 		{
-			TRACE("zx_event_create() returned %d", status);
-			return VK_ERROR_INITIALIZATION_FAILED;
+			ABORT("zx_event_create() returned %d", status);
 		}
-		if(initialValue)
-		{
-			status = zx_object_signal(handle, 0, ZX_EVENT_SIGNALED);
-			if(status != ZX_OK)
-			{
-				TRACE("zx_object_signal() returned %d", status);
-				zx_handle_close(handle);
-				handle = ZX_HANDLE_INVALID;
-				return VK_ERROR_INITIALIZATION_FAILED;
-			}
-		}
-		return VK_SUCCESS;
 	}
 
-	VkResult importHandle(zx_handle_t new_handle) override
+	void importHandle(zx_handle_t new_handle)
 	{
 		zx_handle_close(handle);
 		handle = new_handle;
-		return VK_SUCCESS;
 	}
 
-	VkResult exportHandle(zx_handle_t *pHandle) override
+	VkResult exportHandle(zx_handle_t *pHandle) const
 	{
 		zx_handle_t new_handle = ZX_HANDLE_INVALID;
 		zx_status_t status = zx_handle_duplicate(handle, ZX_RIGHT_SAME_RIGHTS, &new_handle);
 		if(status != ZX_OK)
 		{
-			DABORT("zx_handle_duplicate() returned %d", status);
+			TRACE("zx_handle_duplicate() returned %d", status);
 			return VK_ERROR_INVALID_EXTERNAL_HANDLE;
 		}
 		*pHandle = new_handle;
 		return VK_SUCCESS;
 	}
 
-	void wait() override
+	void wait()
 	{
 		zx_signals_t observed = 0;
 		zx_status_t status = zx_object_wait_one(
 		    handle, ZX_EVENT_SIGNALED, ZX_TIME_INFINITE, &observed);
 		if(status != ZX_OK)
 		{
-			DABORT("zx_object_wait_one() returned %d", status);
-			return;
+			ABORT("zx_object_wait_one() returned %d", status);
 		}
 		if(observed != ZX_EVENT_SIGNALED)
 		{
-			DABORT("zx_object_wait_one() returned observed %x (%x expected)", observed, ZX_EVENT_SIGNALED);
-			return;
+			ABORT("zx_object_wait_one() returned observed %x (%x expected)", observed, ZX_EVENT_SIGNALED);
 		}
 		// Need to unsignal the event now, as required by the Vulkan spec.
 		status = zx_object_signal(handle, ZX_EVENT_SIGNALED, 0);
 		if(status != ZX_OK)
 		{
-			DABORT("zx_object_signal() returned %d", status);
-			return;
+			ABORT("zx_object_signal() returned %d", status);
 		}
 	}
 
-	bool tryWait() override
+	bool tryWait()
 	{
 		zx_signals_t observed = 0;
 		zx_status_t status = zx_object_wait_one(
 		    handle, ZX_EVENT_SIGNALED, zx_clock_get_monotonic(), &observed);
-		if(status != ZX_OK && status != ZX_ERR_TIMED_OUT)
+		if(status != ZX_OK)
 		{
-			DABORT("zx_object_wait_one() returned %d", status);
-			return false;
+			ABORT("zx_object_wait_one() returned %d", status);
 		}
 		if(observed != ZX_EVENT_SIGNALED)
 		{
@@ -118,18 +108,17 @@ public:
 		status = zx_object_signal(handle, ZX_EVENT_SIGNALED, 0);
 		if(status != ZX_OK)
 		{
-			DABORT("zx_object_signal() returned %d", status);
-			return false;
+			ABORT("zx_object_signal() returned %d", status);
 		}
 		return true;
 	}
 
-	void signal() override
+	void signal()
 	{
 		zx_status_t status = zx_object_signal(handle, 0, ZX_EVENT_SIGNALED);
 		if(status != ZX_OK)
 		{
-			DABORT("zx_object_signal() returned %d", status);
+			ABORT("zx_object_signal() returned %d", status);
 		}
 	}
 

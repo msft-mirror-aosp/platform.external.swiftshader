@@ -19,7 +19,6 @@
 
 #include <memory>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 namespace vk {
@@ -30,9 +29,8 @@ class Thread;
 class File;
 class Frame;
 class Scope;
-class Variables;
-class ClientEventListener;
-class ServerEventListener;
+class VariableContainer;
+class EventListener;
 
 // Context holds the full state of the debugger, including all current files,
 // threads, frames and variables. It also holds a list of EventListeners that
@@ -88,10 +86,6 @@ public:
 		// does not exist or no longer has any external shared_ptr references.
 		std::shared_ptr<File> get(ID<File>);
 
-		// findFile() returns the file with the given path, or nullptr if not
-		// found.
-		std::shared_ptr<File> findFile(const std::string &path);
-
 		// files() returns the full list of files.
 		std::vector<std::shared_ptr<File>> files();
 
@@ -112,19 +106,13 @@ public:
 		// does not exist.
 		std::shared_ptr<Scope> get(ID<Scope>);
 
-		// track() registers the variables with the context so it can be
-		// retrieved by get(). Note that the context does not hold a strong
-		// reference to the variables, and get() will return nullptr if all
-		// strong external references are dropped.
-		void track(const std::shared_ptr<Variables> &);
+		// createVariableContainer() returns a new variable container.
+		std::shared_ptr<VariableContainer> createVariableContainer();
 
-		// get() returns the variables with the given ID, or null if the
-		// variables does not exist or no longer has any external shared_ptr
-		// references.
-		std::shared_ptr<Variables> get(ID<Variables>);
-
-		// clearFunctionBreakpoints() removes all function breakpoints.
-		void clearFunctionBreakpoints();
+		// get() returns the variable container with the given ID, or null if
+		// the variable container does not exist or no longer has any external
+		// shared_ptr references.
+		std::shared_ptr<VariableContainer> get(ID<VariableContainer>);
 
 		// addFunctionBreakpoint() adds a breakpoint to the start of the
 		// function with the given name.
@@ -138,9 +126,6 @@ public:
 		// isFunctionBreakpoint() returns true if the function with the given
 		// name has a function breakpoint set.
 		bool isFunctionBreakpoint(const std::string &name);
-
-		// getFunctionBreakpoints() returns all the set function breakpoints.
-		std::unordered_set<std::string> getFunctionBreakpoints();
 
 	private:
 		Lock(const Lock &) = delete;
@@ -157,27 +142,16 @@ public:
 	// access.
 	virtual Lock lock() = 0;
 
-	// addListener() registers an ClientEventListener for event notifications.
-	virtual void addListener(ClientEventListener *) = 0;
+	// addListener() registers an EventListener for event notifications.
+	virtual void addListener(EventListener *) = 0;
 
-	// removeListener() unregisters an ClientEventListener that was previously
+	// removeListener() unregisters an EventListener that was previously
 	// registered by a call to addListener().
-	virtual void removeListener(ClientEventListener *) = 0;
+	virtual void removeListener(EventListener *) = 0;
 
-	// clientEventBroadcast() returns an ClientEventListener that will broadcast
-	// all method calls on to all registered ServerEventListeners.
-	virtual ClientEventListener *clientEventBroadcast() = 0;
-
-	// addListener() registers an ServerEventListener for event notifications.
-	virtual void addListener(ServerEventListener *) = 0;
-
-	// removeListener() unregisters an ServerEventListener that was previously
-	// registered by a call to addListener().
-	virtual void removeListener(ServerEventListener *) = 0;
-
-	// serverEventBroadcast() returns an ServerEventListener that will broadcast
-	// all method calls on to all registered ServerEventListeners.
-	virtual ServerEventListener *serverEventBroadcast() = 0;
+	// broadcast() returns an EventListener that will broadcast all methods on
+	// to all registered EventListeners.
+	virtual EventListener *broadcast() = 0;
 };
 
 }  // namespace dbg

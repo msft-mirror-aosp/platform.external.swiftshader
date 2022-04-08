@@ -23,8 +23,7 @@ namespace fuzz {
 // A fuzzer pass for adding adding copies of objects to the module.
 class FuzzerPassCopyObjects : public FuzzerPass {
  public:
-  FuzzerPassCopyObjects(opt::IRContext* ir_context,
-                        TransformationContext* transformation_context,
+  FuzzerPassCopyObjects(opt::IRContext* ir_context, FactManager* fact_manager,
                         FuzzerContext* fuzzer_context,
                         protobufs::TransformationSequence* transformations);
 

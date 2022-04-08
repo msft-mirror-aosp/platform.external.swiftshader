@@ -32,7 +32,6 @@ public:
 	void clearAttachment(const RenderPass *renderPass, uint32_t subpassIndex, const VkClearAttachment &attachment, const VkClearRect &rect);
 
 	static size_t ComputeRequiredAllocationSize(const VkFramebufferCreateInfo *pCreateInfo);
-	void setAttachment(ImageView *imageView, uint32_t index);
 	ImageView *getAttachment(uint32_t index) const;
 	void resolve(const RenderPass *renderPass, uint32_t subpassIndex);
 

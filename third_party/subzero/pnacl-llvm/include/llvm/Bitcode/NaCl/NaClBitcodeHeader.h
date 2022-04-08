@@ -88,11 +88,15 @@ public:
 
   /// \brief Returns string describing ID of field.
   static const char *IDName(Tag ID);
-  const char *IDName() const { return IDName(ID); }
+  const char *IDName() const {
+    return IDName(ID);
+  }
 
   /// \brief Returns string describing type of field.
   static const char *TypeName(FieldType FType);
-  const char *TypeName() const { return TypeName(FType); }
+  const char *TypeName() const {
+    return TypeName(FType);
+  }
 
   /// \brief Returns string describing field.
   std::string Contents() const;
@@ -128,8 +132,7 @@ private:
     ID = (PossibleID > kTag_MAX ? kInvalid : static_cast<Tag>(PossibleID));
     FixedSubfield PossibleFType = Subfield & 0xF;
     FType = (PossibleFType > kFieldType_MAX
-                 ? kUnknownType
-                 : static_cast<FieldType>(PossibleFType));
+             ? kUnknownType : static_cast<FieldType>(PossibleFType));
   }
   // Combined size of the fixed subfields
   const static size_t kTagLenSize = 2 * sizeof(FixedSubfield);
@@ -179,7 +182,9 @@ public:
 
   /// \brief Adds a field to the list of fields in a header. Takes ownership
   /// of fields added.
-  void push_back(NaClBitcodeHeaderField *Field) { Fields.push_back(Field); }
+  void push_back(NaClBitcodeHeaderField *Field) {
+    Fields.push_back(Field);
+  }
 
   /// \brief Read the PNaCl bitcode header, The format of the header is:
   ///
@@ -250,6 +255,7 @@ private:
     UnsupportedMessage = Message.str();
     return true;
   }
+
 };
 
 } // namespace llvm

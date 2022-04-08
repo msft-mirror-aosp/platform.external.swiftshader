@@ -24,41 +24,39 @@
 int main() {
   // Create a marl scheduler using the 4 hardware threads.
   // Bind this scheduler to the main thread so we can call marl::schedule()
-  marl::Scheduler::Config cfg;
-  cfg.setWorkerThreadCount(4);
-
-  marl::Scheduler scheduler(cfg);
+  marl::Scheduler scheduler;
   scheduler.bind();
+  scheduler.setWorkerThreadCount(4);
   defer(scheduler.unbind());  // Automatically unbind before returning.
 
   constexpr int numTasks = 10;
 
   // Create an event that is manually reset.
-  marl::Event sayHello(marl::Event::Mode::Manual);
+  marl::Event sayHellow(marl::Event::Mode::Manual);
 
   // Create a WaitGroup with an initial count of numTasks.
-  marl::WaitGroup saidHello(numTasks);
+  marl::WaitGroup saidHellow(numTasks);
 
   // Schedule some tasks to run asynchronously.
   for (int i = 0; i < numTasks; i++) {
     // Each task will run on one of the 4 worker threads.
     marl::schedule([=] {  // All marl primitives are capture-by-value.
       // Decrement the WaitGroup counter when the task has finished.
-      defer(saidHello.done());
+      defer(saidHellow.done());
 
       printf("Task %d waiting to say hello...\n", i);
 
       // Blocking in a task?
       // The scheduler will find something else for this thread to do.
-      sayHello.wait();
+      sayHellow.wait();
 
       printf("Hello from task %d!\n", i);
     });
   }
 
-  sayHello.signal();  // Unblock all the tasks.
+  sayHellow.signal();  // Unblock all the tasks.
 
-  saidHello.wait();  // Wait for all tasks to complete.
+  saidHellow.wait();  // Wait for all tasks to complete.
 
   printf("All tasks said hello.\n");
 

@@ -83,11 +83,11 @@ MacroExpander::ScopedMacroReenabler::ScopedMacroReenabler(MacroExpander *expande
 MacroExpander::ScopedMacroReenabler::~ScopedMacroReenabler()
 {
 	mExpander->mDeferReenablingMacros = false;
-	for (const auto &macro : mExpander->mMacrosToReenable)
+	for (auto macro : mExpander->mMacrosToReenable)
 	{
 		// Copying the string here by using substr is a check for use-after-free. It detects
 		// use-after-free more reliably than just toggling the disabled flag.
-		assert(!macro->name.substr().empty());
+		assert(macro->name.substr() != "");
 		macro->disabled = false;
 	}
 	mExpander->mMacrosToReenable.clear();

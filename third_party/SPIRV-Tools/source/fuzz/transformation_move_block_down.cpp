@@ -28,10 +28,10 @@ TransformationMoveBlockDown::TransformationMoveBlockDown(uint32_t id) {
 }
 
 bool TransformationMoveBlockDown::IsApplicable(
-    opt::IRContext* ir_context, const TransformationContext& /*unused*/) const {
+    opt::IRContext* context, const FactManager& /*unused*/) const {
   // Go through every block in every function, looking for a block whose id
   // matches that of the block we want to consider moving down.
-  for (auto& function : *ir_context->module()) {
+  for (auto& function : *context->module()) {
     for (auto block_it = function.begin(); block_it != function.end();
          ++block_it) {
       if (block_it->id() == message_.block_id()) {
@@ -43,7 +43,7 @@ bool TransformationMoveBlockDown::IsApplicable(
         }
         // Record the block we would like to consider moving down.
         opt::BasicBlock* block_matching_id = &*block_it;
-        if (!ir_context->GetDominatorAnalysis(&function)->IsReachable(
+        if (!context->GetDominatorAnalysis(&function)->IsReachable(
                 block_matching_id)) {
           // The block is not reachable.  We are not allowed to move it down.
           return false;
@@ -60,7 +60,7 @@ bool TransformationMoveBlockDown::IsApplicable(
         opt::BasicBlock* next_block_in_program_order = &*block_it;
         // We can move the block of interest down if and only if it does not
         // dominate the block that comes next.
-        return !ir_context->GetDominatorAnalysis(&function)->Dominates(
+        return !context->GetDominatorAnalysis(&function)->Dominates(
             block_matching_id, next_block_in_program_order);
       }
     }
@@ -71,11 +71,11 @@ bool TransformationMoveBlockDown::IsApplicable(
   return false;
 }
 
-void TransformationMoveBlockDown::Apply(
-    opt::IRContext* ir_context, TransformationContext* /*unused*/) const {
+void TransformationMoveBlockDown::Apply(opt::IRContext* context,
+                                        FactManager* /*unused*/) const {
   // Go through every block in every function, looking for a block whose id
   // matches that of the block we want to move down.
-  for (auto& function : *ir_context->module()) {
+  for (auto& function : *context->module()) {
     for (auto block_it = function.begin(); block_it != function.end();
          ++block_it) {
       if (block_it->id() == message_.block_id()) {
@@ -87,7 +87,7 @@ void TransformationMoveBlockDown::Apply(
         // For performance, it is vital to keep the dominator analysis valid
         // (which due to https://github.com/KhronosGroup/SPIRV-Tools/issues/2889
         // requires keeping the CFG analysis valid).
-        ir_context->InvalidateAnalysesExceptFor(
+        context->InvalidateAnalysesExceptFor(
             opt::IRContext::Analysis::kAnalysisDefUse |
             opt::IRContext::Analysis::kAnalysisCFG |
             opt::IRContext::Analysis::kAnalysisDominatorAnalysis);
@@ -103,10 +103,6 @@ protobufs::Transformation TransformationMoveBlockDown::ToMessage() const {
   protobufs::Transformation result;
   *result.mutable_move_block_down() = message_;
   return result;
-}
-
-std::unordered_set<uint32_t> TransformationMoveBlockDown::GetFreshIds() const {
-  return std::unordered_set<uint32_t>();
 }
 
 }  // namespace fuzz

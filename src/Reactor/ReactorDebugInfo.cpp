@@ -20,7 +20,6 @@
 #	include "boost/stacktrace.hpp"
 
 #	include <algorithm>
-#	include <cctype>
 #	include <unordered_map>
 
 namespace rr {
@@ -49,8 +48,6 @@ bool endswith_lower(const std::string &str, const std::string &suffix)
 
 Backtrace getCallerBacktrace(size_t limit /* = 0 */)
 {
-	namespace bs = boost::stacktrace;
-
 	auto shouldSkipFile = [](const std::string &fileSR) {
 		return fileSR.empty() ||
 		       endswith_lower(fileSR, "ReactorDebugInfo.cpp") ||
@@ -60,31 +57,15 @@ Backtrace getCallerBacktrace(size_t limit /* = 0 */)
 		       endswith_lower(fileSR, "stacktrace.hpp");
 	};
 
-	auto offsetStackFrames = [](const bs::stacktrace &st) {
-		// Return a stack trace with every stack frame address offset by -1. We do this so that we get
-		// back the location of the function call, and not the location following it. We need this since
-		// all debug info emits are the result of a function call. Note that technically we shouldn't
-		// perform this offsetting on the top-most stack frame, but it doesn't matter as we discard it
-		// anyway (see shouldSkipFile).
-
-		std::vector<bs::frame> result;
-		result.reserve(st.size());
-
-		for(bs::frame frame : st)
-		{
-			result.emplace_back(reinterpret_cast<void *>(reinterpret_cast<size_t>(frame.address()) - 1));
-		}
-
-		return result;
-	};
-
 	std::vector<Location> locations;
+
+	namespace bs = boost::stacktrace;
 
 	// Cache to avoid expensive stacktrace lookups, especially since our use-case results in looking up the
 	// same call stack addresses many times.
 	static std::unordered_map<bs::frame::native_frame_ptr_t, Location> cache;
 
-	for(bs::frame frame : offsetStackFrames(bs::stacktrace()))
+	for(bs::frame frame : bs::stacktrace())
 	{
 		Location location;
 
@@ -121,7 +102,6 @@ Backtrace getCallerBacktrace(size_t limit /* = 0 */)
 
 void emitPrintLocation(const Backtrace &backtrace)
 {
-#	ifdef ENABLE_RR_EMIT_PRINT_LOCATION
 	static Location lastLocation;
 	if(backtrace.size() == 0)
 	{
@@ -133,7 +113,6 @@ void emitPrintLocation(const Backtrace &backtrace)
 		rr::Print("rr> {0} [{1}:{2}]\n", currLocation.function.name.c_str(), currLocation.function.file.c_str(), currLocation.line);
 		lastLocation = std::move(currLocation);
 	}
-#	endif
 }
 
 }  // namespace rr

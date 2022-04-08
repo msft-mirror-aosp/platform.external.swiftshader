@@ -201,18 +201,6 @@ global:
 	vkGetPhysicalDeviceQueueFamilyProperties2KHR;
 	vkGetPhysicalDeviceMemoryProperties2KHR;
 	vkGetPhysicalDeviceSparseImageFormatProperties2KHR;
-	# VK_EXT_debug_utils;
-	vkCmdBeginDebugUtilsLabelEXT;
-	vkCmdEndDebugUtilsLabelEXT;
-	vkCmdInsertDebugUtilsLabelEXT;
-	vkCreateDebugUtilsMessengerEXT;
-	vkDestroyDebugUtilsMessengerEXT;
-	vkQueueBeginDebugUtilsLabelEXT;
-	vkQueueEndDebugUtilsLabelEXT;
-	vkQueueInsertDebugUtilsLabelEXT;
-	vkSetDebugUtilsObjectNameEXT;
-	vkSetDebugUtilsObjectTagEXT;
-	vkSubmitDebugUtilsMessageEXT;
 	# VK_KHR_maintenance1;
 	vkTrimCommandPoolKHR;
 	# VK_KHR_maintenance3;
@@ -226,24 +214,11 @@ global:
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR;
 	vkGetPhysicalDeviceSurfaceFormatsKHR;
 	vkGetPhysicalDeviceSurfacePresentModesKHR;
-	# VK_EXT_host_query_reset
-	vkResetQueryPool;
-	# VK_EXT_headless_surface
-	vkCreateHeadlessSurfaceEXT;
-	# VK_KHR_timeline_semaphore
-	vkGetSemaphoreCounterValue;
-	vkSignalSemaphore;
-	vkWaitSemaphores;
-	vkGetSemaphoreCounterValueKHR;
-	vkSignalSemaphoreKHR;
-	vkWaitSemaphoresKHR;
-	# VK_KHR_buffer_device_address
-	vkGetBufferDeviceAddress;
-	vkGetBufferOpaqueCaptureAddress;
-	vkGetDeviceMemoryOpaqueCaptureAddress;
-	# VK_KHR_draw_indirect_count
-	vkCmdDrawIndirectCount;
-	vkCmdDrawIndexedIndirectCount;
+
+	# Type-strings and type-infos required by sanitizers
+	_ZTS*;
+	_ZTI*;
+
 	# Android HAL module info object
 	HMI;
 

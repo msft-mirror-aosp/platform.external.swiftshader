@@ -21,8 +21,6 @@
 #include "Vulkan/VkImageView.hpp"
 #include "Vulkan/VkSampler.hpp"
 
-#include <cstdint>
-
 namespace vk {
 
 class DescriptorSet;
@@ -33,7 +31,7 @@ struct alignas(16) SampledImageDescriptor
 {
 	~SampledImageDescriptor() = delete;
 
-	void updateSampler(const vk::Sampler *sampler);
+	void updateSampler(VkSampler sampler);
 
 	// TODO(b/129523279): Minimize to the data actually needed.
 	vk::Sampler sampler;
@@ -44,13 +42,10 @@ struct alignas(16) SampledImageDescriptor
 	VkFormat format;
 	VkComponentMapping swizzle;
 	alignas(16) sw::Texture texture;
-	int width;  // Of base mip-level.
-	int height;
-	int depth;  // Layer/cube count for arrayed images
+	VkExtent3D extent;  // Of base mip-level.
+	int arrayLayers;
 	int mipLevels;
 	int sampleCount;
-
-	ImageView *memoryOwner;  // Pointer to the view which owns the memory used by the descriptor set
 };
 
 struct alignas(16) StorageImageDescriptor
@@ -58,21 +53,18 @@ struct alignas(16) StorageImageDescriptor
 	~StorageImageDescriptor() = delete;
 
 	void *ptr;
-	int width;
-	int height;
-	int depth;  // Layer/cube count for arrayed images
+	VkExtent3D extent;
 	int rowPitchBytes;
-	int slicePitchBytes;  // Layer pitch in case of array image
+	int slicePitchBytes;
 	int samplePitchBytes;
+	int arrayLayers;
 	int sampleCount;
 	int sizeInBytes;
 
 	void *stencilPtr;
 	int stencilRowPitchBytes;
-	int stencilSlicePitchBytes;  // Layer pitch in case of array image
+	int stencilSlicePitchBytes;
 	int stencilSamplePitchBytes;
-
-	ImageView *memoryOwner;  // Pointer to the view which owns the memory used by the descriptor set
 };
 
 struct alignas(16) BufferDescriptor
@@ -86,24 +78,13 @@ struct alignas(16) BufferDescriptor
 
 class DescriptorSetLayout : public Object<DescriptorSetLayout, VkDescriptorSetLayout>
 {
-	struct Binding
-	{
-		VkDescriptorType descriptorType;
-		uint32_t descriptorCount;
-		const vk::Sampler **immutableSamplers;
-
-		uint32_t offset;  // Offset in bytes in the descriptor set data.
-	};
-
 public:
 	DescriptorSetLayout(const VkDescriptorSetLayoutCreateInfo *pCreateInfo, void *mem);
 	void destroy(const VkAllocationCallbacks *pAllocator);
 
 	static size_t ComputeRequiredAllocationSize(const VkDescriptorSetLayoutCreateInfo *pCreateInfo);
 
-	static uint32_t GetDescriptorSize(VkDescriptorType type);
-	static bool IsDescriptorDynamic(VkDescriptorType type);
-
+	static size_t GetDescriptorSize(VkDescriptorType type);
 	static void WriteDescriptorSet(Device *device, const VkWriteDescriptorSet &descriptorWrites);
 	static void CopyDescriptorSet(const VkCopyDescriptorSet &descriptorCopies);
 
@@ -115,37 +96,48 @@ public:
 	// Returns the total size of the descriptor set in bytes.
 	size_t getDescriptorSetAllocationSize() const;
 
+	// Returns the number of bindings in the descriptor set.
+	size_t getBindingCount() const;
+
+	// Returns true iff the given binding exists.
+	bool hasBinding(uint32_t binding) const;
+
 	// Returns the byte offset from the base address of the descriptor set for
-	// the given binding number.
-	uint32_t getBindingOffset(uint32_t bindingNumber) const;
+	// the given binding and array element within that binding.
+	size_t getBindingOffset(uint32_t binding, size_t arrayElement) const;
 
-	// Returns the number of descriptors for the given binding number.
-	uint32_t getDescriptorCount(uint32_t bindingNumber) const;
+	// Returns the stride of an array of descriptors
+	size_t getBindingStride(uint32_t binding) const;
 
-	// Returns the number of descriptors across all bindings that are dynamic.
+	// Returns the number of descriptors across all bindings that are dynamic
+	// (see isBindingDynamic).
 	uint32_t getDynamicDescriptorCount() const;
 
-	// Returns the relative index into the pipeline's dynamic offsets array for
-	// the given binding number. This index should be added to the base index
+	// Returns the relative offset into the pipeline's dynamic offsets array for
+	// the given binding. This offset should be added to the base offset
 	// returned by PipelineLayout::getDynamicOffsetBase() to produce the
 	// starting index for dynamic descriptors.
-	uint32_t getDynamicOffsetIndex(uint32_t bindingNumber) const;
+	uint32_t getDynamicDescriptorOffset(uint32_t binding) const;
 
-	// Returns the descriptor type for the given binding number.
-	VkDescriptorType getDescriptorType(uint32_t bindingNumber) const;
+	// Returns true if the given binding is of type:
+	//  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC or
+	//  VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
+	bool isBindingDynamic(uint32_t binding) const;
 
-	// Returns the number of entries in the direct-indexed array of bindings.
-	// It equals the highest binding number + 1.
-	uint32_t getBindingsArraySize() const { return bindingsArraySize; }
+	// Returns the VkDescriptorSetLayoutBinding for the given binding.
+	VkDescriptorSetLayoutBinding const &getBindingLayout(uint32_t binding) const;
+
+	uint8_t *getOffsetPointer(DescriptorSet *descriptorSet, uint32_t binding, uint32_t arrayElement, uint32_t count, size_t *typeSize) const;
 
 private:
-	uint8_t *getDescriptorPointer(DescriptorSet *descriptorSet, uint32_t bindingNumber, uint32_t arrayElement, uint32_t count, size_t *typeSize) const;
 	size_t getDescriptorSetDataSize() const;
+	uint32_t getBindingIndex(uint32_t binding) const;
 	static bool isDynamic(VkDescriptorType type);
 
-	const VkDescriptorSetLayoutCreateFlags flags;
-	uint32_t bindingsArraySize = 0;
-	Binding *const bindings;  // Direct-indexed array of bindings.
+	VkDescriptorSetLayoutCreateFlags flags;
+	uint32_t bindingCount;
+	VkDescriptorSetLayoutBinding *bindings;
+	size_t *bindingOffsets;
 };
 
 static inline DescriptorSetLayout *Cast(VkDescriptorSetLayout object)

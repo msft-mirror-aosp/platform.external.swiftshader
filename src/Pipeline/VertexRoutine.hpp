@@ -17,6 +17,7 @@
 
 #include "ShaderCore.hpp"
 #include "SpirvShader.hpp"
+#include "Device/Color.hpp"
 #include "Device/VertexProcessor.hpp"
 
 namespace vk {

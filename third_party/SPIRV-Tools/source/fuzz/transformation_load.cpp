@@ -34,19 +34,20 @@ TransformationLoad::TransformationLoad(
 }
 
 bool TransformationLoad::IsApplicable(
-    opt::IRContext* ir_context, const TransformationContext& /*unused*/) const {
+    opt::IRContext* context,
+    const spvtools::fuzz::FactManager& /*unused*/) const {
   // The result id must be fresh.
-  if (!fuzzerutil::IsFreshId(ir_context, message_.fresh_id())) {
+  if (!fuzzerutil::IsFreshId(context, message_.fresh_id())) {
     return false;
   }
 
   // The pointer must exist and have a type.
-  auto pointer = ir_context->get_def_use_mgr()->GetDef(message_.pointer_id());
+  auto pointer = context->get_def_use_mgr()->GetDef(message_.pointer_id());
   if (!pointer || !pointer->type_id()) {
     return false;
   }
   // The type must indeed be a pointer type.
-  auto pointer_type = ir_context->get_def_use_mgr()->GetDef(pointer->type_id());
+  auto pointer_type = context->get_def_use_mgr()->GetDef(pointer->type_id());
   assert(pointer_type && "Type id must be defined.");
   if (pointer_type->opcode() != SpvOpTypePointer) {
     return false;
@@ -64,7 +65,7 @@ bool TransformationLoad::IsApplicable(
 
   // Determine which instruction we should be inserting before.
   auto insert_before =
-      FindInstruction(message_.instruction_to_insert_before(), ir_context);
+      FindInstruction(message_.instruction_to_insert_before(), context);
   // It must exist, ...
   if (!insert_before) {
     return false;
@@ -75,31 +76,27 @@ bool TransformationLoad::IsApplicable(
   }
 
   // The pointer needs to be available at the insertion point.
-  return fuzzerutil::IdIsAvailableBeforeInstruction(ir_context, insert_before,
+  return fuzzerutil::IdIsAvailableBeforeInstruction(context, insert_before,
                                                     message_.pointer_id());
 }
 
-void TransformationLoad::Apply(opt::IRContext* ir_context,
-                               TransformationContext* /*unused*/) const {
+void TransformationLoad::Apply(opt::IRContext* context,
+                               spvtools::fuzz::FactManager* /*unused*/) const {
   uint32_t result_type = fuzzerutil::GetPointeeTypeIdFromPointerType(
-      ir_context, fuzzerutil::GetTypeId(ir_context, message_.pointer_id()));
-  fuzzerutil::UpdateModuleIdBound(ir_context, message_.fresh_id());
-  FindInstruction(message_.instruction_to_insert_before(), ir_context)
+      context, fuzzerutil::GetTypeId(context, message_.pointer_id()));
+  fuzzerutil::UpdateModuleIdBound(context, message_.fresh_id());
+  FindInstruction(message_.instruction_to_insert_before(), context)
       ->InsertBefore(MakeUnique<opt::Instruction>(
-          ir_context, SpvOpLoad, result_type, message_.fresh_id(),
+          context, SpvOpLoad, result_type, message_.fresh_id(),
           opt::Instruction::OperandList(
               {{SPV_OPERAND_TYPE_ID, {message_.pointer_id()}}})));
-  ir_context->InvalidateAnalysesExceptFor(opt::IRContext::kAnalysisNone);
+  context->InvalidateAnalysesExceptFor(opt::IRContext::kAnalysisNone);
 }
 
 protobufs::Transformation TransformationLoad::ToMessage() const {
   protobufs::Transformation result;
   *result.mutable_load() = message_;
   return result;
-}
-
-std::unordered_set<uint32_t> TransformationLoad::GetFreshIds() const {
-  return {message_.fresh_id()};
 }
 
 }  // namespace fuzz

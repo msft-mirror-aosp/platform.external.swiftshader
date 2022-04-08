@@ -77,7 +77,7 @@ OpFunctionEnd)";
 std::string CallAndCallee(const std::string& body) {
   std::ostringstream ss;
   ss << R"(
-%placeholder = OpFunctionCall %void %foo
+%dummy = OpFunctionCall %void %foo
 OpReturn
 OpFunctionEnd
 

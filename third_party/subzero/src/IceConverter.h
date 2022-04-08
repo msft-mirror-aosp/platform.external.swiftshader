@@ -21,7 +21,7 @@
 namespace llvm {
 class GlobalValue;
 class Module;
-} // namespace llvm
+}
 
 namespace Ice {
 
@@ -73,6 +73,6 @@ private:
   void installGlobalDeclarations(llvm::Module *Mod);
 };
 
-} // namespace Ice
+} // end of namespace ICE.
 
 #endif // SUBZERO_SRC_ICECONVERTER_H

@@ -19,8 +19,11 @@
 namespace spvtools {
 namespace reduce {
 
+using opt::BasicBlock;
+using opt::Function;
+
 RemoveBlockReductionOpportunity::RemoveBlockReductionOpportunity(
-    opt::Function* function, opt::BasicBlock* block)
+    Function* function, BasicBlock* block)
     : function_(function), block_(block) {
   // precondition:
   assert(block_->begin() != block_->end() &&

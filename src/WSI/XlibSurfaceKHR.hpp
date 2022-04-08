@@ -18,8 +18,7 @@
 #include "VkSurfaceKHR.hpp"
 #include "libX11.hpp"
 #include "Vulkan/VkObject.hpp"
-
-#include <vulkan/vulkan_xlib.h>
+#include "vulkan/vulkan_xlib.h"
 
 #include <unordered_map>
 
@@ -34,7 +33,7 @@ public:
 
 	static size_t ComputeRequiredAllocationSize(const VkXlibSurfaceCreateInfoKHR *pCreateInfo);
 
-	VkResult getSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities) const override;
+	void getSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities) const override;
 
 	virtual void attachImage(PresentImage *image) override;
 	virtual void detachImage(PresentImage *image) override;

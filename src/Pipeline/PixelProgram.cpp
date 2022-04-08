@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include "PixelProgram.hpp"
-#include "Constants.hpp"
 
 #include "SamplerCore.hpp"
 #include "Device/Primitive.hpp"
@@ -57,51 +56,25 @@ Int4 PixelProgram::maskAny(Int cMask[4], Int sMask[4], Int zMask[4]) const
 	return mask;
 }
 
-Int4 PixelProgram::maskAny(Int cMask, Int sMask, Int zMask) const
-{
-	Int maskUnion = cMask & sMask & zMask;
-
-	// Convert to 4 booleans
-	Int4 laneBits = Int4(1, 2, 4, 8);
-	Int4 laneShiftsToMSB = Int4(31, 30, 29, 28);
-	Int4 mask(maskUnion);
-	mask = ((mask & laneBits) << laneShiftsToMSB) >> Int4(31);
-	return mask;
-}
-
-void PixelProgram::setBuiltins(Int &x, Int &y, Float4 (&z)[4], Float4 &w, Int cMask[4], int sampleId)
+void PixelProgram::setBuiltins(Int &x, Int &y, Float4 (&z)[4], Float4 &w, Int cMask[4])
 {
 	routine.setImmutableInputBuiltins(spirvShader);
 
 	// TODO(b/146486064): Consider only assigning these to the SpirvRoutine iff
 	// they are ever going to be read.
-	float x0 = 0.5f;
-	float y0 = 0.5f;
-	float x1 = 1.5f;
-	float y1 = 1.5f;
-	if((state.multiSampleCount > 1) && (sampleId >= 0))
-	{
-		x0 = Constants::VkSampleLocations4[sampleId][0];
-		y0 = Constants::VkSampleLocations4[sampleId][1];
-		x1 = 1.0f + x0;
-		y1 = 1.0f + y0;
-	}
-	routine.fragCoord[0] = SIMD::Float(Float(x)) + SIMD::Float(x0, x1, x0, x1);
-	routine.fragCoord[1] = SIMD::Float(Float(y)) + SIMD::Float(y0, y0, y1, y1);
+	routine.fragCoord[0] = SIMD::Float(Float(x)) + SIMD::Float(0.5f, 1.5f, 0.5f, 1.5f);
+	routine.fragCoord[1] = SIMD::Float(Float(y)) + SIMD::Float(0.5f, 0.5f, 1.5f, 1.5f);
 	routine.fragCoord[2] = z[0];  // sample 0
 	routine.fragCoord[3] = w;
-
+	routine.pointCoord[0] = SIMD::Float(0.5f) +
+	                        SIMD::Float(Float(x) - (*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordX))));
+	routine.pointCoord[1] = SIMD::Float(0.5f) +
+	                        SIMD::Float(Float(y) - (*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordY))));
 	routine.invocationsPerSubgroup = SIMD::Width;
 	routine.helperInvocation = ~maskAny(cMask);
 	routine.windowSpacePosition[0] = x + SIMD::Int(0, 1, 0, 1);
 	routine.windowSpacePosition[1] = y + SIMD::Int(0, 0, 1, 1);
 	routine.viewID = *Pointer<Int>(data + OFFSET(DrawData, viewID));
-
-	// PointCoord formula reference: https://www.khronos.org/registry/vulkan/specs/1.2/html/vkspec.html#primsrast-points-basic
-	// Note we don't add a 0.5 offset to x and y here (like for fragCoord) because pointCoordX/Y have 0.5 subtracted as part of the viewport transform.
-	SIMD::Float pointSizeInv = SIMD::Float(*Pointer<Float>(primitive + OFFSET(Primitive, pointSizeInv)));
-	routine.pointCoord[0] = SIMD::Float(0.5f) + pointSizeInv * (((SIMD::Float(Float(x)) + SIMD::Float(0.0f, 1.0f, 0.0f, 1.0f)) - SIMD::Float(*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordX)))));
-	routine.pointCoord[1] = SIMD::Float(0.5f) + pointSizeInv * (((SIMD::Float(Float(y)) + SIMD::Float(0.0f, 0.0f, 1.0f, 1.0f)) - SIMD::Float(*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordY)))));
 
 	routine.setInputBuiltin(spirvShader, spv::BuiltInViewIndex, [&](const SpirvShader::BuiltinMapping &builtin, Array<SIMD::Float> &value) {
 		assert(builtin.SizeInComponents == 1);
@@ -118,8 +91,10 @@ void PixelProgram::setBuiltins(Int &x, Int &y, Float4 (&z)[4], Float4 &w, Int cM
 
 	routine.setInputBuiltin(spirvShader, spv::BuiltInPointCoord, [&](const SpirvShader::BuiltinMapping &builtin, Array<SIMD::Float> &value) {
 		assert(builtin.SizeInComponents == 2);
-		value[builtin.FirstComponent + 0] = routine.pointCoord[0];
-		value[builtin.FirstComponent + 1] = routine.pointCoord[1];
+		value[builtin.FirstComponent + 0] = SIMD::Float(0.5f, 1.5f, 0.5f, 1.5f) +
+		                                    SIMD::Float(Float(x) - (*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordX))));
+		value[builtin.FirstComponent + 1] = SIMD::Float(0.5f, 0.5f, 1.5f, 1.5f) +
+		                                    SIMD::Float(Float(y) - (*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordY))));
 	});
 
 	routine.setInputBuiltin(spirvShader, spv::BuiltInSubgroupSize, [&](const SpirvShader::BuiltinMapping &builtin, Array<SIMD::Float> &value) {
@@ -133,11 +108,8 @@ void PixelProgram::setBuiltins(Int &x, Int &y, Float4 (&z)[4], Float4 &w, Int cM
 	});
 }
 
-void PixelProgram::applyShader(Int cMask[4], Int sMask[4], Int zMask[4], int sampleId)
+void PixelProgram::applyShader(Int cMask[4], Int sMask[4], Int zMask[4])
 {
-	unsigned int sampleLoopInit = (sampleId >= 0) ? sampleId : 0;
-	unsigned int sampleLoopEnd = (sampleId >= 0) ? sampleId + 1 : state.multiSampleCount;
-
 	routine.descriptorSets = data + OFFSET(DrawData, descriptorSets);
 	routine.descriptorDynamicOffsets = data + OFFSET(DrawData, descriptorDynamicOffsets);
 	routine.pushConstants = data + OFFSET(DrawData, pushConstants);
@@ -157,8 +129,8 @@ void PixelProgram::applyShader(Int cMask[4], Int sMask[4], Int zMask[4], int sam
 		static_assert(SIMD::Width == 4, "Expects SIMD width to be 4");
 		Int4 laneBits = Int4(1, 2, 4, 8);
 
-		Int4 inputSampleMask = 0;
-		for(auto i = sampleLoopInit; i < sampleLoopEnd; i++)
+		Int4 inputSampleMask = Int4(1) & CmpNEQ(Int4(cMask[0]) & laneBits, Int4(0));
+		for(auto i = 1u; i < state.multiSampleCount; i++)
 		{
 			inputSampleMask |= Int4(1 << i) & CmpNEQ(Int4(cMask[i]) & laneBits, Int4(0));
 		}
@@ -170,34 +142,14 @@ void PixelProgram::applyShader(Int cMask[4], Int sMask[4], Int zMask[4], int sam
 			routine.getVariable(it->second.Id)[it->second.FirstComponent + i] = Float4(0);
 	}
 
-	it = spirvShader->inputBuiltins.find(spv::BuiltInSampleId);
-	if(it != spirvShader->inputBuiltins.end())
-	{
-		routine.getVariable(it->second.Id)[it->second.FirstComponent] =
-		    As<SIMD::Float>(SIMD::Int((sampleId >= 0) ? sampleId : 0));
-	}
-
-	it = spirvShader->inputBuiltins.find(spv::BuiltInSamplePosition);
-	if(it != spirvShader->inputBuiltins.end())
-	{
-		routine.getVariable(it->second.Id)[it->second.FirstComponent + 0] =
-		    SIMD::Float(((sampleId >= 0) && (state.multiSampleCount > 1)) ? Constants::VkSampleLocations4[sampleId][0] : 0.5f);
-		routine.getVariable(it->second.Id)[it->second.FirstComponent + 1] =
-		    SIMD::Float(((sampleId >= 0) && (state.multiSampleCount > 1)) ? Constants::VkSampleLocations4[sampleId][1] : 0.5f);
-	}
-
 	// Note: all lanes initially active to facilitate derivatives etc. Actual coverage is
 	// handled separately, through the cMask.
 	auto activeLaneMask = SIMD::Int(0xFFFFFFFF);
-	auto storesAndAtomicsMask = (sampleId >= 0) ? maskAny(cMask[sampleId], sMask[sampleId], zMask[sampleId]) : maskAny(cMask, sMask, zMask);
+	auto storesAndAtomicsMask = maskAny(cMask, sMask, zMask);
 	routine.killMask = 0;
 
-	spirvShader->emit(&routine, activeLaneMask, storesAndAtomicsMask, descriptorSets, state.multiSampleCount);
+	spirvShader->emit(&routine, activeLaneMask, storesAndAtomicsMask, descriptorSets);
 	spirvShader->emitEpilog(&routine);
-	if((sampleId < 0) || (sampleId == static_cast<int>(state.multiSampleCount - 1)))
-	{
-		spirvShader->clearPhis(&routine);
-	}
 
 	for(int i = 0; i < RENDERTARGETS; i++)
 	{
@@ -205,17 +157,13 @@ void PixelProgram::applyShader(Int cMask[4], Int sMask[4], Int zMask[4], int sam
 		c[i].y = routine.outputs[i * 4 + 1];
 		c[i].z = routine.outputs[i * 4 + 2];
 		c[i].w = routine.outputs[i * 4 + 3];
-		outputMasks[i] = ((spirvShader->outputs[i * 4 + 0].Type != SpirvShader::ATTRIBTYPE_UNUSED) ? 0x1 : 0x0) |
-		                 ((spirvShader->outputs[i * 4 + 1].Type != SpirvShader::ATTRIBTYPE_UNUSED) ? 0x2 : 0x0) |
-		                 ((spirvShader->outputs[i * 4 + 2].Type != SpirvShader::ATTRIBTYPE_UNUSED) ? 0x4 : 0x0) |
-		                 ((spirvShader->outputs[i * 4 + 3].Type != SpirvShader::ATTRIBTYPE_UNUSED) ? 0x8 : 0x0);
 	}
 
 	clampColor(c);
 
 	if(spirvShader->getModes().ContainsKill)
 	{
-		for(auto i = sampleLoopInit; i < sampleLoopEnd; i++)
+		for(auto i = 0u; i < state.multiSampleCount; i++)
 		{
 			cMask[i] &= ~routine.killMask;
 		}
@@ -226,7 +174,7 @@ void PixelProgram::applyShader(Int cMask[4], Int sMask[4], Int zMask[4], int sam
 	{
 		auto outputSampleMask = As<SIMD::Int>(routine.getVariable(it->second.Id)[it->second.FirstComponent]);
 
-		for(auto i = sampleLoopInit; i < sampleLoopEnd; i++)
+		for(auto i = 0u; i < state.multiSampleCount; i++)
 		{
 			cMask[i] &= SignMask(CmpNEQ(outputSampleMask & SIMD::Int(1 << i), SIMD::Int(0)));
 		}
@@ -239,19 +187,14 @@ void PixelProgram::applyShader(Int cMask[4], Int sMask[4], Int zMask[4], int sam
 	}
 }
 
-Bool PixelProgram::alphaTest(Int cMask[4], int sampleId)
+Bool PixelProgram::alphaTest(Int cMask[4])
 {
 	if(!state.alphaToCoverage)
 	{
 		return true;
 	}
 
-	alphaToCoverage(cMask, c[0].w, sampleId);
-
-	if(sampleId >= 0)
-	{
-		return cMask[sampleId] != 0x0;
-	}
+	alphaToCoverage(cMask, c[0].w);
 
 	Int pass = cMask[0];
 
@@ -263,11 +206,8 @@ Bool PixelProgram::alphaTest(Int cMask[4], int sampleId)
 	return pass != 0x0;
 }
 
-void PixelProgram::rasterOperation(Pointer<Byte> cBuffer[4], Int &x, Int sMask[4], Int zMask[4], Int cMask[4], int sampleId)
+void PixelProgram::rasterOperation(Pointer<Byte> cBuffer[4], Int &x, Int sMask[4], Int zMask[4], Int cMask[4])
 {
-	unsigned int sampleLoopInit = (sampleId >= 0) ? sampleId : 0;
-	unsigned int sampleLoopEnd = (sampleId >= 0) ? sampleId + 1 : state.multiSampleCount;
-
 	for(int index = 0; index < RENDERTARGETS; index++)
 	{
 		if(!state.colorWriteActive(index))
@@ -292,7 +232,7 @@ void PixelProgram::rasterOperation(Pointer<Byte> cBuffer[4], Int &x, Int sMask[4
 			case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
 			case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
 			case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
-				for(unsigned int q = sampleLoopInit; q < sampleLoopEnd; q++)
+				for(unsigned int q = 0; q < state.multiSampleCount; q++)
 				{
 					if(state.multiSampleMask & (1 << q))
 					{
@@ -338,7 +278,7 @@ void PixelProgram::rasterOperation(Pointer<Byte> cBuffer[4], Int &x, Int sMask[4
 			case VK_FORMAT_A8B8G8R8_SINT_PACK32:
 			case VK_FORMAT_A2B10G10R10_UINT_PACK32:
 			case VK_FORMAT_A2R10G10B10_UINT_PACK32:
-				for(unsigned int q = sampleLoopInit; q < sampleLoopEnd; q++)
+				for(unsigned int q = 0; q < state.multiSampleCount; q++)
 				{
 					if(state.multiSampleMask & (1 << q))
 					{
@@ -426,6 +366,14 @@ void PixelProgram::clampColor(Vector4f oC[RENDERTARGETS])
 				UNSUPPORTED("VkFormat: %d", int(state.targetFormat[index]));
 		}
 	}
+}
+
+Float4 PixelProgram::linearToSRGB(const Float4 &x)  // Approximates x^(1.0/2.2)
+{
+	Float4 sqrtx = Rcp_pp(RcpSqrt_pp(x));
+	Float4 sRGB = sqrtx * Float4(1.14f) - x * Float4(0.14f);
+
+	return Min(Max(sRGB, Float4(0.0f)), Float4(1.0f));
 }
 
 }  // namespace sw

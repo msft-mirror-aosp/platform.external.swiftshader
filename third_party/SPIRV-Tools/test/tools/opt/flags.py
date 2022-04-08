@@ -73,7 +73,7 @@ class TestValidPassFlags(expect.ValidObjectFile1_5,
       '--remove-duplicates', '--replace-invalid-opcode', '--ssa-rewrite',
       '--scalar-replacement', '--scalar-replacement=42', '--strength-reduction',
       '--strip-debug', '--strip-reflect', '--vector-dce', '--workaround-1209',
-      '--unify-const', '--graphics-robust-access', '--wrap-opkill', '--amd-ext-to-khr'
+      '--unify-const'
   ]
   expected_passes = [
       'wrap-opkill',
@@ -120,10 +120,7 @@ class TestValidPassFlags(expect.ValidObjectFile1_5,
       'strip-reflect',
       'vector-dce',
       'workaround-1209',
-      'unify-const',
-      'graphics-robust-access',
-      'wrap-opkill',
-      'amd-ext-to-khr'
+      'unify-const'
   ]
   shader = placeholder.FileSPIRVShader(empty_main_assembly(), '.spvasm')
   output = placeholder.TempFileName('output.spv')
@@ -142,7 +139,6 @@ class TestPerformanceOptimizationPasses(expect.ValidObjectFile1_5,
       'eliminate-dead-branches',
       'merge-return',
       'inline-entry-points-exhaustive',
-      'eliminate-dead-functions',
       'eliminate-dead-code-aggressive',
       'private-to-local',
       'eliminate-local-single-block',
@@ -157,18 +153,9 @@ class TestPerformanceOptimizationPasses(expect.ValidObjectFile1_5,
       'eliminate-dead-code-aggressive',
       'ccp',
       'eliminate-dead-code-aggressive',
-      'loop-unroll',
-      'eliminate-dead-branches',
       'redundancy-elimination',
       'combine-access-chains',
       'simplify-instructions',
-      'scalar-replacement=100',
-      'convert-local-access-chains',
-      'eliminate-local-single-block',
-      'eliminate-local-single-store',
-      'eliminate-dead-code-aggressive',
-      'ssa-rewrite',
-      'eliminate-dead-code-aggressive',
       'vector-dce',
       'eliminate-dead-inserts',
       'eliminate-dead-branches',
@@ -355,3 +342,45 @@ class TestLoopPeelingThresholdArgsInvalidNumber(expect.ErrorMessageSubstr):
 
   spirv_args = ['--loop-peeling-threshold=a10f']
   expected_error_substr = 'must have a positive integer argument'
+
+@inside_spirv_testsuite('SpirvOptFlags')
+class TestWebGPUToVulkanThenVulkanToWebGPUIsInvalid(expect.ReturnCodeIsNonZero, expect.ErrorMessageSubstr):
+  """Tests Vulkan->WebGPU flag cannot be used after WebGPU->Vulkan flag."""
+
+  spirv_args = ['--webgpu-to-vulkan', '--vulkan-to-webgpu']
+  expected_error_substr = 'Cannot use both'
+
+@inside_spirv_testsuite('SpirvOptFlags')
+class TestVulkanToWebGPUThenWebGPUToVulkanIsInvalid(expect.ReturnCodeIsNonZero, expect.ErrorMessageSubstr):
+  """Tests WebGPU->Vulkan flag cannot be used after Vulkan->WebGPU flag."""
+
+  spirv_args = ['--vulkan-to-webgpu', '--webgpu-to-vulkan']
+  expected_error_substr = 'Cannot use both'
+
+@inside_spirv_testsuite('SpirvOptFlags')
+class TestTargetEnvThenVulkanToWebGPUIsInvalid(expect.ReturnCodeIsNonZero, expect.ErrorMessageSubstr):
+  """Tests Vulkan->WebGPU flag cannot be used after target env flag."""
+
+  spirv_args = ['--target-env=opengl4.0', '--vulkan-to-webgpu']
+  expected_error_substr = 'defines the target environment'
+
+@inside_spirv_testsuite('SpirvOptFlags')
+class TestVulkanToWebGPUThenTargetEnvIsInvalid(expect.ReturnCodeIsNonZero, expect.ErrorMessageSubstr):
+  """Tests target env flag cannot be used after Vulkan->WebGPU flag."""
+
+  spirv_args = ['--vulkan-to-webgpu', '--target-env=opengl4.0']
+  expected_error_substr = 'defines the target environment'
+
+@inside_spirv_testsuite('SpirvOptFlags')
+class TestTargetEnvThenWebGPUToVulkanIsInvalid(expect.ReturnCodeIsNonZero, expect.ErrorMessageSubstr):
+  """Tests WebGPU->Vulkan flag cannot be used after target env flag."""
+
+  spirv_args = ['--target-env=opengl4.0', '--webgpu-to-vulkan']
+  expected_error_substr = 'defines the target environment'
+
+@inside_spirv_testsuite('SpirvOptFlags')
+class TestWebGPUToVulkanThenTargetEnvIsInvalid(expect.ReturnCodeIsNonZero, expect.ErrorMessageSubstr):
+  """Tests target env flag cannot be used after WebGPU->Vulkan flag."""
+
+  spirv_args = ['--webgpu-to-vulkan', '--target-env=opengl4.0']
+  expected_error_substr = 'defines the target environment'

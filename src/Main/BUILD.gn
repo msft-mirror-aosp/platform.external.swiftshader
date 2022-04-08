@@ -48,10 +48,14 @@ swiftshader_source_set("swiftshader_main") {
   ]
 
   if (use_ozone && !is_win) {
-    sources += [
-      "FrameBufferOzone.cpp",
-      "FrameBufferFactoryOzone.cpp",
-    ]
+    sources += [ "FrameBufferOzone.cpp" ]
+  } else if (is_linux) {
+    if (use_x11) {
+      sources += [
+        "FrameBufferX11.cpp",
+        "libX11.cpp",
+      ]
+    }
   } else if (is_mac) {
     sources += [ "FrameBufferOSX.mm" ]
   } else if (is_win) {
@@ -59,13 +63,6 @@ swiftshader_source_set("swiftshader_main") {
       "FrameBufferDD.cpp",
       "FrameBufferGDI.cpp",
       "FrameBufferWin.cpp",
-    ]
-  }
-
-  if (use_x11) {
-    sources += [
-      "FrameBufferX11.cpp",
-      "libX11.cpp",
     ]
   }
 
@@ -79,7 +76,7 @@ swiftshader_source_set("swiftshader_main") {
 
   if (is_mac) {
     include_dirs += [ "../../include" ]
-    frameworks = [
+    libs = [
       "Quartz.framework",
       "Cocoa.framework",
     ]

@@ -17,7 +17,7 @@
 #ifndef VK_STRINGIFY_HPP_
 #define VK_STRINGIFY_HPP_
 
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.h>
 #include <string>
 
 namespace vk {

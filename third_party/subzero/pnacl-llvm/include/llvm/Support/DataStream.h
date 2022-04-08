@@ -13,6 +13,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+
 #ifndef LLVM_SUPPORT_DATASTREAM_H
 #define LLVM_SUPPORT_DATASTREAM_H
 
@@ -32,6 +33,6 @@ public:
 
 std::unique_ptr<DataStreamer> getDataFileStreamer(const std::string &Filename,
                                                   std::string *Err);
-} // namespace llvm
+}
 
-#endif // LLVM_SUPPORT_DATASTREAM_H_
+#endif  // LLVM_SUPPORT_DATASTREAM_H_

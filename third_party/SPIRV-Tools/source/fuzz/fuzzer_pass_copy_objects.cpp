@@ -15,23 +15,21 @@
 #include "source/fuzz/fuzzer_pass_copy_objects.h"
 
 #include "source/fuzz/fuzzer_util.h"
-#include "source/fuzz/protobufs/spirvfuzz_protobufs.h"
-#include "source/fuzz/transformation_add_synonym.h"
+#include "source/fuzz/transformation_copy_object.h"
 
 namespace spvtools {
 namespace fuzz {
 
 FuzzerPassCopyObjects::FuzzerPassCopyObjects(
-    opt::IRContext* ir_context, TransformationContext* transformation_context,
+    opt::IRContext* ir_context, FactManager* fact_manager,
     FuzzerContext* fuzzer_context,
     protobufs::TransformationSequence* transformations)
-    : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations) {}
+    : FuzzerPass(ir_context, fact_manager, fuzzer_context, transformations) {}
 
 FuzzerPassCopyObjects::~FuzzerPassCopyObjects() = default;
 
 void FuzzerPassCopyObjects::Apply() {
-  ForEachInstructionWithInstructionDescriptor(
+  MaybeAddTransformationBeforeEachInstruction(
       [this](opt::Function* function, opt::BasicBlock* block,
              opt::BasicBlock::iterator inst_it,
              const protobufs::InstructionDescriptor& instruction_descriptor)
@@ -40,12 +38,6 @@ void FuzzerPassCopyObjects::Apply() {
                    instruction_descriptor.target_instruction_opcode() &&
                "The opcode of the instruction we might insert before must be "
                "the same as the opcode in the descriptor for the instruction");
-
-        if (GetTransformationContext()->GetFactManager()->BlockIsDead(
-                block->id())) {
-          // Don't create synonyms in dead blocks.
-          return;
-        }
 
         // Check whether it is legitimate to insert a copy before this
         // instruction.
@@ -60,13 +52,9 @@ void FuzzerPassCopyObjects::Apply() {
           return;
         }
 
-        const auto relevant_instructions = FindAvailableInstructions(
-            function, block, inst_it,
-            [this](opt::IRContext* ir_context, opt::Instruction* inst) {
-              return TransformationAddSynonym::IsInstructionValid(
-                  ir_context, *GetTransformationContext(), inst,
-                  protobufs::TransformationAddSynonym::COPY_OBJECT);
-            });
+        std::vector<opt::Instruction*> relevant_instructions =
+            FindAvailableInstructions(function, block, inst_it,
+                                      fuzzerutil::CanMakeSynonymOf);
 
         // At this point, |relevant_instructions| contains all the instructions
         // we might think of copying.
@@ -76,12 +64,11 @@ void FuzzerPassCopyObjects::Apply() {
 
         // Choose a copyable instruction at random, and create and apply an
         // object copying transformation based on it.
-        ApplyTransformation(TransformationAddSynonym(
+        ApplyTransformation(TransformationCopyObject(
             relevant_instructions[GetFuzzerContext()->RandomIndex(
                                       relevant_instructions)]
                 ->result_id(),
-            protobufs::TransformationAddSynonym::COPY_OBJECT,
-            GetFuzzerContext()->GetFreshId(), instruction_descriptor));
+            instruction_descriptor, GetFuzzerContext()->GetFreshId()));
       });
 }
 

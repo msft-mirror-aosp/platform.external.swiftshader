@@ -13,14 +13,12 @@
 // limitations under the License.
 
 #include "VkInstance.hpp"
-#include "VkDebugUtilsMessenger.hpp"
-#include "VkDestroy.hpp"
+#include "VkDestroy.h"
 
 namespace vk {
 
-Instance::Instance(const VkInstanceCreateInfo *pCreateInfo, void *mem, VkPhysicalDevice physicalDevice, DebugUtilsMessenger *messenger)
+Instance::Instance(const VkInstanceCreateInfo *pCreateInfo, void *mem, VkPhysicalDevice physicalDevice)
     : physicalDevice(physicalDevice)
-    , messenger(messenger)
 {
 }
 
@@ -68,14 +66,6 @@ VkResult Instance::getPhysicalDeviceGroups(uint32_t *pPhysicalDeviceGroupCount,
 	*pPhysicalDeviceGroupCount = 1;
 
 	return VK_SUCCESS;
-}
-
-void Instance::submitDebugUtilsMessage(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData)
-{
-	if(messenger)
-	{
-		messenger->submitMessage(messageSeverity, messageTypes, pCallbackData);
-	}
 }
 
 }  // namespace vk

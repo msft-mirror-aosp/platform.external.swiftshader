@@ -44,8 +44,7 @@
 class SharedSemaphore
 {
 public:
-	SharedSemaphore(bool initialValue)
-	    : signaled(initialValue)
+	SharedSemaphore()
 	{
 		pthread_mutexattr_t mattr;
 		pthread_mutexattr_init(&mattr);
@@ -130,13 +129,20 @@ private:
 
 namespace vk {
 
-class OpaqueFdExternalSemaphore : public BinarySemaphore::External
+class Semaphore::External
 {
 public:
-	~OpaqueFdExternalSemaphore() { unmapRegion(); }
+	// The type of external semaphore handle types supported by this implementation.
+	static const VkExternalSemaphoreHandleTypeFlags kExternalSemaphoreHandleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+	// Default constructor. Note that one should call either init() or
+	// importFd() before any call to wait() or signal().
+	External() = default;
+
+	~External() { close(); }
 
 	// Initialize instance by creating a new shared memory region.
-	VkResult init(bool initialState) override
+	void init()
 	{
 		// Allocate or import the region's file descriptor.
 		const size_t size = sw::memoryPageSize();
@@ -147,30 +153,24 @@ public:
 		snprintf(name, sizeof(name), "SwiftShader.Semaphore.%d", ++counter);
 		if(!memfd.allocate(name, size))
 		{
-			TRACE("memfd.allocate() returned %s", strerror(errno));
-			return VK_ERROR_INITIALIZATION_FAILED;
+			ABORT("memfd.allocate() returned %s", strerror(errno));
 		}
-		if(!mapRegion(size, true, initialState))
-			return VK_ERROR_INITIALIZATION_FAILED;
-
-		return VK_SUCCESS;
+		mapRegion(size, true);
 	}
 
 	// Import an existing semaphore through its file descriptor.
-	VkResult importOpaqueFd(int fd) override
+	VkResult importFd(int fd)
 	{
-		unmapRegion();
+		close();
 		memfd.importFd(fd);
-		if(!mapRegion(sw::memoryPageSize(), false, false))
-			return VK_ERROR_INITIALIZATION_FAILED;
-
+		mapRegion(sw::memoryPageSize(), false);
 		return VK_SUCCESS;
 	}
 
 	// Export the current semaphore as a duplicated file descriptor to the same
 	// region. This can be consumed by importFd() running in a different
 	// process.
-	VkResult exportOpaqueFd(int *pFd) override
+	VkResult exportFd(int *pFd) const
 	{
 		int fd = memfd.exportFd();
 		if(fd < 0)
@@ -181,23 +181,24 @@ public:
 		return VK_SUCCESS;
 	}
 
-	void wait() override
+	void wait()
 	{
 		semaphore->wait();
 	}
 
-	bool tryWait() override
+	bool tryWait()
 	{
 		return semaphore->tryWait();
 	}
 
-	void signal() override
+	void signal()
 	{
 		semaphore->signal();
 	}
 
 private:
-	void unmapRegion()
+	// Unmap the semaphore if needed and close its file descriptor.
+	void close()
 	{
 		if(semaphore)
 		{
@@ -212,25 +213,23 @@ private:
 	}
 
 	// Remap the shared region and setup the semaphore or increment its reference count.
-	bool mapRegion(size_t size, bool needsInitialization, bool initialValue)
+	void mapRegion(size_t size, bool needInitialization)
 	{
 		// Map the region into memory and point the semaphore to it.
 		void *addr = memfd.mapReadWrite(0, size);
 		if(!addr)
 		{
-			TRACE("mmap() failed: %s", strerror(errno));
-			return false;
+			ABORT("mmap() failed: %s", strerror(errno));
 		}
 		semaphore = reinterpret_cast<SharedSemaphore *>(addr);
-		if(needsInitialization)
+		if(needInitialization)
 		{
-			new(semaphore) SharedSemaphore(initialValue);
+			new(semaphore) SharedSemaphore();
 		}
 		else
 		{
 			semaphore->addRef();
 		}
-		return true;
 	}
 
 	LinuxMemFd memfd;

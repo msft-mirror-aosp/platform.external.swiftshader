@@ -128,25 +128,9 @@ public:
 
 class R11G11B10F
 {
-public:
-	R11G11B10F(float rgb[3])
-	{
-		R = float32ToFloat11(rgb[0]);
-		G = float32ToFloat11(rgb[1]);
-		B = float32ToFloat10(rgb[2]);
-	}
-
-	operator unsigned int() const
-	{
-		return *reinterpret_cast<const unsigned int *>(this);
-	}
-
-	void toRGB16F(half rgb[3]) const
-	{
-		rgb[0] = float11ToFloat16(R);
-		rgb[1] = float11ToFloat16(G);
-		rgb[2] = float10ToFloat16(B);
-	}
+	unsigned int R : 11;
+	unsigned int G : 11;
+	unsigned int B : 10;
 
 	static inline half float11ToFloat16(unsigned short fp11)
 	{
@@ -158,7 +142,7 @@ public:
 		return shortAsHalf(fp10 << 5);  // Sign bit 0
 	}
 
-	static inline unsigned short float32ToFloat11(float fp32)
+	inline unsigned short float32ToFloat11(float fp32)
 	{
 		const unsigned int float32MantissaMask = 0x7FFFFF;
 		const unsigned int float32ExponentMask = 0x7F800000;
@@ -174,8 +158,7 @@ public:
 		const unsigned int float11ExponentBias = 14;
 
 		const unsigned int float32Maxfloat11 = 0x477E0000;
-		const unsigned int float32MinNormfloat11 = 0x38800000;
-		const unsigned int float32MinDenormfloat11 = 0x35000080;
+		const unsigned int float32Minfloat11 = 0x38800000;
 
 		const unsigned int float32Bits = *reinterpret_cast<unsigned int *>(&fp32);
 		const bool float32Sign = (float32Bits & float32SignMask) == float32SignMask;
@@ -211,14 +194,9 @@ public:
 			// The number is too large to be represented as a float11, set to max
 			return float11Max;
 		}
-		else if(float32Val < float32MinDenormfloat11)
-		{
-			// The number is too small to be represented as a denormalized float11, set to 0
-			return 0;
-		}
 		else
 		{
-			if(float32Val < float32MinNormfloat11)
+			if(float32Val < float32Minfloat11)
 			{
 				// The number is too small to be represented as a normalized float11
 				// Convert it to a denormalized value.
@@ -237,7 +215,7 @@ public:
 		}
 	}
 
-	static inline unsigned short float32ToFloat10(float fp32)
+	inline unsigned short float32ToFloat10(float fp32)
 	{
 		const unsigned int float32MantissaMask = 0x7FFFFF;
 		const unsigned int float32ExponentMask = 0x7F800000;
@@ -253,8 +231,7 @@ public:
 		const unsigned int float10ExponentBias = 14;
 
 		const unsigned int float32Maxfloat10 = 0x477C0000;
-		const unsigned int float32MinNormfloat10 = 0x38800000;
-		const unsigned int float32MinDenormfloat10 = 0x35800040;
+		const unsigned int float32Minfloat10 = 0x38800000;
 
 		const unsigned int float32Bits = *reinterpret_cast<unsigned int *>(&fp32);
 		const bool float32Sign = (float32Bits & float32SignMask) == float32SignMask;
@@ -272,7 +249,7 @@ public:
 			}
 			else if(float32Sign)
 			{
-				// -INF is clamped to 0 since float10 is positive only
+				// -INF is clamped to 0 since float11 is positive only
 				return 0;
 			}
 			else
@@ -287,19 +264,14 @@ public:
 		}
 		else if(float32Val > float32Maxfloat10)
 		{
-			// The number is too large to be represented as a float10, set to max
+			// The number is too large to be represented as a float11, set to max
 			return float10Max;
-		}
-		else if(float32Val < float32MinDenormfloat10)
-		{
-			// The number is too small to be represented as a denormalized float10, set to 0
-			return 0;
 		}
 		else
 		{
-			if(float32Val < float32MinNormfloat10)
+			if(float32Val < float32Minfloat10)
 			{
-				// The number is too small to be represented as a normalized float10
+				// The number is too small to be represented as a normalized float11
 				// Convert it to a denormalized value.
 				const unsigned int shift = (float32ExponentBias - float10ExponentBias) -
 				                           (float32Val >> float32ExponentFirstBit);
@@ -308,7 +280,7 @@ public:
 			}
 			else
 			{
-				// Rebias the exponent to represent the value as a normalized float10
+				// Rebias the exponent to represent the value as a normalized float11
 				float32Val += 0xC8000000;
 			}
 
@@ -316,10 +288,25 @@ public:
 		}
 	}
 
-private:
-	unsigned int R : 11;
-	unsigned int G : 11;
-	unsigned int B : 10;
+public:
+	R11G11B10F(float rgb[3])
+	{
+		R = float32ToFloat11(rgb[0]);
+		G = float32ToFloat11(rgb[1]);
+		B = float32ToFloat10(rgb[2]);
+	}
+
+	operator unsigned int() const
+	{
+		return *reinterpret_cast<const unsigned int *>(this);
+	}
+
+	void toRGB16F(half rgb[3]) const
+	{
+		rgb[0] = float11ToFloat16(R);
+		rgb[1] = float11ToFloat16(G);
+		rgb[2] = float10ToFloat16(B);
+	}
 };
 
 }  // namespace sw

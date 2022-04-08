@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #include "source/fuzz/transformation_move_block_down.h"
-
-#include "gtest/gtest.h"
-#include "source/fuzz/fuzzer_util.h"
 #include "test/fuzz/fuzz_test_util.h"
 
 namespace spvtools {
@@ -55,12 +52,10 @@ TEST(TransformationMoveBlockDownTest, NoMovePossible1) {
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
 
-  spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(
-      MakeUnique<FactManager>(context.get()), validator_options);
+  FactManager fact_manager;
+
   auto transformation = TransformationMoveBlockDown(11);
-  ASSERT_FALSE(
-      transformation.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(transformation.IsApplicable(context.get(), fact_manager));
 }
 
 TEST(TransformationMoveBlockDownTest, NoMovePossible2) {
@@ -94,12 +89,10 @@ TEST(TransformationMoveBlockDownTest, NoMovePossible2) {
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
 
-  spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(
-      MakeUnique<FactManager>(context.get()), validator_options);
+  FactManager fact_manager;
+
   auto transformation = TransformationMoveBlockDown(5);
-  ASSERT_FALSE(
-      transformation.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(transformation.IsApplicable(context.get(), fact_manager));
 }
 
 TEST(TransformationMoveBlockDownTest, NoMovePossible3) {
@@ -135,12 +128,10 @@ TEST(TransformationMoveBlockDownTest, NoMovePossible3) {
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
 
-  spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(
-      MakeUnique<FactManager>(context.get()), validator_options);
+  FactManager fact_manager;
+
   auto transformation = TransformationMoveBlockDown(100);
-  ASSERT_FALSE(
-      transformation.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(transformation.IsApplicable(context.get(), fact_manager));
 }
 
 TEST(TransformationMoveBlockDownTest, NoMovePossible4) {
@@ -180,12 +171,10 @@ TEST(TransformationMoveBlockDownTest, NoMovePossible4) {
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
 
-  spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(
-      MakeUnique<FactManager>(context.get()), validator_options);
+  FactManager fact_manager;
+
   auto transformation = TransformationMoveBlockDown(12);
-  ASSERT_FALSE(
-      transformation.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(transformation.IsApplicable(context.get(), fact_manager));
 }
 
 TEST(TransformationMoveBlockDownTest, ManyMovesPossible) {
@@ -287,9 +276,8 @@ TEST(TransformationMoveBlockDownTest, ManyMovesPossible) {
   const auto context =
       BuildModule(env, consumer, before_transformation, kFuzzAssembleOption);
 
-  spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(
-      MakeUnique<FactManager>(context.get()), validator_options);
+  FactManager fact_manager;
+
   // The block ids are: 5 14 20 23 21 25 29 32 30 15
   // We make a transformation to move each of them down, plus a transformation
   // to move a non-block, 27, down.
@@ -318,138 +306,111 @@ TEST(TransformationMoveBlockDownTest, ManyMovesPossible) {
   // 15 dominates nothing
 
   // Current ordering: 5 14 20 23 21 25 29 32 30 15
-  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_14.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_25.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_15.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_14.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_25.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_15.IsApplicable(context.get(), fact_manager));
 
   // Let's bubble 20 all the way down.
 
-  ApplyAndCheckFreshIds(move_down_20, context.get(), &transformation_context);
-  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
-                                               kConsoleMessageConsumer));
+  move_down_20.Apply(context.get(), &fact_manager);
+  ASSERT_TRUE(IsValid(env, context.get()));
 
   // Current ordering: 5 14 23 20 21 25 29 32 30 15
-  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_14.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_25.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_15.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_14.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_25.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_15.IsApplicable(context.get(), fact_manager));
 
-  ApplyAndCheckFreshIds(move_down_20, context.get(), &transformation_context);
-  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
-                                               kConsoleMessageConsumer));
+  move_down_20.Apply(context.get(), &fact_manager);
+  ASSERT_TRUE(IsValid(env, context.get()));
 
   // Current ordering: 5 14 23 21 20 25 29 32 30 15
-  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_14.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_25.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_15.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_14.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_25.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_15.IsApplicable(context.get(), fact_manager));
 
-  ApplyAndCheckFreshIds(move_down_20, context.get(), &transformation_context);
-  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
-                                               kConsoleMessageConsumer));
+  move_down_20.Apply(context.get(), &fact_manager);
+  ASSERT_TRUE(IsValid(env, context.get()));
 
   // Current ordering: 5 14 23 21 25 20 29 32 30 15
-  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_14.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_25.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_15.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_14.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_25.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_15.IsApplicable(context.get(), fact_manager));
 
-  ApplyAndCheckFreshIds(move_down_20, context.get(), &transformation_context);
-  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
-                                               kConsoleMessageConsumer));
+  move_down_20.Apply(context.get(), &fact_manager);
+  ASSERT_TRUE(IsValid(env, context.get()));
 
   // Current ordering: 5 14 23 21 25 29 20 32 30 15
-  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_14.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_25.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_15.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_14.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_25.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_15.IsApplicable(context.get(), fact_manager));
 
-  ApplyAndCheckFreshIds(move_down_20, context.get(), &transformation_context);
-  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
-                                               kConsoleMessageConsumer));
+  move_down_20.Apply(context.get(), &fact_manager);
+  ASSERT_TRUE(IsValid(env, context.get()));
 
   // Current ordering: 5 14 23 21 25 29 32 20 30 15
-  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_14.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_25.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_15.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_14.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_25.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_15.IsApplicable(context.get(), fact_manager));
 
-  ApplyAndCheckFreshIds(move_down_20, context.get(), &transformation_context);
-  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
-                                               kConsoleMessageConsumer));
+  move_down_20.Apply(context.get(), &fact_manager);
+  ASSERT_TRUE(IsValid(env, context.get()));
 
   // Current ordering: 5 14 23 21 25 29 32 30 20 15
-  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_14.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_25.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_15.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_14.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_25.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_20.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_15.IsApplicable(context.get(), fact_manager));
 
-  ApplyAndCheckFreshIds(move_down_20, context.get(), &transformation_context);
-  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
-                                               kConsoleMessageConsumer));
+  move_down_20.Apply(context.get(), &fact_manager);
+  ASSERT_TRUE(IsValid(env, context.get()));
 
   std::string after_bubbling_20_down = R"(
                OpCapability Shader
@@ -524,77 +485,64 @@ TEST(TransformationMoveBlockDownTest, ManyMovesPossible) {
   ASSERT_TRUE(IsEqual(env, after_bubbling_20_down, context.get()));
 
   // Current ordering: 5 14 23 21 25 29 32 30 15 20
-  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_14.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_25.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_15.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_20.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_14.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_25.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_15.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_20.IsApplicable(context.get(), fact_manager));
 
-  ApplyAndCheckFreshIds(move_down_23, context.get(), &transformation_context);
-  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
-                                               kConsoleMessageConsumer));
+  move_down_23.Apply(context.get(), &fact_manager);
+  ASSERT_TRUE(IsValid(env, context.get()));
 
   // Current ordering: 5 14 21 23 25 29 32 30 15 20
-  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_14.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_25.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_15.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_20.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_14.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_25.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_15.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_20.IsApplicable(context.get(), fact_manager));
 
-  ApplyAndCheckFreshIds(move_down_23, context.get(), &transformation_context);
-  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
-                                               kConsoleMessageConsumer));
+  move_down_23.Apply(context.get(), &fact_manager);
+  ASSERT_TRUE(IsValid(env, context.get()));
 
   // Current ordering: 5 14 21 25 23 29 32 30 15 20
-  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_14.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_25.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_15.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_20.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_14.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_25.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_15.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_20.IsApplicable(context.get(), fact_manager));
 
-  ApplyAndCheckFreshIds(move_down_21, context.get(), &transformation_context);
-  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
-                                               kConsoleMessageConsumer));
+  move_down_21.Apply(context.get(), &fact_manager);
+  ASSERT_TRUE(IsValid(env, context.get()));
 
   // Current ordering: 5 14 25 21 23 29 32 30 15 20
-  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_14.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_25.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_15.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_20.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_14.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_25.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_15.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_20.IsApplicable(context.get(), fact_manager));
 
-  ApplyAndCheckFreshIds(move_down_14, context.get(), &transformation_context);
-  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
-                                               kConsoleMessageConsumer));
+  move_down_14.Apply(context.get(), &fact_manager);
+  ASSERT_TRUE(IsValid(env, context.get()));
 
   std::string after_more_shuffling = R"(
                OpCapability Shader
@@ -669,18 +617,16 @@ TEST(TransformationMoveBlockDownTest, ManyMovesPossible) {
   ASSERT_TRUE(IsEqual(env, after_more_shuffling, context.get()));
 
   // Final ordering: 5 25 14 21 23 29 32 30 15 20
-  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_25.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_14.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), transformation_context));
-  ASSERT_TRUE(move_down_15.IsApplicable(context.get(), transformation_context));
-  ASSERT_FALSE(
-      move_down_20.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(move_down_5.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_25.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_14.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_21.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_23.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_29.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_32.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_30.IsApplicable(context.get(), fact_manager));
+  ASSERT_TRUE(move_down_15.IsApplicable(context.get(), fact_manager));
+  ASSERT_FALSE(move_down_20.IsApplicable(context.get(), fact_manager));
 }
 
 TEST(TransformationMoveBlockDownTest, DoNotMoveUnreachable) {
@@ -711,14 +657,12 @@ TEST(TransformationMoveBlockDownTest, DoNotMoveUnreachable) {
   const auto env = SPV_ENV_UNIVERSAL_1_3;
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
-  spvtools::ValidatorOptions validator_options;
-  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
-                                               kConsoleMessageConsumer));
-  TransformationContext transformation_context(
-      MakeUnique<FactManager>(context.get()), validator_options);
+  ASSERT_TRUE(IsValid(env, context.get()));
+
+  FactManager fact_manager;
+
   auto transformation = TransformationMoveBlockDown(6);
-  ASSERT_FALSE(
-      transformation.IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(transformation.IsApplicable(context.get(), fact_manager));
 }
 
 }  // namespace

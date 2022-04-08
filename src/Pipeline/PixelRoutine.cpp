@@ -44,11 +44,6 @@ PixelRoutine::PixelRoutine(
 			routine.inputs[i] = Float4(0.0f);
 		}
 	}
-
-	for(int i = 0; i < RENDERTARGETS; i++)
-	{
-		outputMasks[i] = 0xF;
-	}
 }
 
 PixelRoutine::~PixelRoutine()
@@ -57,287 +52,238 @@ PixelRoutine::~PixelRoutine()
 
 void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBuffer, Pointer<Byte> &sBuffer, Int cMask[4], Int &x, Int &y)
 {
-	const bool earlyDepthTest = !spirvShader || spirvShader->getModes().EarlyFragmentTests;
+	// TODO: consider shader which modifies sample mask in general
+	const bool earlyDepthTest = !spirvShader || (spirvShader->getModes().EarlyFragmentTests && !spirvShader->getModes().DepthReplacing && !state.alphaToCoverage);
 
 	Int zMask[4];  // Depth mask
 	Int sMask[4];  // Stencil mask
 
-	bool sampleShadingEnabled = state.sampleShadingEnabled;
-	float minSampleShading = state.minSampleShading;
-	if(spirvShader)
+	for(unsigned int q = 0; q < state.multiSampleCount; q++)
 	{
-		// SampleId and SamplePosition built-ins require the sampleRateShading feature, so the Vulkan spec
-		// requires turning on per sample shading if either of them is present in the shader.
+		zMask[q] = cMask[q];
+		sMask[q] = cMask[q];
+	}
 
-		// "If a fragment shader entry point's interface includes an input variable decorated with SampleId,
-		//  Sample Shading is considered enabled with a minSampleShading value of 1.0."
+	for(unsigned int q = 0; q < state.multiSampleCount; q++)
+	{
+		stencilTest(sBuffer, q, x, sMask[q], cMask[q]);
+	}
 
-		// "If a fragment shader entry point's interface includes an input variable decorated with SamplePosition,
-		//  Sample Shading is considered enabled with a minSampleShading value of 1.0."
-		if(spirvShader->hasBuiltinInput(spv::BuiltInSampleId) || spirvShader->hasBuiltinInput(spv::BuiltInSamplePosition))
+	Float4 f;
+	Float4 rhwCentroid;
+
+	Float4 xxxx = Float4(Float(x)) + *Pointer<Float4>(primitive + OFFSET(Primitive, xQuad), 16);
+
+	if(interpolateZ())
+	{
+		for(unsigned int q = 0; q < state.multiSampleCount; q++)
 		{
-			sampleShadingEnabled = true;
-			minSampleShading = 1.0f;
+			Float4 x = xxxx;
+
+			if(state.enableMultiSampling)
+			{
+				x -= *Pointer<Float4>(constants + OFFSET(Constants, X) + q * sizeof(float4));
+			}
+
+			z[q] = interpolate(x, Dz[q], z[q], primitive + OFFSET(Primitive, z), false, false, state.depthClamp);
 		}
 	}
 
-	bool shaderContainsInterpolation = spirvShader && spirvShader->getUsedCapabilities().InterpolationFunction;
-	bool shaderContainsSampleQualifier = spirvShader && spirvShader->getModes().ContainsSampleQualifier;
-	bool perSampleShading = (sampleShadingEnabled && (minSampleShading > 0.0f)) ||
-	                        shaderContainsInterpolation || shaderContainsSampleQualifier;
-	unsigned int numSampleRenders = perSampleShading ? state.multiSampleCount : 1;
+	Bool depthPass = false;
 
-	for(unsigned int i = 0; i < numSampleRenders; ++i)
+	if(earlyDepthTest)
 	{
-		int sampleId = perSampleShading ? i : -1;
-		unsigned int sampleLoopInit = perSampleShading ? sampleId : 0;
-		unsigned int sampleLoopEnd = perSampleShading ? sampleId + 1 : state.multiSampleCount;
-
-		for(unsigned int q = sampleLoopInit; q < sampleLoopEnd; q++)
+		for(unsigned int q = 0; q < state.multiSampleCount; q++)
 		{
-			zMask[q] = cMask[q];
-			sMask[q] = cMask[q];
+			depthPass = depthPass || depthTest(zBuffer, q, x, z[q], sMask[q], zMask[q], cMask[q]);
 		}
+	}
 
-		for(unsigned int q = sampleLoopInit; q < sampleLoopEnd; q++)
+	If(depthPass || Bool(!earlyDepthTest))
+	{
+		Float4 yyyy = Float4(Float(y)) + *Pointer<Float4>(primitive + OFFSET(Primitive, yQuad), 16);
+
+		// Centroid locations
+		Float4 XXXX = Float4(0.0f);
+		Float4 YYYY = Float4(0.0f);
+
+		if(state.centroid)
 		{
-			stencilTest(sBuffer, q, x, sMask[q], cMask[q]);
-		}
+			Float4 WWWW(1.0e-9f);
 
-		Float4 f;
-		Float4 rhwCentroid;
-
-		Float4 xxxx = Float4(Float(x)) + *Pointer<Float4>(primitive + OFFSET(Primitive, xQuad), 16);
-
-		if(interpolateZ())
-		{
-			for(unsigned int q = sampleLoopInit; q < sampleLoopEnd; q++)
+			for(unsigned int q = 0; q < state.multiSampleCount; q++)
 			{
-				Float4 x = xxxx;
+				XXXX += *Pointer<Float4>(constants + OFFSET(Constants, sampleX[q]) + 16 * cMask[q]);
+				YYYY += *Pointer<Float4>(constants + OFFSET(Constants, sampleY[q]) + 16 * cMask[q]);
+				WWWW += *Pointer<Float4>(constants + OFFSET(Constants, weight) + 16 * cMask[q]);
+			}
 
-				if(state.enableMultiSampling)
-				{
-					x -= *Pointer<Float4>(constants + OFFSET(Constants, X) + q * sizeof(float4));
-				}
+			WWWW = Rcp_pp(WWWW);
+			XXXX *= WWWW;
+			YYYY *= WWWW;
 
-				z[q] = interpolate(x, Dz[q], z[q], primitive + OFFSET(Primitive, z), false, false);
+			XXXX += xxxx;
+			YYYY += yyyy;
+		}
 
-				if(state.depthBias)
-				{
-					z[q] += *Pointer<Float4>(primitive + OFFSET(Primitive, zBias), 16);
-				}
+		if(interpolateW())
+		{
+			w = interpolate(xxxx, Dw, rhw, primitive + OFFSET(Primitive, w), false, false, false);
+			rhw = reciprocal(w, false, false, true);
 
-				if(state.depthClamp)
-				{
-					z[q] = Min(Max(z[q], Float4(0.0f)), Float4(1.0f));
-				}
+			if(state.centroid)
+			{
+				rhwCentroid = reciprocal(interpolateCentroid(XXXX, YYYY, rhwCentroid, primitive + OFFSET(Primitive, w), false, false));
 			}
 		}
 
-		Bool depthPass = false;
-
-		if(earlyDepthTest)
+		if(spirvShader)
 		{
-			for(unsigned int q = sampleLoopInit; q < sampleLoopEnd; q++)
+			for(int interpolant = 0; interpolant < MAX_INTERFACE_COMPONENTS; interpolant++)
 			{
-				depthPass = depthPass || depthTest(zBuffer, q, x, z[q], sMask[q], zMask[q], cMask[q]);
-			}
-		}
-
-		If(depthPass || Bool(!earlyDepthTest))
-		{
-			Float4 yyyy = Float4(Float(y)) + *Pointer<Float4>(primitive + OFFSET(Primitive, yQuad), 16);
-
-			// Centroid locations
-			Float4 XXXX = Float4(0.0f);
-			Float4 YYYY = Float4(0.0f);
-
-			if(state.centroid || shaderContainsInterpolation)
-			{
-				Float4 WWWW(1.0e-9f);
-
-				for(unsigned int q = sampleLoopInit; q < sampleLoopEnd; q++)
+				auto const &input = spirvShader->inputs[interpolant];
+				if(input.Type != SpirvShader::ATTRIBTYPE_UNUSED)
 				{
-					XXXX += *Pointer<Float4>(constants + OFFSET(Constants, sampleX[q]) + 16 * cMask[q]);
-					YYYY += *Pointer<Float4>(constants + OFFSET(Constants, sampleY[q]) + 16 * cMask[q]);
-					WWWW += *Pointer<Float4>(constants + OFFSET(Constants, weight) + 16 * cMask[q]);
-				}
-
-				WWWW = Rcp(WWWW, Precision::Relaxed);
-				XXXX *= WWWW;
-				YYYY *= WWWW;
-
-				XXXX += xxxx;
-				YYYY += yyyy;
-			}
-
-			if(interpolateW())
-			{
-				w = interpolate(xxxx, Dw, rhw, primitive + OFFSET(Primitive, w), false, false);
-				rhw = reciprocal(w, false, false, true);
-
-				if(state.centroid || shaderContainsInterpolation)
-				{
-					rhwCentroid = reciprocal(SpirvRoutine::interpolateAtXY(XXXX, YYYY, rhwCentroid, primitive + OFFSET(Primitive, w), false, false));
-				}
-			}
-
-			if(spirvShader)
-			{
-				if(shaderContainsInterpolation)
-				{
-					routine.interpolationData.primitive = primitive;
-
-					routine.interpolationData.x = xxxx;
-					routine.interpolationData.y = yyyy;
-					routine.interpolationData.rhw = rhw;
-
-					routine.interpolationData.xCentroid = XXXX;
-					routine.interpolationData.yCentroid = YYYY;
-					routine.interpolationData.rhwCentroid = rhwCentroid;
-				}
-
-				if(perSampleShading && (state.multiSampleCount > 1))
-				{
-					xxxx += Float4(Constants::SampleLocationsX[sampleId]);
-					yyyy += Float4(Constants::SampleLocationsY[sampleId]);
-				}
-
-				for(int interpolant = 0; interpolant < MAX_INTERFACE_COMPONENTS; interpolant++)
-				{
-					auto const &input = spirvShader->inputs[interpolant];
-					if(input.Type != SpirvShader::ATTRIBTYPE_UNUSED)
+					if(input.Centroid && state.enableMultiSampling)
 					{
-						if(input.Centroid && state.enableMultiSampling)
-						{
-							routine.inputs[interpolant] =
-							    SpirvRoutine::interpolateAtXY(XXXX, YYYY, rhwCentroid,
-							                                  primitive + OFFSET(Primitive, V[interpolant]),
-							                                  input.Flat, !input.NoPerspective);
-						}
-						else if(perSampleShading)
-						{
-							routine.inputs[interpolant] =
-							    SpirvRoutine::interpolateAtXY(xxxx, yyyy, rhw,
-							                                  primitive + OFFSET(Primitive, V[interpolant]),
-							                                  input.Flat, !input.NoPerspective);
-						}
-						else
-						{
-							routine.inputs[interpolant] =
-							    interpolate(xxxx, Dv[interpolant], rhw,
-							                primitive + OFFSET(Primitive, V[interpolant]),
-							                input.Flat, !input.NoPerspective);
-						}
+						routine.inputs[interpolant] =
+						    interpolateCentroid(XXXX, YYYY, rhwCentroid,
+						                        primitive + OFFSET(Primitive, V[interpolant]),
+						                        input.Flat, !input.NoPerspective);
+					}
+					else
+					{
+						routine.inputs[interpolant] =
+						    interpolate(xxxx, Dv[interpolant], rhw,
+						                primitive + OFFSET(Primitive, V[interpolant]),
+						                input.Flat, !input.NoPerspective, false);
 					}
 				}
+			}
 
-				setBuiltins(x, y, z, w, cMask, sampleId);
+			setBuiltins(x, y, z, w, cMask);
 
-				for(uint32_t i = 0; i < state.numClipDistances; i++)
+			for(uint32_t i = 0; i < state.numClipDistances; i++)
+			{
+				auto distance = interpolate(xxxx, DclipDistance[i], rhw,
+				                            primitive + OFFSET(Primitive, clipDistance[i]),
+				                            false, true, false);
+
+				auto clipMask = SignMask(CmpGE(distance, SIMD::Float(0)));
+				for(auto ms = 0u; ms < state.multiSampleCount; ms++)
 				{
-					auto distance = interpolate(xxxx, DclipDistance[i], rhw,
-					                            primitive + OFFSET(Primitive, clipDistance[i]),
-					                            false, true);
-
-					auto clipMask = SignMask(CmpGE(distance, SIMD::Float(0)));
-					for(auto ms = sampleLoopInit; ms < sampleLoopEnd; ms++)
-					{
-						// FIXME(b/148105887): Fragments discarded by clipping do not exist at
-						// all -- they should not be counted in queries or have their Z/S effects
-						// performed when early fragment tests are enabled.
-						cMask[ms] &= clipMask;
-					}
-
-					if(spirvShader->getUsedCapabilities().ClipDistance)
-					{
-						auto it = spirvShader->inputBuiltins.find(spv::BuiltInClipDistance);
-						if(it != spirvShader->inputBuiltins.end())
-						{
-							if(i < it->second.SizeInComponents)
-							{
-								routine.getVariable(it->second.Id)[it->second.FirstComponent + i] = distance;
-							}
-						}
-					}
+					// FIXME(b/148105887): Fragments discarded by clipping do not exist at
+					// all -- they should not be counted in queries or have their Z/S effects
+					// performed when early fragment tests are enabled.
+					cMask[ms] &= clipMask;
 				}
 
-				if(spirvShader->getUsedCapabilities().CullDistance)
+				if(spirvShader->getUsedCapabilities().ClipDistance)
 				{
-					auto it = spirvShader->inputBuiltins.find(spv::BuiltInCullDistance);
+					auto it = spirvShader->inputBuiltins.find(spv::BuiltInClipDistance);
 					if(it != spirvShader->inputBuiltins.end())
 					{
-						for(uint32_t i = 0; i < state.numCullDistances; i++)
+						if(i < it->second.SizeInComponents)
 						{
-							if(i < it->second.SizeInComponents)
-							{
-								routine.getVariable(it->second.Id)[it->second.FirstComponent + i] =
-								    interpolate(xxxx, DcullDistance[i], rhw,
-								                primitive + OFFSET(Primitive, cullDistance[i]),
-								                false, true);
-							}
+							routine.getVariable(it->second.Id)[it->second.FirstComponent + i] = distance;
 						}
 					}
 				}
 			}
 
-			Bool alphaPass = true;
-
-			if(spirvShader)
+			if(spirvShader->getUsedCapabilities().CullDistance)
 			{
-				bool earlyFragTests = (spirvShader && spirvShader->getModes().EarlyFragmentTests);
-				applyShader(cMask, earlyFragTests ? sMask : cMask, earlyDepthTest ? zMask : cMask, sampleId);
-			}
-
-			alphaPass = alphaTest(cMask, sampleId);
-
-			if((spirvShader && spirvShader->getModes().ContainsKill) || state.alphaToCoverage)
-			{
-				for(unsigned int q = sampleLoopInit; q < sampleLoopEnd; q++)
+				auto it = spirvShader->inputBuiltins.find(spv::BuiltInCullDistance);
+				if(it != spirvShader->inputBuiltins.end())
 				{
-					zMask[q] &= cMask[q];
-					sMask[q] &= cMask[q];
-				}
-			}
-
-			If(alphaPass)
-			{
-				if(!earlyDepthTest)
-				{
-					for(unsigned int q = sampleLoopInit; q < sampleLoopEnd; q++)
+					for(uint32_t i = 0; i < state.numCullDistances; i++)
 					{
-						depthPass = depthPass || depthTest(zBuffer, q, x, z[q], sMask[q], zMask[q], cMask[q]);
-					}
-				}
-
-				If(depthPass || Bool(earlyDepthTest))
-				{
-					for(unsigned int q = sampleLoopInit; q < sampleLoopEnd; q++)
-					{
-						if(state.multiSampleMask & (1 << q))
+						if(i < it->second.SizeInComponents)
 						{
-							writeDepth(zBuffer, q, x, z[q], zMask[q]);
-
-							if(state.occlusionEnabled)
-							{
-								occlusion += *Pointer<UInt>(constants + OFFSET(Constants, occlusionCount) + 4 * (zMask[q] & sMask[q]));
-							}
+							routine.getVariable(it->second.Id)[it->second.FirstComponent + i] =
+							    interpolate(xxxx, DcullDistance[i], rhw,
+							                primitive + OFFSET(Primitive, cullDistance[i]),
+							                false, true, false);
 						}
 					}
-
-					rasterOperation(cBuffer, x, sMask, zMask, cMask, sampleId);
 				}
 			}
 		}
 
-		for(unsigned int q = sampleLoopInit; q < sampleLoopEnd; q++)
+		Bool alphaPass = true;
+
+		if(spirvShader)
 		{
-			if(state.multiSampleMask & (1 << q))
+			bool earlyFragTests = (spirvShader && spirvShader->getModes().EarlyFragmentTests);
+			applyShader(cMask, earlyFragTests ? sMask : cMask, earlyDepthTest ? zMask : cMask);
+		}
+
+		alphaPass = alphaTest(cMask);
+
+		if((spirvShader && spirvShader->getModes().ContainsKill) || state.alphaToCoverage)
+		{
+			for(unsigned int q = 0; q < state.multiSampleCount; q++)
 			{
-				writeStencil(sBuffer, q, x, sMask[q], zMask[q], cMask[q]);
+				zMask[q] &= cMask[q];
+				sMask[q] &= cMask[q];
+			}
+		}
+
+		If(alphaPass)
+		{
+			if(!earlyDepthTest)
+			{
+				for(unsigned int q = 0; q < state.multiSampleCount; q++)
+				{
+					depthPass = depthPass || depthTest(zBuffer, q, x, z[q], sMask[q], zMask[q], cMask[q]);
+				}
+			}
+
+			If(depthPass || Bool(earlyDepthTest))
+			{
+				for(unsigned int q = 0; q < state.multiSampleCount; q++)
+				{
+					if(state.multiSampleMask & (1 << q))
+					{
+						writeDepth(zBuffer, q, x, z[q], zMask[q]);
+
+						if(state.occlusionEnabled)
+						{
+							occlusion += *Pointer<UInt>(constants + OFFSET(Constants, occlusionCount) + 4 * (zMask[q] & sMask[q]));
+						}
+					}
+				}
+
+				rasterOperation(cBuffer, x, sMask, zMask, cMask);
 			}
 		}
 	}
+
+	for(unsigned int q = 0; q < state.multiSampleCount; q++)
+	{
+		if(state.multiSampleMask & (1 << q))
+		{
+			writeStencil(sBuffer, q, x, sMask[q], zMask[q], cMask[q]);
+		}
+	}
+}
+
+Float4 PixelRoutine::interpolateCentroid(const Float4 &x, const Float4 &y, const Float4 &rhw, Pointer<Byte> planeEquation, bool flat, bool perspective)
+{
+	Float4 interpolant = *Pointer<Float4>(planeEquation + OFFSET(PlaneEquation, C), 16);
+
+	if(!flat)
+	{
+		interpolant += x * *Pointer<Float4>(planeEquation + OFFSET(PlaneEquation, A), 16) +
+		               y * *Pointer<Float4>(planeEquation + OFFSET(PlaneEquation, B), 16);
+
+		if(perspective)
+		{
+			interpolant *= rhw;
+		}
+	}
+
+	return interpolant;
 }
 
 void PixelRoutine::stencilTest(const Pointer<Byte> &sBuffer, int q, const Int &x, Int &sMask, const Int &cMask)
@@ -449,7 +395,9 @@ Bool PixelRoutine::depthTest32F(const Pointer<Byte> &zBuffer, int q, const Int &
 
 	if(state.depthCompareMode != VK_COMPARE_OP_NEVER || (state.depthCompareMode != VK_COMPARE_OP_ALWAYS && !state.depthWriteEnable))
 	{
-		zValue = Float4(*Pointer<Float2>(buffer), *Pointer<Float2>(buffer + pitch));
+		// FIXME: Properly optimizes?
+		zValue.xy = *Pointer<Float4>(buffer);
+		zValue.zw = *Pointer<Float4>(buffer + pitch - 8);
 	}
 
 	Int4 zTest;
@@ -526,8 +474,9 @@ Bool PixelRoutine::depthTest16(const Pointer<Byte> &zBuffer, int q, const Int &x
 
 	if(state.depthCompareMode != VK_COMPARE_OP_NEVER || (state.depthCompareMode != VK_COMPARE_OP_ALWAYS && !state.depthWriteEnable))
 	{
-		zValue = As<Short4>(Insert(As<Int2>(zValue), *Pointer<Int>(buffer), 0));
-		zValue = As<Short4>(Insert(As<Int2>(zValue), *Pointer<Int>(buffer + pitch), 1));
+		// FIXME: Properly optimizes?
+		zValue = *Pointer<Short4>(buffer) & Short4(-1, -1, 0, 0);
+		zValue = zValue | (*Pointer<Short4>(buffer + pitch - 4) & Short4(0, 0, -1, -1));
 	}
 
 	Int4 zTest;
@@ -595,33 +544,27 @@ Bool PixelRoutine::depthTest(const Pointer<Byte> &zBuffer, int q, const Int &x, 
 	}
 
 	if(state.depthFormat == VK_FORMAT_D16_UNORM)
-	{
 		return depthTest16(zBuffer, q, x, z, sMask, zMask, cMask);
-	}
 	else
-	{
 		return depthTest32F(zBuffer, q, x, z, sMask, zMask, cMask);
-	}
 }
 
-void PixelRoutine::alphaToCoverage(Int cMask[4], const Float4 &alpha, int sampleId)
+void PixelRoutine::alphaToCoverage(Int cMask[4], const Float4 &alpha)
 {
-	static const int a2c[4] = {
-		OFFSET(DrawData, a2c0),
-		OFFSET(DrawData, a2c1),
-		OFFSET(DrawData, a2c2),
-		OFFSET(DrawData, a2c3),
-	};
+	Int4 coverage0 = CmpNLT(alpha, *Pointer<Float4>(data + OFFSET(DrawData, a2c0)));
+	Int4 coverage1 = CmpNLT(alpha, *Pointer<Float4>(data + OFFSET(DrawData, a2c1)));
+	Int4 coverage2 = CmpNLT(alpha, *Pointer<Float4>(data + OFFSET(DrawData, a2c2)));
+	Int4 coverage3 = CmpNLT(alpha, *Pointer<Float4>(data + OFFSET(DrawData, a2c3)));
 
-	unsigned int sampleLoopInit = (sampleId >= 0) ? sampleId : 0;
-	unsigned int sampleLoopEnd = (sampleId >= 0) ? sampleId + 1 : state.multiSampleCount;
+	Int aMask0 = SignMask(coverage0);
+	Int aMask1 = SignMask(coverage1);
+	Int aMask2 = SignMask(coverage2);
+	Int aMask3 = SignMask(coverage3);
 
-	for(unsigned int q = sampleLoopInit; q < sampleLoopEnd; q++)
-	{
-		Int4 coverage = CmpNLT(alpha, *Pointer<Float4>(data + a2c[q]));
-		Int aMask = SignMask(coverage);
-		cMask[q] &= aMask;
-	}
+	cMask[0] &= aMask0;
+	cMask[1] &= aMask1;
+	cMask[2] &= aMask2;
+	cMask[3] &= aMask3;
 }
 
 void PixelRoutine::writeDepth32F(Pointer<Byte> &zBuffer, int q, const Int &x, const Float4 &z, const Int &zMask)
@@ -645,13 +588,16 @@ void PixelRoutine::writeDepth32F(Pointer<Byte> &zBuffer, int q, const Int &x, co
 
 	if(state.depthCompareMode != VK_COMPARE_OP_NEVER || (state.depthCompareMode != VK_COMPARE_OP_ALWAYS && !state.depthWriteEnable))
 	{
-		zValue = Float4(*Pointer<Float2>(buffer), *Pointer<Float2>(buffer + pitch));
+		// FIXME: Properly optimizes?
+		zValue.xy = *Pointer<Float4>(buffer);
+		zValue.zw = *Pointer<Float4>(buffer + pitch - 8);
 	}
 
 	Z = As<Float4>(As<Int4>(Z) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X) + zMask * 16, 16));
 	zValue = As<Float4>(As<Int4>(zValue) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X) + zMask * 16, 16));
 	Z = As<Float4>(As<Int4>(Z) | As<Int4>(zValue));
 
+	// FIXME: Properly optimizes?
 	*Pointer<Float2>(buffer) = Float2(Z.xy);
 	*Pointer<Float2>(buffer + pitch) = Float2(Z.zw);
 }
@@ -677,16 +623,20 @@ void PixelRoutine::writeDepth16(Pointer<Byte> &zBuffer, int q, const Int &x, con
 
 	if(state.depthCompareMode != VK_COMPARE_OP_NEVER || (state.depthCompareMode != VK_COMPARE_OP_ALWAYS && !state.depthWriteEnable))
 	{
-		zValue = As<Short4>(Insert(As<Int2>(zValue), *Pointer<Int>(buffer), 0));
-		zValue = As<Short4>(Insert(As<Int2>(zValue), *Pointer<Int>(buffer + pitch), 1));
+		// FIXME: Properly optimizes?
+		zValue = *Pointer<Short4>(buffer) & Short4(-1, -1, 0, 0);
+		zValue = zValue | (*Pointer<Short4>(buffer + pitch - 4) & Short4(0, 0, -1, -1));
 	}
 
 	Z = Z & *Pointer<Short4>(constants + OFFSET(Constants, maskW4Q) + zMask * 8, 8);
 	zValue = zValue & *Pointer<Short4>(constants + OFFSET(Constants, invMaskW4Q) + zMask * 8, 8);
 	Z = Z | zValue;
 
-	*Pointer<Int>(buffer) = Extract(As<Int2>(Z), 0);
-	*Pointer<Int>(buffer + pitch) = Extract(As<Int2>(Z), 1);
+	// FIXME: Properly optimizes?
+	*Pointer<Short>(buffer) = Extract(Z, 0);
+	*Pointer<Short>(buffer + 2) = Extract(Z, 1);
+	*Pointer<Short>(buffer + pitch) = Extract(Z, 2);
+	*Pointer<Short>(buffer + pitch + 2) = Extract(Z, 3);
 }
 
 void PixelRoutine::writeDepth(Pointer<Byte> &zBuffer, int q, const Int &x, const Float4 &z, const Int &zMask)
@@ -697,13 +647,9 @@ void PixelRoutine::writeDepth(Pointer<Byte> &zBuffer, int q, const Int &x, const
 	}
 
 	if(state.depthFormat == VK_FORMAT_D16_UNORM)
-	{
 		writeDepth16(zBuffer, q, x, z, zMask);
-	}
 	else
-	{
 		writeDepth32F(zBuffer, q, x, z, zMask);
-	}
 }
 
 void PixelRoutine::writeStencil(Pointer<Byte> &sBuffer, int q, const Int &x, const Int &sMask, const Int &zMask, const Int &cMask)
@@ -1152,7 +1098,7 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 		}
 		break;
 		default:
-			UNSUPPORTED("VkFormat %d", int(state.targetFormat[index]));
+			UNSUPPORTED("VkFormat %d", state.targetFormat[index]);
 	}
 
 	if(isSRGB(index))
@@ -1167,8 +1113,6 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4s 
 	{
 		return;
 	}
-
-	ASSERT(state.targetFormat[index].supportsColorAttachmentBlend());
 
 	Vector4s pixel;
 	readPixel(index, cBuffer, x, pixel);
@@ -1326,7 +1270,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			break;
 	}
 
-	int rgbaWriteMask = state.colorWriteActive(index) & outputMasks[index];
+	int rgbaWriteMask = state.colorWriteActive(index);
 	int bgraWriteMask = (rgbaWriteMask & 0x0000000A) | (rgbaWriteMask & 0x00000001) << 2 | (rgbaWriteMask & 0x00000004) >> 2;
 
 	switch(state.targetFormat[index])
@@ -1930,9 +1874,6 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4f 
 		return;
 	}
 
-	vk::Format format = state.targetFormat[index];
-	ASSERT(format.supportsColorAttachmentBlend());
-
 	Pointer<Byte> buffer = cBuffer;
 	Int pitchB = *Pointer<Int>(data + OFFSET(DrawData, colorPitchB[index]));
 
@@ -1947,6 +1888,7 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4f 
 	Short4 c23;
 
 	Float4 one;
+	vk::Format format(state.targetFormat[index]);
 	if(format.isFloatFormat())
 	{
 		one = Float4(1.0f);
@@ -2198,7 +2140,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			UNSUPPORTED("VkFormat: %d", int(state.targetFormat[index]));
 	}
 
-	int rgbaWriteMask = state.colorWriteActive(index) & outputMasks[index];
+	int rgbaWriteMask = state.colorWriteActive(index);
 	int bgraWriteMask = (rgbaWriteMask & 0x0000000A) | (rgbaWriteMask & 0x00000001) << 2 | (rgbaWriteMask & 0x00000004) >> 2;
 
 	Int xMask;  // Combination of all masks

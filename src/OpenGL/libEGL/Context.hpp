@@ -19,8 +19,6 @@
 #include "Renderer/Surface.hpp"
 
 #include <EGL/egl.h>
-#undef Bool
-
 #include <GLES/gl.h>
 
 namespace gl { class Surface; }

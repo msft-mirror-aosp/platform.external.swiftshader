@@ -37,9 +37,8 @@ enum
 
 namespace sw {
 
-ComputeProgram::ComputeProgram(vk::Device *device, SpirvShader const *shader, vk::PipelineLayout const *pipelineLayout, const vk::DescriptorSet::Bindings &descriptorSets)
-    : device(device)
-    , shader(shader)
+ComputeProgram::ComputeProgram(SpirvShader const *shader, vk::PipelineLayout const *pipelineLayout, const vk::DescriptorSet::Bindings &descriptorSets)
+    : shader(shader)
     , pipelineLayout(pipelineLayout)
     , descriptorSets(descriptorSets)
 {
@@ -57,7 +56,6 @@ void ComputeProgram::generate()
 	shader->emitProlog(&routine);
 	emit(&routine);
 	shader->emitEpilog(&routine);
-	shader->clearPhis(&routine);
 }
 
 void ComputeProgram::setWorkgroupBuiltins(Pointer<Byte> data, SpirvRoutine *routine, Int workgroupID[3])
@@ -207,10 +205,9 @@ void ComputeProgram::emit(SpirvRoutine *routine)
 }
 
 void ComputeProgram::run(
-    vk::DescriptorSet::Array const &descriptorSetObjects,
     vk::DescriptorSet::Bindings const &descriptorSets,
     vk::DescriptorSet::DynamicOffsets const &descriptorDynamicOffsets,
-    vk::Pipeline::PushConstantStorage const &pushConstants,
+    PushConstantStorage const &pushConstants,
     uint32_t baseGroupX, uint32_t baseGroupY, uint32_t baseGroupZ,
     uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ)
 {
@@ -235,7 +232,7 @@ void ComputeProgram::run(
 	data.invocationsPerWorkgroup = invocationsPerWorkgroup;
 	data.subgroupsPerWorkgroup = subgroupsPerWorkgroup;
 	data.pushConstants = pushConstants;
-	data.constants = &sw::Constants::Get();
+	data.constants = &sw::constants;
 
 	marl::WaitGroup wg;
 	const uint32_t batchCount = 16;
@@ -300,11 +297,6 @@ void ComputeProgram::run(
 	}
 
 	wg.wait();
-
-	if(shader->containsImageWrite())
-	{
-		vk::DescriptorSet::ContentsChanged(descriptorSetObjects, pipelineLayout, device);
-	}
 }
 
 }  // namespace sw

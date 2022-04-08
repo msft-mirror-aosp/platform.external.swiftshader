@@ -21,7 +21,6 @@
 #include "Renderer/Surface.hpp"
 
 #include <EGL/egl.h>
-#undef Bool
 
 namespace egl
 {

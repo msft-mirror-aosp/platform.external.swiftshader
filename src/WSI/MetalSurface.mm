@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "MetalSurface.hpp"
+#include "MetalSurface.h"
 #include "Vulkan/VkDeviceMemory.hpp"
 #include "Vulkan/VkImage.hpp"
 
@@ -40,7 +40,6 @@ public:
         {
             layer = (CAMetalLayer*)[obj retain];
             layer.framebufferOnly = false;
-            layer.device = MTLCreateSystemDefaultDevice();
         }
         else
         {
@@ -69,7 +68,6 @@ public:
     {
         if(layer)
         {
-            [layer.device release];
             [layer release];
         }
         if(view)
@@ -78,9 +76,7 @@ public:
         }
     }
 
-    // Synchronizes the drawableSize to layer.bounds.size * layer.contentsScale and returns the new value of
-    // drawableSize.
-    VkExtent2D syncExtent() const API_AVAILABLE(macosx(10.11))
+    VkExtent2D getExtent() const API_AVAILABLE(macosx(10.11))
     {
         if(layer)
         {
@@ -88,9 +84,6 @@ public:
             CGFloat scaleFactor = layer.contentsScale;
             drawSize.width = trunc(drawSize.width * scaleFactor);
             drawSize.height = trunc(drawSize.height * scaleFactor);
-
-            [layer setDrawableSize: drawSize];
-
             return { static_cast<uint32_t>(drawSize.width), static_cast<uint32_t>(drawSize.height) };
         }
         else
@@ -107,16 +100,6 @@ public:
         }
 
         return nil;
-    }
-
-    VkExtent2D getDrawableSize() const API_AVAILABLE(macosx(10.11)) {
-        if (layer) {
-            return {
-                static_cast<uint32_t>([layer drawableSize].width),
-                static_cast<uint32_t>([layer drawableSize].height),
-            };
-        }
-        return {0, 0};
     }
 
 private:
@@ -144,19 +127,14 @@ size_t MetalSurface::ComputeRequiredAllocationSize(const void *pCreateInfo) API_
     return sizeof(MetalLayer);
 }
 
-VkResult MetalSurface::getSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities) const API_AVAILABLE(macosx(10.11))
+void MetalSurface::getSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities) const API_AVAILABLE(macosx(10.11))
 {
-    setCommonSurfaceCapabilities(pSurfaceCapabilities);
+    SurfaceKHR::getSurfaceCapabilities(pSurfaceCapabilities);
 
-    // The value of drawableSize in CAMetalLayer is set the first time a drawable is queried but after that it is the
-    // (Metal) application's responsibility to resize the drawable when the window is resized. The best time for Swiftshader
-    // to resize the drawable is when querying the capabilities of the swapchain as that's done when the Vulkan application
-    // is trying to handle a window resize.
-    VkExtent2D extent = metalLayer->syncExtent();
+    VkExtent2D extent = metalLayer->getExtent();
     pSurfaceCapabilities->currentExtent = extent;
     pSurfaceCapabilities->minImageExtent = extent;
     pSurfaceCapabilities->maxImageExtent = extent;
-	return VK_SUCCESS;
 }
 
 VkResult MetalSurface::present(PresentImage* image) API_AVAILABLE(macosx(10.11))
@@ -166,10 +144,10 @@ VkResult MetalSurface::present(PresentImage* image) API_AVAILABLE(macosx(10.11))
         auto drawable = metalLayer->getNextDrawable();
         if(drawable)
         {
-            const VkExtent3D &extent = image->getImage()->getExtent();
-            VkExtent2D drawableExtent = metalLayer->getDrawableSize();
+            VkExtent2D windowExtent = metalLayer->getExtent();
+            VkExtent3D extent = image->getImage()->getMipLevelExtent(VK_IMAGE_ASPECT_COLOR_BIT, 0);
 
-            if(drawableExtent.width != extent.width || drawableExtent.height != extent.height)
+            if(windowExtent.width != extent.width || windowExtent.height != extent.height)
             {
                 return VK_ERROR_OUT_OF_DATE_KHR;
             }

@@ -18,16 +18,17 @@
 #include "marl_test.h"
 
 #include <condition_variable>
+#include <mutex>
 
 TEST_F(WithoutBoundScheduler, ConditionVariable) {
   bool trigger[3] = {false, false, false};
   bool signal[3] = {false, false, false};
-  marl::mutex mutex;
+  std::mutex mutex;
   marl::ConditionVariable cv;
 
   std::thread thread([&] {
     for (int i = 0; i < 3; i++) {
-      marl::lock lock(mutex);
+      std::unique_lock<std::mutex> lock(mutex);
       cv.wait(lock, [&] {
         EXPECT_TRUE(lock.owns_lock());
         return trigger[i];
@@ -44,7 +45,7 @@ TEST_F(WithoutBoundScheduler, ConditionVariable) {
 
   for (int i = 0; i < 3; i++) {
     {
-      marl::lock lock(mutex);
+      std::unique_lock<std::mutex> lock(mutex);
       trigger[i] = true;
       cv.notify_one();
       cv.wait(lock, [&] {
@@ -65,12 +66,12 @@ TEST_F(WithoutBoundScheduler, ConditionVariable) {
 TEST_P(WithBoundScheduler, ConditionVariable) {
   bool trigger[3] = {false, false, false};
   bool signal[3] = {false, false, false};
-  marl::mutex mutex;
+  std::mutex mutex;
   marl::ConditionVariable cv;
 
   std::thread thread([&] {
     for (int i = 0; i < 3; i++) {
-      marl::lock lock(mutex);
+      std::unique_lock<std::mutex> lock(mutex);
       cv.wait(lock, [&] {
         EXPECT_TRUE(lock.owns_lock());
         return trigger[i];
@@ -87,7 +88,7 @@ TEST_P(WithBoundScheduler, ConditionVariable) {
 
   for (int i = 0; i < 3; i++) {
     {
-      marl::lock lock(mutex);
+      std::unique_lock<std::mutex> lock(mutex);
       trigger[i] = true;
       cv.notify_one();
       cv.wait(lock, [&] {
@@ -112,14 +113,14 @@ TEST_P(WithBoundScheduler, ConditionVariable) {
 // they are early-unblocked, along with expected lock state.
 TEST_P(WithBoundScheduler, ConditionVariableTimeouts) {
   for (int i = 0; i < 10; i++) {
-    marl::mutex mutex;
+    std::mutex mutex;
     marl::ConditionVariable cv;
     bool signaled = false;  // guarded by mutex
     auto wg = marl::WaitGroup(100);
     for (int j = 0; j < 100; j++) {
       marl::schedule([=, &mutex, &cv, &signaled] {
         {
-          marl::lock lock(mutex);
+          std::unique_lock<std::mutex> lock(mutex);
           cv.wait_for(lock, std::chrono::milliseconds(j), [&] {
             EXPECT_TRUE(lock.owns_lock());
             return signaled;
@@ -133,7 +134,7 @@ TEST_P(WithBoundScheduler, ConditionVariableTimeouts) {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     {
-      marl::lock lock(mutex);
+      std::unique_lock<std::mutex> lock(mutex);
       signaled = true;
       cv.notify_all();
     }
