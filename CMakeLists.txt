@@ -404,6 +404,7 @@ if(MSVC)
         "/wd4838" # conversion from 'type_1' to 'type_2' requires a narrowing conversion
         "/wd5030" # attribute 'attribute' is not recognized
         "/wd5038" # data member 'member1' will be initialized after data member 'member2' data member 'member' will be initialized after base class 'base_class'
+        "/wd4146" # unary minus operator applied to unsigned type, result still unsigned
     )
 
     # Treat specific warnings as errors
@@ -856,10 +857,7 @@ if(SWIFTSHADER_BUILD_PVR)
     endif()
 
     set(PVR_BUILD_EXAMPLES TRUE CACHE BOOL "Build the PowerVR SDK Examples" FORCE)
-    set(PVR_BUILD_OPENGLES_EXAMPLES FALSE CACHE BOOL "Build the OpenGLES PowerVR SDK Examples" FORCE)
     set(PVR_BUILD_VULKAN_EXAMPLES TRUE CACHE BOOL "Build the Vulkan PowerVR SDK Examples" FORCE)
-    set(PVR_BUILD_OPENCL_EXAMPLES FALSE CACHE BOOL "Build the OpenCL PowerVR SDK Examples" FORCE)
-    set(PVR_BUILD_OPENGLES2_EXAMPLES FALSE CACHE BOOL "Only build OpenGL ES 2.0 examples" FORCE)
     add_subdirectory(${THIRD_PARTY_DIR}/PowerVR_Examples)
 
     # Samples known to work well
