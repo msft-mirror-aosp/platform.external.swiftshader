@@ -156,7 +156,7 @@ Int4 &Vector4i::operator[](int i)
 }
 
 // Approximation of atan in [0..1]
-static Float4 Atan_01(Float4 x)
+static RValue<Float4> Atan_01(Float4 x)
 {
 	// From 4.4.49, page 81 of the Handbook of Mathematical Functions, by Milton Abramowitz and Irene Stegun
 	const Float4 a2(-0.3333314528f);
@@ -172,7 +172,7 @@ static Float4 Atan_01(Float4 x)
 }
 
 // Polynomial approximation of order 5 for sin(x * 2 * pi) in the range [-1/4, 1/4]
-static Float4 Sin5(Float4 x)
+static RValue<Float4> Sin5(Float4 x)
 {
 	// A * x^5 + B * x^3 + C * x
 	// Exact at x = 0, 1/12, 1/6, 1/4, and their negatives, which correspond to x * 2 * pi = 0, pi/6, pi/3, pi/2
@@ -185,7 +185,7 @@ static Float4 Sin5(Float4 x)
 	return MulAdd(MulAdd(A, x2, B), x2, C) * x;
 }
 
-Float4 Sin(RValue<Float4> x)
+RValue<Float4> Sin(RValue<Float4> x, bool relaxedPrecision)
 {
 	const Float4 q = 0.25f;
 	const Float4 pi2 = 1 / (2 * 3.1415926535f);
@@ -197,7 +197,7 @@ Float4 Sin(RValue<Float4> x)
 	return Sin5(z);
 }
 
-Float4 Cos(RValue<Float4> x)
+RValue<Float4> Cos(RValue<Float4> x, bool relaxedPrecision)
 {
 	const Float4 q = 0.25f;
 	const Float4 pi2 = 1 / (2 * 3.1415926535f);
@@ -209,12 +209,12 @@ Float4 Cos(RValue<Float4> x)
 	return Sin5(z);
 }
 
-Float4 Tan(RValue<Float4> x)
+RValue<Float4> Tan(RValue<Float4> x, bool relaxedPrecision)
 {
-	return sw::Sin(x) / sw::Cos(x);
+	return sw::Sin(x, relaxedPrecision) / sw::Cos(x, relaxedPrecision);
 }
 
-static Float4 Asin_4_terms(RValue<Float4> x)
+static RValue<Float4> Asin_4_terms(RValue<Float4> x)
 {
 	// From 4.4.45, page 81 of the Handbook of Mathematical Functions, by Milton Abramowitz and Irene Stegun
 	// |e(x)| <= 5e-8
@@ -224,11 +224,11 @@ static Float4 Asin_4_terms(RValue<Float4> x)
 	const Float4 a2(0.0742610f);
 	const Float4 a3(-0.0187293f);
 	Float4 absx = Abs(x);
-	return As<Float4>(As<Int4>(half_pi - Sqrt(1.0f - absx) * (a0 + absx * (a1 + absx * (a2 + absx * a3)))) ^
+	return As<Float4>(As<Int4>(half_pi - Sqrt<Highp>(1.0f - absx) * (a0 + absx * (a1 + absx * (a2 + absx * a3)))) ^
 	                  (As<Int4>(x) & Int4(0x80000000)));
 }
 
-static Float4 Asin_8_terms(RValue<Float4> x)
+static RValue<Float4> Asin_8_terms(RValue<Float4> x)
 {
 	// From 4.4.46, page 81 of the Handbook of Mathematical Functions, by Milton Abramowitz and Irene Stegun
 	// |e(x)| <= 0e-8
@@ -242,7 +242,7 @@ static Float4 Asin_8_terms(RValue<Float4> x)
 	const Float4 a6(0.006700901f);
 	const Float4 a7(-0.0012624911f);
 	Float4 absx = Abs(x);
-	return As<Float4>(As<Int4>(half_pi - Sqrt(1.0f - absx) * (a0 + absx * (a1 + absx * (a2 + absx * (a3 + absx * (a4 + absx * (a5 + absx * (a6 + absx * a7)))))))) ^
+	return As<Float4>(As<Int4>(half_pi - Sqrt<Highp>(1.0f - absx) * (a0 + absx * (a1 + absx * (a2 + absx * (a3 + absx * (a4 + absx * (a5 + absx * (a6 + absx * a7)))))))) ^
 	                  (As<Int4>(x) & Int4(0x80000000)));
 }
 
@@ -265,7 +265,7 @@ RValue<Float4> Acos(RValue<Float4> x, bool relaxedPrecision)
 	return 1.57079632e+0f - Asin_4_terms(x);
 }
 
-Float4 Atan(RValue<Float4> x)
+RValue<Float4> Atan(RValue<Float4> x, bool relaxedPrecision)
 {
 	Float4 absx = Abs(x);
 	Int4 O = CmpNLT(absx, 1.0f);
@@ -277,7 +277,7 @@ Float4 Atan(RValue<Float4> x)
 	                  (As<Int4>(x) & Int4(0x80000000)));
 }
 
-Float4 Atan2(RValue<Float4> y, RValue<Float4> x)
+RValue<Float4> Atan2(RValue<Float4> y, RValue<Float4> x, bool relaxedPrecision)
 {
 	const Float4 pi(3.14159265f);             // pi
 	const Float4 minus_pi(-3.14159265f);      // -pi
@@ -316,7 +316,7 @@ Float4 Atan2(RValue<Float4> y, RValue<Float4> x)
 }
 
 // TODO(chromium:1299047)
-Float4 Exp2_legacy(RValue<Float4> x0)
+static RValue<Float4> Exp2_legacy(RValue<Float4> x0)
 {
 	Int4 i = RoundInt(x0 - 0.5f);
 	Float4 ii = As<Float4>((i + Int4(127)) << 23);
@@ -332,16 +332,11 @@ Float4 Exp2_legacy(RValue<Float4> x0)
 	return ii * ff;
 }
 
-Float4 Exp2(RValue<Float4> x)
+RValue<Float4> Exp2(RValue<Float4> x, bool relaxedPrecision)
 {
-	// This implementation is based on 2^(i + f) = 2^i * 2^f,
-	// where i is the integer part of x and f is the fraction.
-
-	// For 2^i we can put the integer part directly in the exponent of
-	// the IEEE-754 floating-point number. Clamp to prevent overflow
-	// past the representation of infinity.
+	// Clamp to prevent overflow past the representation of infinity.
 	Float4 x0 = x;
-	x0 = Min(x0, As<Float4>(Int4(0x4300FFFF)));  // 128.999985
+	x0 = Min(x0, 128.0f);
 	x0 = Max(x0, As<Float4>(Int4(0xC2FDFFFF)));  // -126.999992
 
 	if(SWIFTSHADER_LEGACY_PRECISION)  // TODO(chromium:1299047)
@@ -350,103 +345,179 @@ Float4 Exp2(RValue<Float4> x)
 	}
 
 	Float4 xi = Floor(x0);
-	Int4 i = Int4(xi);
-	Float4 ii = As<Float4>((i + Int4(127)) << 23);  // Add single-precision bias, and shift into exponent.
-
-	// For the fractional part use a polynomial which approximates 2^f in the 0 to 1 range.
-	// To be exact at integers it uses the form f(x) * x + 1.
 	Float4 f = x0 - xi;
-	Float4 a = As<Float4>(Int4(0x3AF4C5DC));  // 1.8674689e-3f
-	Float4 b = As<Float4>(Int4(0x3C13BA55));  // 9.0165929e-3f
-	Float4 c = As<Float4>(Int4(0x3D648E6A));  // 5.5799878e-2f
-	Float4 d = As<Float4>(Int4(0x3E75EDB7));  // 2.4016463e-1f
-	Float4 e = As<Float4>(Int4(0x3F31725D));  // 6.9315127e-1f
 
-	Float4 ff = MulAdd(MulAdd(MulAdd(MulAdd(MulAdd(a, f, b), f, c), f, d), f, e), f, 1.0f);
+	if(!relaxedPrecision)  // highp
+	{
+		// Polynomial which approximates (2^x-x-1)/x. Multiplying with x
+		// gives us a correction term to be added to 1+x to obtain 2^x.
+		const Float4 a = 1.8852974e-3f;
+		const Float4 b = 8.9733787e-3f;
+		const Float4 c = 5.5835927e-2f;
+		const Float4 d = 2.4015281e-1f;
+		const Float4 e = -3.0684753e-1f;
 
-	return ii * ff;
+		Float4 r = MulAdd(MulAdd(MulAdd(MulAdd(a, f, b), f, c), f, d), f, e);
+
+		// bit_cast<float>(int(x * 2^23)) is a piecewise linear approximation of 2^x.
+		// See "Fast Exponential Computation on SIMD Architectures" by Malossi et al.
+		Float4 y = MulAdd(r, f, x0);
+		Int4 i = Int4(y * (1 << 23)) + (127 << 23);
+
+		return As<Float4>(i);
+	}
+	else  // RelaxedPrecision / mediump
+	{
+		// Polynomial which approximates (2^x-x-1)/x. Multiplying with x
+		// gives us a correction term to be added to 1+x to obtain 2^x.
+		const Float4 a = 7.8145574e-2f;
+		const Float4 b = 2.2617357e-1f;
+		const Float4 c = -3.0444314e-1f;
+
+		Float4 r = MulAdd(MulAdd(a, f, b), f, c);
+
+		// bit_cast<float>(int(x * 2^23)) is a piecewise linear approximation of 2^x.
+		// See "Fast Exponential Computation on SIMD Architectures" by Malossi et al.
+		Float4 y = MulAdd(r, f, x0);
+		Int4 i = Int4(MulAdd((1 << 23), y, (127 << 23)));
+
+		return As<Float4>(i);
+	}
 }
 
-Float4 Log2(RValue<Float4> x)
+RValue<Float4> Log2_legacy(RValue<Float4> x)
 {
-	Float4 x0;
-	Float4 x1;
-	Float4 x2;
-	Float4 x3;
-
-	x0 = x;
-
-	x1 = As<Float4>(As<Int4>(x0) & Int4(0x7F800000));
+	Float4 x1 = As<Float4>(As<Int4>(x) & Int4(0x7F800000));
 	x1 = As<Float4>(As<UInt4>(x1) >> 8);
 	x1 = As<Float4>(As<Int4>(x1) | As<Int4>(Float4(1.0f)));
 	x1 = (x1 - 1.4960938f) * 256.0f;
-	x0 = As<Float4>((As<Int4>(x0) & Int4(0x007FFFFF)) | As<Int4>(Float4(1.0f)));
+	Float4 x0 = As<Float4>((As<Int4>(x) & Int4(0x007FFFFF)) | As<Int4>(Float4(1.0f)));
 
-	x2 = MulAdd(MulAdd(9.5428179e-2f, x0, 4.7779095e-1f), x0, 1.9782813e-1f);
-	x3 = MulAdd(MulAdd(MulAdd(1.6618466e-2f, x0, 2.0350508e-1f), x0, 2.7382900e-1f), x0, 4.0496687e-2f);
-	x2 /= x3;
+	Float4 x2 = MulAdd(MulAdd(9.5428179e-2f, x0, 4.7779095e-1f), x0, 1.9782813e-1f);
+	Float4 x3 = MulAdd(MulAdd(MulAdd(1.6618466e-2f, x0, 2.0350508e-1f), x0, 2.7382900e-1f), x0, 4.0496687e-2f);
 
-	x1 += (x0 - 1.0f) * x2;
+	x1 += (x0 - 1.0f) * (x2 / x3);
 
 	Int4 pos_inf_x = CmpEQ(As<Int4>(x), Int4(0x7F800000));
 	return As<Float4>((pos_inf_x & As<Int4>(x)) | (~pos_inf_x & As<Int4>(x1)));
 }
 
-Float4 Exp(RValue<Float4> x)
+RValue<Float4> Log2(RValue<Float4> x, bool relaxedPrecision)
 {
-	return sw::Exp2(1.44269504f * x);  // 1/ln(2)
+	if(SWIFTSHADER_LEGACY_PRECISION)  // TODO(chromium:1299047)
+	{
+		return Log2_legacy(x);
+	}
+
+	if(!relaxedPrecision)  // highp
+	{
+		// Reinterpretation as an integer provides a piecewise linear
+		// approximation of log2(). Scale to the radix and subtract exponent bias.
+		Int4 im = As<Int4>(x);
+		Float4 y = Float4(im - (127 << 23)) * (1.0f / (1 << 23));
+
+		// Handle log2(inf) = inf.
+		y = As<Float4>(As<Int4>(y) | (CmpEQ(im, 0x7F800000) & As<Int4>(Float4::infinity())));
+
+		Float4 m = Float4(im & 0x007FFFFF) * (1.0f / (1 << 23));  // Normalized mantissa of x.
+
+		// Add a polynomial approximation of log2(m+1)-m to the result's mantissa.
+		const Float4 a = -9.3091638e-3f;
+		const Float4 b = 5.2059003e-2f;
+		const Float4 c = -1.3752135e-1f;
+		const Float4 d = 2.4186478e-1f;
+		const Float4 e = -3.4730109e-1f;
+		const Float4 f = 4.786837e-1f;
+		const Float4 g = -7.2116581e-1f;
+		const Float4 h = 4.4268988e-1f;
+
+		Float4 z = MulAdd(MulAdd(MulAdd(MulAdd(MulAdd(MulAdd(MulAdd(a, m, b), m, c), m, d), m, e), m, f), m, g), m, h);
+
+		return MulAdd(z, m, y);
+	}
+	else  // RelaxedPrecision / mediump
+	{
+		// Reinterpretation as an integer provides a piecewise linear
+		// approximation of log2(). Scale to the radix and subtract exponent bias.
+		Int4 im = As<Int4>(x);
+		Float4 y = MulAdd(Float4(im), (1.0f / (1 << 23)), -127.0f);
+
+		// Handle log2(inf) = inf.
+		y = As<Float4>(As<Int4>(y) | (CmpEQ(im, 0x7F800000) & As<Int4>(Float4::infinity())));
+
+		Float4 m = Float4(im & 0x007FFFFF);  // Unnormalized mantissa of x.
+
+		// Add a polynomial approximation of log2(m+1)-m to the result's mantissa.
+		const Float4 a = 2.8017103e-22f;
+		const Float4 b = -8.373131e-15f;
+		const Float4 c = 5.0615534e-8f;
+
+		Float4 f = MulAdd(MulAdd(a, m, b), m, c);
+
+		return MulAdd(f, m, y);
+	}
 }
 
-Float4 Log(RValue<Float4> x)
+RValue<Float4> Exp(RValue<Float4> x, bool relaxedPrecision)
 {
-	return 6.93147181e-1f * sw::Log2(x);  // ln(2)
+	return sw::Exp2(1.44269504f * x, relaxedPrecision);  // 1/ln(2)
 }
 
-Float4 Pow(RValue<Float4> x, RValue<Float4> y)
+RValue<Float4> Log(RValue<Float4> x, bool relaxedPrecision)
 {
-	Float4 log = sw::Log2(x);
+	return 6.93147181e-1f * sw::Log2(x, relaxedPrecision);  // ln(2)
+}
+
+RValue<Float4> Pow(RValue<Float4> x, RValue<Float4> y, bool relaxedPrecision)
+{
+	Float4 log = sw::Log2(x, relaxedPrecision);
 	log *= y;
-	return sw::Exp2(log);
+	return sw::Exp2(log, relaxedPrecision);
 }
 
-Float4 Sinh(RValue<Float4> x)
+RValue<Float4> Sinh(RValue<Float4> x, bool relaxedPrecision)
 {
-	return (sw::Exp(x) - sw::Exp(-x)) * 0.5f;
+	return (sw::Exp(x, relaxedPrecision) - sw::Exp(-x, relaxedPrecision)) * 0.5f;
 }
 
-Float4 Cosh(RValue<Float4> x)
+RValue<Float4> Cosh(RValue<Float4> x, bool relaxedPrecision)
 {
-	return (sw::Exp(x) + sw::Exp(-x)) * 0.5f;
+	return (sw::Exp(x, relaxedPrecision) + sw::Exp(-x, relaxedPrecision)) * 0.5f;
 }
 
-Float4 Tanh(RValue<Float4> x)
+RValue<Float4> Tanh(RValue<Float4> x, bool relaxedPrecision)
 {
-	Float4 e_x = sw::Exp(x);
-	Float4 e_minus_x = sw::Exp(-x);
+	Float4 e_x = sw::Exp(x, relaxedPrecision);
+	Float4 e_minus_x = sw::Exp(-x, relaxedPrecision);
 	return (e_x - e_minus_x) / (e_x + e_minus_x);
 }
 
-Float4 Asinh(RValue<Float4> x)
+RValue<Float4> Asinh(RValue<Float4> x, bool relaxedPrecision)
 {
-	return sw::Log(x + Sqrt(x * x + 1.0f));
+	return sw::Log(x + Sqrt(x * x + 1.0f, relaxedPrecision), relaxedPrecision);
 }
 
-Float4 Acosh(RValue<Float4> x)
+RValue<Float4> Acosh(RValue<Float4> x, bool relaxedPrecision)
 {
-	return sw::Log(x + Sqrt(x + 1.0f) * Sqrt(x - 1.0f));
+	return sw::Log(x + Sqrt(x + 1.0f, relaxedPrecision) * Sqrt(x - 1.0f, relaxedPrecision), relaxedPrecision);
 }
 
-Float4 Atanh(RValue<Float4> x)
+RValue<Float4> Atanh(RValue<Float4> x, bool relaxedPrecision)
 {
-	return sw::Log((1.0f + x) / (1.0f - x)) * 0.5f;
+	return sw::Log((1.0f + x) / (1.0f - x), relaxedPrecision) * 0.5f;
 }
 
-Float4 reciprocal(RValue<Float4> x, bool pp, bool exactAtPow2)
+RValue<Float4> Sqrt(RValue<Float4> x, bool relaxedPrecision)
+{
+	return rr::Sqrt(x);  // TODO(b/222218659): Optimize for relaxed precision.
+}
+
+RValue<Float4> reciprocal(RValue<Float4> x, bool pp, bool exactAtPow2)
 {
 	return Rcp(x, pp, exactAtPow2);
 }
 
-Float4 reciprocalSquareRoot(RValue<Float4> x, bool absolute, bool pp)
+RValue<Float4> reciprocalSquareRoot(RValue<Float4> x, bool absolute, bool pp)
 {
 	Float4 abs = x;
 
@@ -456,6 +527,17 @@ Float4 reciprocalSquareRoot(RValue<Float4> x, bool absolute, bool pp)
 	}
 
 	return Rcp(abs, pp);
+}
+
+// TODO(chromium:1299047): Eliminate when Chromium tests accept both fused and unfused multiply-add.
+RValue<Float4> mulAdd(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z)
+{
+	if(SWIFTSHADER_LEGACY_PRECISION)
+	{
+		return x * y + z;
+	}
+
+	return rr::MulAdd(x, y, z);
 }
 
 void transpose4x4(Short4 &row0, Short4 &row1, Short4 &row2, Short4 &row3)
@@ -617,6 +699,23 @@ UInt r11g11b10Pack(const Float4 &value)
 	return (UInt(truncBits.x) >> 20) | (UInt(truncBits.y) >> 9) | (UInt(truncBits.z) << 1);
 }
 
+Float4 linearToSRGB(const Float4 &c)
+{
+	Float4 lc = Min(c, 0.0031308f) * 12.92f;
+	Float4 ec = MulAdd(1.055f, Pow<Mediump>(c, (1.0f / 2.4f)), -0.055f);  // TODO(b/149574741): Use a custom approximation.
+
+	return Max(lc, ec);
+}
+
+Float4 sRGBtoLinear(const Float4 &c)
+{
+	Float4 lc = c * (1.0f / 12.92f);
+	Float4 ec = Pow<Mediump>(MulAdd(c, 1.0f / 1.055f, 0.055f / 1.055f), 2.4f);  // TODO(b/149574741): Use a custom approximation.
+
+	Int4 linear = CmpLT(c, 0.04045f);
+	return As<Float4>((linear & As<Int4>(lc)) | (~linear & As<Int4>(ec)));  // TODO: IfThenElse()
+}
+
 RValue<Bool> AnyTrue(const RValue<SIMD::Int> &bools)
 {
 	return SignMask(bools) != 0;
@@ -719,7 +818,6 @@ rr::RValue<sw::SIMD::Int> Exponent(rr::RValue<sw::SIMD::Float> f)
 // If both operands are NaN, the result is a NaN.
 rr::RValue<sw::SIMD::Float> NMin(rr::RValue<sw::SIMD::Float> const &x, rr::RValue<sw::SIMD::Float> const &y)
 {
-	using namespace rr;
 	auto xIsNan = IsNan(x);
 	auto yIsNan = IsNan(y);
 	return As<sw::SIMD::Float>(
@@ -736,7 +834,6 @@ rr::RValue<sw::SIMD::Float> NMin(rr::RValue<sw::SIMD::Float> const &x, rr::RValu
 // If both operands are NaN, the result is a NaN.
 rr::RValue<sw::SIMD::Float> NMax(rr::RValue<sw::SIMD::Float> const &x, rr::RValue<sw::SIMD::Float> const &y)
 {
-	using namespace rr;
 	auto xIsNan = IsNan(x);
 	auto yIsNan = IsNan(y);
 	return As<sw::SIMD::Float>(

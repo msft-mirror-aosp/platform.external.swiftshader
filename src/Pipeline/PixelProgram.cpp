@@ -197,7 +197,7 @@ void PixelProgram::executeShader(Int cMask[4], Int sMask[4], Int zMask[4], const
 	// handled separately, through the cMask.
 	auto activeLaneMask = SIMD::Int(0xFFFFFFFF);
 	auto storesAndAtomicsMask = maskAny(cMask, sMask, zMask, samples);
-	routine.killMask = 0;
+	routine.discardMask = 0;
 
 	spirvShader->emit(&routine, activeLaneMask, storesAndAtomicsMask, descriptorSets, state.multiSampleCount);
 	spirvShader->emitEpilog(&routine);
@@ -218,11 +218,11 @@ void PixelProgram::executeShader(Int cMask[4], Int sMask[4], Int zMask[4], const
 
 	clampColor(c);
 
-	if(spirvShader->getAnalysis().ContainsKill)
+	if(spirvShader->getAnalysis().ContainsDiscard)
 	{
 		for(unsigned int q : samples)
 		{
-			cMask[q] &= ~routine.killMask;
+			cMask[q] &= ~routine.discardMask;
 		}
 	}
 
@@ -279,8 +279,8 @@ void PixelProgram::blendColor(Pointer<Byte> cBuffer[4], Int &x, Int sMask[4], In
 		{
 		case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
 		case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
-		case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
-		case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+		case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+		case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 		case VK_FORMAT_B5G6R5_UNORM_PACK16:
 		case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
 		case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
@@ -375,8 +375,8 @@ void PixelProgram::clampColor(Vector4f color[MAX_COLOR_BUFFERS])
 			break;
 		case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
 		case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
-		case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
-		case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+		case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+		case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 		case VK_FORMAT_B5G6R5_UNORM_PACK16:
 		case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
 		case VK_FORMAT_B5G5R5A1_UNORM_PACK16:

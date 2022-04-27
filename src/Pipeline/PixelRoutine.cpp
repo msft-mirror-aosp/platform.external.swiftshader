@@ -282,7 +282,7 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[MAX_COLOR_BUFFERS], Pointer<Byte> 
 
 			Bool alphaPass = alphaTest(cMask, samples);
 
-			if((spirvShader && spirvShader->getAnalysis().ContainsKill) || state.alphaToCoverage)
+			if((spirvShader && spirvShader->getAnalysis().ContainsDiscard) || state.alphaToCoverage)
 			{
 				for(unsigned int q : samples)
 				{
@@ -869,59 +869,69 @@ void PixelRoutine::stencilOperation(Byte8 &newValue, const Byte8 &bufferValue, c
 	}
 }
 
-Byte8 PixelRoutine::stencilReplaceRef(bool isBack)
+bool PixelRoutine::hasStencilReplaceRef() const
 {
-	if(spirvShader)
-	{
-		auto it = spirvShader->outputBuiltins.find(spv::BuiltInFragStencilRefEXT);
-		if(it != spirvShader->outputBuiltins.end())
-		{
-			UInt4 sRef = As<UInt4>(routine.getVariable(it->second.Id)[it->second.FirstComponent]) & UInt4(0xff);
-			// TODO (b/148295813): Could be done with a single pshufb instruction. Optimize the
-			//                     following line by either adding a rr::Shuffle() variant to do
-			//                     it explicitly or adding a Byte4(Int4) constructor would work.
-			sRef.x = rr::UInt(sRef.x) | (rr::UInt(sRef.y) << 8) | (rr::UInt(sRef.z) << 16) | (rr::UInt(sRef.w) << 24);
+	return spirvShader &&
+	       (spirvShader->outputBuiltins.find(spv::BuiltInFragStencilRefEXT) !=
+	        spirvShader->outputBuiltins.end());
+}
 
-			UInt2 sRefDuplicated;
-			sRefDuplicated = Insert(sRefDuplicated, sRef.x, 0);
-			sRefDuplicated = Insert(sRefDuplicated, sRef.x, 1);
-			return As<Byte8>(sRefDuplicated);
-		}
-	}
+Byte8 PixelRoutine::stencilReplaceRef()
+{
+	ASSERT(spirvShader);
 
-	return *Pointer<Byte8>(data + OFFSET(DrawData, stencil[isBack].referenceQ));
+	auto it = spirvShader->outputBuiltins.find(spv::BuiltInFragStencilRefEXT);
+	ASSERT(it != spirvShader->outputBuiltins.end());
+
+	UInt4 sRef = As<UInt4>(routine.getVariable(it->second.Id)[it->second.FirstComponent]) & UInt4(0xff);
+	// TODO (b/148295813): Could be done with a single pshufb instruction. Optimize the
+	//                     following line by either adding a rr::Shuffle() variant to do
+	//                     it explicitly or adding a Byte4(Int4) constructor would work.
+	sRef.x = rr::UInt(sRef.x) | (rr::UInt(sRef.y) << 8) | (rr::UInt(sRef.z) << 16) | (rr::UInt(sRef.w) << 24);
+
+	UInt2 sRefDuplicated;
+	sRefDuplicated = Insert(sRefDuplicated, sRef.x, 0);
+	sRefDuplicated = Insert(sRefDuplicated, sRef.x, 1);
+	return As<Byte8>(sRefDuplicated);
 }
 
 void PixelRoutine::stencilOperation(Byte8 &output, const Byte8 &bufferValue, VkStencilOp operation, bool isBack)
 {
-	switch(operation)
+	if(hasStencilReplaceRef())
 	{
-	case VK_STENCIL_OP_KEEP:
-		output = bufferValue;
-		break;
-	case VK_STENCIL_OP_ZERO:
-		output = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-		break;
-	case VK_STENCIL_OP_REPLACE:
-		output = stencilReplaceRef(isBack);
-		break;
-	case VK_STENCIL_OP_INCREMENT_AND_CLAMP:
-		output = AddSat(bufferValue, Byte8(1, 1, 1, 1, 1, 1, 1, 1));
-		break;
-	case VK_STENCIL_OP_DECREMENT_AND_CLAMP:
-		output = SubSat(bufferValue, Byte8(1, 1, 1, 1, 1, 1, 1, 1));
-		break;
-	case VK_STENCIL_OP_INVERT:
-		output = bufferValue ^ Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
-		break;
-	case VK_STENCIL_OP_INCREMENT_AND_WRAP:
-		output = bufferValue + Byte8(1, 1, 1, 1, 1, 1, 1, 1);
-		break;
-	case VK_STENCIL_OP_DECREMENT_AND_WRAP:
-		output = bufferValue - Byte8(1, 1, 1, 1, 1, 1, 1, 1);
-		break;
-	default:
-		UNSUPPORTED("VkStencilOp: %d", int(operation));
+		output = stencilReplaceRef();
+	}
+	else
+	{
+		switch(operation)
+		{
+		case VK_STENCIL_OP_KEEP:
+			output = bufferValue;
+			break;
+		case VK_STENCIL_OP_ZERO:
+			output = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+			break;
+		case VK_STENCIL_OP_REPLACE:
+			output = *Pointer<Byte8>(data + OFFSET(DrawData, stencil[isBack].referenceQ));
+			break;
+		case VK_STENCIL_OP_INCREMENT_AND_CLAMP:
+			output = AddSat(bufferValue, Byte8(1, 1, 1, 1, 1, 1, 1, 1));
+			break;
+		case VK_STENCIL_OP_DECREMENT_AND_CLAMP:
+			output = SubSat(bufferValue, Byte8(1, 1, 1, 1, 1, 1, 1, 1));
+			break;
+		case VK_STENCIL_OP_INVERT:
+			output = bufferValue ^ Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
+			break;
+		case VK_STENCIL_OP_INCREMENT_AND_WRAP:
+			output = bufferValue + Byte8(1, 1, 1, 1, 1, 1, 1, 1);
+			break;
+		case VK_STENCIL_OP_DECREMENT_AND_WRAP:
+			output = bufferValue - Byte8(1, 1, 1, 1, 1, 1, 1, 1);
+			break;
+		default:
+			UNSUPPORTED("VkStencilOp: %d", int(operation));
+		}
 	}
 }
 
@@ -981,7 +991,7 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 		pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 4);
 		pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 8);
 		break;
-	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 		buffer += 2 * x;
 		buffer2 = buffer + pitchB;
 		c01 = As<Short4>(Int2(*Pointer<Int>(buffer), *Pointer<Int>(buffer2)));
@@ -1001,7 +1011,7 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 		pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 4);
 		pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 8);
 		break;
-	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
 		buffer += 2 * x;
 		buffer2 = buffer + pitchB;
 		c01 = As<Short4>(Int2(*Pointer<Int>(buffer), *Pointer<Int>(buffer2)));
@@ -1259,8 +1269,8 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		break;
 	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
 	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
-	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
-	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 		current.x = current.x - As<Short4>(As<UShort4>(current.x) >> 4) + Short4(0x0800);
 		current.y = current.y - As<Short4>(As<UShort4>(current.y) >> 4) + Short4(0x0800);
 		current.z = current.z - As<Short4>(As<UShort4>(current.z) >> 4) + Short4(0x0800);
@@ -1309,7 +1319,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			current.x = current.x | current.y | current.z | current.w;
 		}
 		break;
-	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
 		{
 			current.w = As<UShort4>(current.w & Short4(0xF000));
 			current.x = As<UShort4>(current.x & Short4(0xF000)) >> 4;
@@ -1319,7 +1329,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			current.x = current.x | current.y | current.z | current.w;
 		}
 		break;
-	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 		{
 			current.w = As<UShort4>(current.w & Short4(0xF000));
 			current.z = As<UShort4>(current.z & Short4(0xF000)) >> 4;
@@ -1518,8 +1528,8 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 	{
 	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
 	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
-	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
-	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
 		{
 			buffer += 2 * x;
 			Int value = *Pointer<Int>(buffer);
@@ -1533,10 +1543,10 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
 				channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask4bgraQ[bgraWriteMask & 0xF][0]));
 				break;
-			case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+			case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
 				channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask4argbQ[bgraWriteMask & 0xF][0]));
 				break;
-			case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+			case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 				channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask4abgrQ[bgraWriteMask & 0xF][0]));
 				break;
 			default:
@@ -2027,7 +2037,7 @@ Float4 PixelRoutine::blendOpSoftlight(Float4 &src, Float4 &dst)
 	return As<Float4>(
 	    (~largeSrc & As<Int4>(dst - ((1.0f - (2.0f * src)) * dst * (1.0f - dst)))) |
 	    (largeSrc & ((~largeDst & As<Int4>(dst + (((2.0f * src) - 1.0f) * dst * ((((16.0f * dst) - 12.0f) * dst) + 3.0f)))) |
-	                 (largeDst & As<Int4>(dst + (((2.0f * src) - 1.0f) * (Sqrt(dst) - dst)))))));
+	                 (largeDst & As<Int4>(dst + (((2.0f * src) - 1.0f) * (Sqrt<Mediump>(dst) - dst)))))));
 }
 
 Float4 PixelRoutine::maxRGB(Vector4f &c)
