@@ -102,16 +102,43 @@ if(CCACHE_FOUND)
 endif()
 
 ###########################################################
+# Install Gerrit commit hook
+###########################################################
+
+if(NOT EXISTS ${CMAKE_SOURCE_DIR}/.git/hooks/commit-msg)
+    message(WARNING "
+        .git/hooks/commit-msg was not found.
+        Downloading from https://gerrit-review.googlesource.com/tools/hooks/commit-msg...
+    ")
+
+    file(DOWNLOAD https://gerrit-review.googlesource.com/tools/hooks/commit-msg ${CMAKE_SOURCE_DIR}/commit-msg)
+
+    file(COPY ${CMAKE_SOURCE_DIR}/commit-msg
+         DESTINATION ${CMAKE_SOURCE_DIR}/.git/hooks/
+         FILE_PERMISSIONS
+           OWNER_READ OWNER_WRITE OWNER_EXECUTE
+           GROUP_READ GROUP_WRITE GROUP_EXECUTE
+           WORLD_READ WORLD_EXECUTE)
+    file(REMOVE ${CMAKE_SOURCE_DIR}/commit-msg)
+endif()
+
+###########################################################
 # Host libraries
 ###########################################################
 
-include(CheckSymbolExists)
 if(LINUX)
+    include(CheckSymbolExists)
     check_symbol_exists(mallinfo malloc.h HAVE_MALLINFO)
     check_symbol_exists(mallinfo2 malloc.h HAVE_MALLINFO2)
+
+    include(CheckIncludeFiles)
+    CHECK_INCLUDE_FILES("xcb/xcb.h;xcb/shm.h" HAVE_XCB_H)
+    if(NOT HAVE_XCB_H)
+        message(WARNING "xcb/xcb.h or xcb/shm.h was not found. Install the libx11-xcb-dev and "
+                        "libxcb-shm0-dev packages to build with WSI support for XCB surfaces.")
+    endif()
 endif()
 
-find_library(XCB xcb)
 if(SWIFTSHADER_BUILD_WSI_WAYLAND)
     find_library(WAYLAND wayland-client)
 endif(SWIFTSHADER_BUILD_WSI_WAYLAND)
@@ -177,7 +204,7 @@ set_if_not_defined(SWIFTSHADER_BUILD_CPPDAP ${SWIFTSHADER_ENABLE_VULKAN_DEBUGGER
 
 set(DEFAULT_REACTOR_BACKEND "LLVM")
 set(REACTOR_BACKEND ${DEFAULT_REACTOR_BACKEND} CACHE STRING "JIT compiler back-end used by Reactor")
-set_property(CACHE REACTOR_BACKEND PROPERTY STRINGS LLVM Subzero)
+set_property(CACHE REACTOR_BACKEND PROPERTY STRINGS LLVM LLVM-Submodule Subzero)
 
 set(DEFAULT_SWIFTSHADER_LLVM_VERSION "10.0")
 set(SWIFTSHADER_LLVM_VERSION ${DEFAULT_SWIFTSHADER_LLVM_VERSION} CACHE STRING "LLVM version to use")
@@ -261,6 +288,10 @@ endif()
 if(SWIFTSHADER_BUILD_CPPDAP)
     InitSubmodule(json ${THIRD_PARTY_DIR}/json)
     InitSubmodule(cppdap ${THIRD_PARTY_DIR}/cppdap)
+endif()
+
+if(${REACTOR_BACKEND} STREQUAL "LLVM-Submodule")
+    InitSubmodule(llvm-submodule ${THIRD_PARTY_DIR}/llvm-project)
 endif()
 
 ###########################################################
@@ -394,6 +425,7 @@ if(MSVC)
         "/wd4838" # conversion from 'type_1' to 'type_2' requires a narrowing conversion
         "/wd5030" # attribute 'attribute' is not recognized
         "/wd5038" # data member 'member1' will be initialized after data member 'member2' data member 'member' will be initialized after base class 'base_class'
+        "/wd4146" # unary minus operator applied to unsigned type, result still unsigned
     )
 
     # Treat specific warnings as errors
@@ -646,6 +678,27 @@ add_subdirectory(${THIRD_PARTY_DIR}/llvm-${SWIFTSHADER_LLVM_VERSION} EXCLUDE_FRO
 set_target_properties(llvm PROPERTIES FOLDER "third_party")
 
 ###########################################################
+# LLVM-Submodule
+###########################################################
+if(${REACTOR_BACKEND} STREQUAL "LLVM-Submodule")
+    set(LLVM_INCLUDE_TESTS FALSE)
+    set(LLVM_ENABLE_RTTI TRUE)
+    add_subdirectory(${THIRD_PARTY_DIR}/llvm-project/llvm EXCLUDE_FROM_ALL)
+    if(ARCH STREQUAL "aarch64")
+        llvm_map_components_to_libnames(llvm_libs orcjit aarch64asmparser aarch64codegen)
+    elseif(ARCH STREQUAL "arm")
+        llvm_map_components_to_libnames(llvm_libs orcjit armasmparser armcodegen)
+    elseif(ARCH MATCHES "mips*")
+        llvm_map_components_to_libnames(llvm_libs orcjit mipsasmparser mipscodegen)
+    elseif(ARCH STREQUAL "ppc64le")
+        llvm_map_components_to_libnames(llvm_libs orcjit powerpcasmparser powerpccodegen)
+    elseif(ARCH MATCHES "x86*")
+        llvm_map_components_to_libnames(llvm_libs orcjit x86asmparser x86codegen)
+    endif()
+    set_target_properties(${llvm_libs} PROPERTIES FOLDER "third_party")
+endif()
+
+###########################################################
 # Subzero
 ###########################################################
 add_subdirectory(${THIRD_PARTY_DIR}/llvm-subzero EXCLUDE_FROM_ALL)
@@ -739,10 +792,12 @@ add_subdirectory(src/Reactor) # Add ReactorSubzero and ReactorLLVM targets
 
 if(${REACTOR_BACKEND} STREQUAL "LLVM")
     add_library(Reactor ALIAS ReactorLLVM)
+elseif(${REACTOR_BACKEND} STREQUAL "LLVM-Submodule")
+    add_library(Reactor ALIAS ReactorLLVMSubmodule)
 elseif(${REACTOR_BACKEND} STREQUAL "Subzero")
     add_library(Reactor ALIAS ReactorSubzero)
 else()
-    message(FATAL_ERROR "REACTOR_BACKEND must be 'LLVM' or 'Subzero'")
+    message(FATAL_ERROR "REACTOR_BACKEND must be 'LLVM', 'LLVM-Submodule' or 'Subzero'")
 endif()
 
 if (NOT TARGET SPIRV-Tools)
@@ -765,7 +820,7 @@ endif()
 if(WIN32)
     target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_WIN32_KHR")
 elseif(LINUX)
-    if(XCB)
+    if(HAVE_XCB_H)
         target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_XCB_KHR")
     endif()
     if(SWIFTSHADER_BUILD_WSI_WAYLAND)
@@ -823,10 +878,7 @@ if(SWIFTSHADER_BUILD_PVR)
     endif()
 
     set(PVR_BUILD_EXAMPLES TRUE CACHE BOOL "Build the PowerVR SDK Examples" FORCE)
-    set(PVR_BUILD_OPENGLES_EXAMPLES FALSE CACHE BOOL "Build the OpenGLES PowerVR SDK Examples" FORCE)
     set(PVR_BUILD_VULKAN_EXAMPLES TRUE CACHE BOOL "Build the Vulkan PowerVR SDK Examples" FORCE)
-    set(PVR_BUILD_OPENCL_EXAMPLES FALSE CACHE BOOL "Build the OpenCL PowerVR SDK Examples" FORCE)
-    set(PVR_BUILD_OPENGLES2_EXAMPLES FALSE CACHE BOOL "Only build OpenGL ES 2.0 examples" FORCE)
     add_subdirectory(${THIRD_PARTY_DIR}/PowerVR_Examples)
 
     # Samples known to work well
