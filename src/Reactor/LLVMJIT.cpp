@@ -51,9 +51,6 @@ __pragma(warning(push))
 #	include "llvm/Transforms/Scalar/SCCP.h"
 #	include "llvm/Transforms/Scalar/SROA.h"
 #	include "llvm/Transforms/Scalar/SimplifyCFG.h"
-#	include "llvm/Transforms/Coroutines/CoroCleanup.h"
-#	include "llvm/Transforms/Coroutines/CoroEarly.h"
-#	include "llvm/Transforms/Coroutines/CoroSplit.h"
 #else  // Legacy pass manager
 #	include "llvm/IR/LegacyPassManager.h"
 #	include "llvm/Pass.h"
@@ -898,19 +895,8 @@ void JITBuilder::runPasses()
 
 	if(coroutine.id)
 	{
-		// Run mandatory coroutine transforms.
-		pm.addPass(llvm::createModuleToFunctionPassAdaptor(llvm::CoroEarlyPass()));
-		llvm::CGSCCPassManager cgpm;
-		cgpm.addPass(llvm::CoroSplitPass());
-		pm.addPass(llvm::createModuleToPostOrderCGSCCPassAdaptor(std::move(cgpm)));
-		pm.addPass(llvm::createModuleToFunctionPassAdaptor(llvm::CoroCleanupPass()));
-	}
-
-	if(__has_feature(memory_sanitizer) && msanInstrumentation)
-	{
-		llvm::MemorySanitizerOptions msanOpts(0 /* TrackOrigins */, false /* Recover */, false /* Kernel */, true /* EagerChecks */);
-		pm.addPass(llvm::ModuleMemorySanitizerPass(msanOpts));
-		pm.addPass(llvm::createModuleToFunctionPassAdaptor(llvm::MemorySanitizerPass(msanOpts)));
+		// Adds mandatory coroutine transforms.
+		pm = pb.buildO0DefaultPipeline(llvm::OptimizationLevel::O0);
 	}
 
 	if(optimizationLevel > 0)
@@ -922,6 +908,13 @@ void JITBuilder::runPasses()
 	if(!fpm.isEmpty())
 	{
 		pm.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(fpm)));
+	}
+
+	if(__has_feature(memory_sanitizer) && msanInstrumentation)
+	{
+		llvm::MemorySanitizerOptions msanOpts(0 /* TrackOrigins */, false /* Recover */, false /* Kernel */, true /* EagerChecks */);
+		pm.addPass(llvm::ModuleMemorySanitizerPass(msanOpts));
+		pm.addPass(llvm::createModuleToFunctionPassAdaptor(llvm::MemorySanitizerPass(msanOpts)));
 	}
 
 	pm.run(*module, mam);
@@ -938,15 +931,15 @@ void JITBuilder::runPasses()
 		passManager.add(llvm::createCoroCleanupLegacyPass());
 	}
 
-	if(__has_feature(memory_sanitizer) && msanInstrumentation)
-	{
-		passManager.add(llvm::createMemorySanitizerLegacyPassPass());
-	}
-
 	if(optimizationLevel > 0)
 	{
 		passManager.add(llvm::createSROAPass());
 		passManager.add(llvm::createInstructionCombiningPass());
+	}
+
+	if(__has_feature(memory_sanitizer) && msanInstrumentation)
+	{
+		passManager.add(llvm::createMemorySanitizerLegacyPassPass());
 	}
 
 	passManager.run(*module);
