@@ -2671,7 +2671,7 @@ RValue<Int4> Min(RValue<Int4> x, RValue<Int4> y)
 RValue<Int4> RoundInt(RValue<Float4> cast)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	return x86::cvtps2dq(cast);
 #else
 	return As<Int4>(V(lowerRoundInt(V(cast.value()), T(Int4::type()))));
@@ -2683,7 +2683,7 @@ RValue<Int4> RoundIntClamped(RValue<Float4> cast)
 	RR_DEBUG_INFO_UPDATE_LOC();
 
 // TODO(b/165000222): Check if fptosi_sat produces optimal code for x86 and ARM.
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	// cvtps2dq produces 0x80000000, a negative value, for input larger than
 	// 2147483520.0, so clamp to 2147483520. Values less than -2147483520.0
 	// saturate to 0x80000000.
@@ -2698,7 +2698,7 @@ RValue<Int4> RoundIntClamped(RValue<Float4> cast)
 	    jit->module.get(), llvm::Intrinsic::fptosi_sat, { T(Int4::type()), T(Float4::type()) });
 	return RValue<Int4>(V(jit->builder->CreateCall(fptosi_sat, { rounded })));
 #else
-	RValue<Float4> clamped = Max(Min(cast, Float4(0x7FFFFF80)), Float4(0x80000000));
+	RValue<Float4> clamped = Max(Min(cast, Float4(0x7FFFFF80)), Float4(static_cast<int>(0x80000000)));
 	return As<Int4>(V(lowerRoundInt(V(clamped.value()), T(Int4::type()))));
 #endif
 }
@@ -3210,7 +3210,7 @@ RValue<Int4> CmpUNLE(RValue<Float4> x, RValue<Float4> y)
 RValue<Float4> Round(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	if(CPUID::supportsSSE4_1())
 	{
 		return x86::roundps(x, 0);
@@ -3227,7 +3227,7 @@ RValue<Float4> Round(RValue<Float4> x)
 RValue<Float4> Trunc(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	if(CPUID::supportsSSE4_1())
 	{
 		return x86::roundps(x, 3);
@@ -3246,7 +3246,7 @@ RValue<Float4> Frac(RValue<Float4> x)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Float4 frc;
 
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	if(CPUID::supportsSSE4_1())
 	{
 		frc = x - x86::floorps(x);
@@ -3269,7 +3269,7 @@ RValue<Float4> Frac(RValue<Float4> x)
 RValue<Float4> Floor(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	if(CPUID::supportsSSE4_1())
 	{
 		return x86::floorps(x);
@@ -3286,7 +3286,7 @@ RValue<Float4> Floor(RValue<Float4> x)
 RValue<Float4> Ceil(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	if(CPUID::supportsSSE4_1())
 	{
 		return x86::ceilps(x);
@@ -3591,6 +3591,8 @@ RValue<Int> cvtss2si(RValue<Float> val)
 
 RValue<Int4> cvtps2dq(RValue<Float4> val)
 {
+	ASSERT(!__has_feature(memory_sanitizer));  // TODO(b/172238865): Not correctly instrumented by MemorySanitizer.
+
 	return RValue<Int4>(createInstruction(llvm::Intrinsic::x86_sse2_cvtps2dq, val.value()));
 }
 
@@ -3689,6 +3691,8 @@ RValue<Float> ceilss(RValue<Float> val)
 
 RValue<Float4> roundps(RValue<Float4> val, unsigned char imm)
 {
+	ASSERT(!__has_feature(memory_sanitizer));  // TODO(b/172238865): Not correctly instrumented by MemorySanitizer.
+
 	return RValue<Float4>(createInstruction(llvm::Intrinsic::x86_sse41_round_ps, val.value(), Nucleus::createConstantInt(imm)));
 }
 
