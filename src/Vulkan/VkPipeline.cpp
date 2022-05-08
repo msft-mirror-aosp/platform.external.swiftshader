@@ -81,6 +81,10 @@ sw::SpirvBinary optimizeSpirv(const vk::PipelineCache::SpirvBinaryKey &key)
 
 	if(optimize)
 	{
+		// Remove DontInline flags so the optimizer force-inlines all functions,
+		// as we currently don't support OpFunctionCall (b/141246700).
+		opt.RegisterPass(spvtools::CreateRemoveDontInlinePass());
+
 		// Full optimization list taken from spirv-opt.
 		opt.RegisterPerformancePasses();
 	}
@@ -118,6 +122,8 @@ sw::SpirvBinary optimizeSpirv(const vk::PipelineCache::SpirvBinaryKey &key)
 std::shared_ptr<sw::ComputeProgram> createProgram(vk::Device *device, std::shared_ptr<sw::SpirvShader> shader, const vk::PipelineLayout *layout)
 {
 	MARL_SCOPED_EVENT("createProgram");
+
+	rr::ScopedPragma msan(rr::MemorySanitizerInstrumentation, true);
 
 	vk::DescriptorSet::Bindings descriptorSets;  // TODO(b/129523279): Delay code generation until dispatch time.
 	// TODO(b/119409619): use allocator.

@@ -36,38 +36,6 @@
 
 namespace rr {
 
-Config Config::Edit::apply(const Config &cfg) const
-{
-	auto newDebugCfg = debugCfgChanged ? debugCfg : cfg.debugCfg;
-	auto level = optLevelChanged ? optLevel : cfg.optimization.getLevel();
-	auto passes = cfg.optimization.getPasses();
-	apply(optPassEdits, passes);
-	return Config{ Optimization{ level, passes }, newDebugCfg };
-}
-
-template<typename T>
-void rr::Config::Edit::apply(const std::vector<std::pair<ListEdit, T>> &edits, std::vector<T> &list) const
-{
-	for(auto &edit : edits)
-	{
-		switch(edit.first)
-		{
-		case ListEdit::Add:
-			list.push_back(edit.second);
-			break;
-		case ListEdit::Remove:
-			list.erase(std::remove_if(list.begin(), list.end(), [&](T item) {
-				           return item == edit.second;
-			           }),
-			           list.end());
-			break;
-		case ListEdit::Clear:
-			list.clear();
-			break;
-		}
-	}
-}
-
 thread_local Variable::UnmaterializedVariables *Variable::unmaterializedVariables = nullptr;
 
 void Variable::UnmaterializedVariables::add(const Variable *v)
@@ -1061,6 +1029,13 @@ UShort::UShort(RValue<Int> cast)
 	storeValue(integer);
 }
 
+UShort::UShort(RValue<Byte> cast)
+{
+	Value *integer = Nucleus::createZExt(cast.value(), UShort::type());
+
+	storeValue(integer);
+}
+
 UShort::UShort(unsigned short x)
 {
 	storeValue(Nucleus::createConstantShort(x));
@@ -1329,6 +1304,11 @@ RValue<Byte4> Byte4::operator=(RValue<Byte4> rhs)
 RValue<Byte4> Byte4::operator=(const Byte4 &rhs)
 {
 	return store(rhs.load());
+}
+
+RValue<Byte4> Insert(RValue<Byte4> val, RValue<Byte> element, int i)
+{
+	return RValue<Byte4>(Nucleus::createInsertElement(val.value(), element.value(), i));
 }
 
 Byte8::Byte8(uint8_t x0, uint8_t x1, uint8_t x2, uint8_t x3, uint8_t x4, uint8_t x5, uint8_t x6, uint8_t x7)
