@@ -4411,25 +4411,10 @@ Pointer4 &Pointer4::operator+=(Int4 i)
 	return *this;
 }
 
-Pointer4 &Pointer4::operator*=(Int4 i)
-{
-	ASSERT_MSG(isBasePlusOffset, "No offset to multiply for this type of pointer");
-	dynamicOffsets = offsets() * i;
-	staticOffsets = {};
-	hasDynamicOffsets = true;
-	return *this;
-}
-
 Pointer4 Pointer4::operator+(Int4 i)
 {
 	Pointer4 p = *this;
 	p += i;
-	return p;
-}
-Pointer4 Pointer4::operator*(Int4 i)
-{
-	Pointer4 p = *this;
-	p *= i;
 	return p;
 }
 
@@ -4446,27 +4431,10 @@ Pointer4 &Pointer4::operator+=(int i)
 	return *this;
 }
 
-Pointer4 &Pointer4::operator*=(int i)
-{
-	ASSERT_MSG(isBasePlusOffset, "No offset to multiply for this type of pointer");
-	for(int el = 0; el < 4; el++) { staticOffsets[el] *= i; }
-	if(hasDynamicOffsets)
-	{
-		dynamicOffsets *= Int4(i);
-	}
-	return *this;
-}
-
 Pointer4 Pointer4::operator+(int i)
 {
 	Pointer4 p = *this;
 	p += i;
-	return p;
-}
-Pointer4 Pointer4::operator*(int i)
-{
-	Pointer4 p = *this;
-	p *= i;
 	return p;
 }
 
@@ -4482,17 +4450,17 @@ Int4 Pointer4::isInBounds(unsigned int accessSize, OutOfBoundsBehavior robustnes
 
 	if(isStaticallyInBounds(accessSize, robustness))
 	{
-		return Int4(0xffffffff);
+		return Int4(0xFFFFFFFF);
 	}
 
 	if(!hasDynamicOffsets && !hasDynamicLimit)
 	{
 		// Common fast paths.
 		return Int4(
-		    (staticOffsets[0] + accessSize - 1 < staticLimit) ? 0xffffffff : 0,
-		    (staticOffsets[1] + accessSize - 1 < staticLimit) ? 0xffffffff : 0,
-		    (staticOffsets[2] + accessSize - 1 < staticLimit) ? 0xffffffff : 0,
-		    (staticOffsets[3] + accessSize - 1 < staticLimit) ? 0xffffffff : 0);
+		    (staticOffsets[0] + accessSize - 1 < staticLimit) ? 0xFFFFFFFF : 0,
+		    (staticOffsets[1] + accessSize - 1 < staticLimit) ? 0xFFFFFFFF : 0,
+		    (staticOffsets[2] + accessSize - 1 < staticLimit) ? 0xFFFFFFFF : 0,
+		    (staticOffsets[3] + accessSize - 1 < staticLimit) ? 0xFFFFFFFF : 0);
 	}
 
 	return CmpGE(offsets(), Int4(0)) & CmpLT(offsets() + Int4(accessSize - 1), Int4(limit()));
@@ -4619,6 +4587,23 @@ Pointer<Byte> Pointer4::getPointerForLane(int lane) const
 	{
 		return pointers[lane];
 	}
+}
+
+Pointer4 Pointer4::IfThenElse(Int4 condition, const Pointer4 &lhs, const Pointer4 &rhs)
+{
+	std::array<Pointer<Byte>, 4> pointers;
+	for(int i = 0; i < 4; i++)
+	{
+		If(Extract(condition, i) != 0)
+		{
+			pointers[i] = lhs.getPointerForLane(i);
+		}
+		Else
+		{
+			pointers[i] = rhs.getPointerForLane(i);
+		}
+	}
+	return { pointers };
 }
 
 #ifdef ENABLE_RR_PRINT
