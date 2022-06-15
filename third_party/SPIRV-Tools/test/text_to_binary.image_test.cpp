@@ -123,8 +123,7 @@ TEST_F(OpImageTest, InvalidTypeOperand) {
 
 TEST_F(OpImageTest, MissingSampledImageOperand) {
   EXPECT_THAT(CompileFailure("%2 = OpImage %1"),
-              Eq("Expected operand for OpImage instruction, but found the end "
-                 "of the stream."));
+              Eq("Expected operand, found end of stream."));
 }
 
 TEST_F(OpImageTest, InvalidSampledImageOperand) {
@@ -223,8 +222,7 @@ TEST_F(OpImageSparseReadTest, InvalidTypeOperand) {
 
 TEST_F(OpImageSparseReadTest, MissingImageOperand) {
   EXPECT_THAT(CompileFailure("%2 = OpImageSparseRead %1"),
-              Eq("Expected operand for OpImageSparseRead instruction, but "
-                 "found the end of the stream."));
+              Eq("Expected operand, found end of stream."));
 }
 
 TEST_F(OpImageSparseReadTest, InvalidImageOperand) {
@@ -234,8 +232,7 @@ TEST_F(OpImageSparseReadTest, InvalidImageOperand) {
 
 TEST_F(OpImageSparseReadTest, MissingCoordinateOperand) {
   EXPECT_THAT(CompileFailure("%2 = OpImageSparseRead %1 %2"),
-              Eq("Expected operand for OpImageSparseRead instruction, but "
-                 "found the end of the stream."));
+              Eq("Expected operand, found end of stream."));
 }
 
 TEST_F(OpImageSparseReadTest, InvalidCoordinateOperand) {

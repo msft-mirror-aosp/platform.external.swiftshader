@@ -29,16 +29,14 @@ class VertexRoutinePrototype : public VertexRoutineFunction
 {
 public:
 	VertexRoutinePrototype()
-	    : device(Arg<0>())
-	    , vertex(Arg<1>())
-	    , batch(Arg<2>())
-	    , task(Arg<3>())
-	    , data(Arg<4>())
+	    : vertex(Arg<0>())
+	    , batch(Arg<1>())
+	    , task(Arg<2>())
+	    , data(Arg<3>())
 	{}
 	virtual ~VertexRoutinePrototype() {}
 
 protected:
-	Pointer<Byte> device;
 	Pointer<Byte> vertex;
 	Pointer<UInt> batch;
 	Pointer<Byte> task;

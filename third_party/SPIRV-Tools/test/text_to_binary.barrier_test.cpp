@@ -44,8 +44,7 @@ TEST_F(OpMemoryBarrier, Good) {
 TEST_F(OpMemoryBarrier, BadMissingScopeId) {
   const std::string input = "OpMemoryBarrier\n";
   EXPECT_THAT(CompileFailure(input),
-              Eq("Expected operand for OpMemoryBarrier instruction, but found "
-                 "the end of the stream."));
+              Eq("Expected operand, found end of stream."));
 }
 
 TEST_F(OpMemoryBarrier, BadInvalidScopeId) {
@@ -56,8 +55,7 @@ TEST_F(OpMemoryBarrier, BadInvalidScopeId) {
 TEST_F(OpMemoryBarrier, BadMissingMemorySemanticsId) {
   const std::string input = "OpMemoryBarrier %scope\n";
   EXPECT_THAT(CompileFailure(input),
-              Eq("Expected operand for OpMemoryBarrier instruction, but found "
-                 "the end of the stream."));
+              Eq("Expected operand, found end of stream."));
 }
 
 TEST_F(OpMemoryBarrier, BadInvalidMemorySemanticsId) {
@@ -94,16 +92,13 @@ TEST_F(NamedMemoryBarrierTest, OpcodeAssemblesInV10) {
 
 TEST_F(NamedMemoryBarrierTest, ArgumentCount) {
   EXPECT_THAT(CompileFailure("OpMemoryNamedBarrier", SPV_ENV_UNIVERSAL_1_1),
-              Eq("Expected operand for OpMemoryNamedBarrier instruction, but "
-                 "found the end of the stream."));
+              Eq("Expected operand, found end of stream."));
   EXPECT_THAT(
       CompileFailure("OpMemoryNamedBarrier %bar", SPV_ENV_UNIVERSAL_1_1),
-      Eq("Expected operand for OpMemoryNamedBarrier instruction, but found the "
-         "end of the stream."));
+      Eq("Expected operand, found end of stream."));
   EXPECT_THAT(
       CompileFailure("OpMemoryNamedBarrier %bar %scope", SPV_ENV_UNIVERSAL_1_1),
-      Eq("Expected operand for OpMemoryNamedBarrier instruction, but found the "
-         "end of the stream."));
+      Eq("Expected operand, found end of stream."));
   EXPECT_THAT(
       CompiledInstructions("OpMemoryNamedBarrier %bar %scope %semantics",
                            SPV_ENV_UNIVERSAL_1_1),
@@ -156,12 +151,10 @@ TEST_F(NamedBarrierInitializeTest, OpcodeAssemblesInV10) {
 TEST_F(NamedBarrierInitializeTest, ArgumentCount) {
   EXPECT_THAT(
       CompileFailure("%bar = OpNamedBarrierInitialize", SPV_ENV_UNIVERSAL_1_1),
-      Eq("Expected operand for OpNamedBarrierInitialize instruction, but found "
-         "the end of the stream."));
+      Eq("Expected operand, found end of stream."));
   EXPECT_THAT(CompileFailure("%bar = OpNamedBarrierInitialize %ype",
                              SPV_ENV_UNIVERSAL_1_1),
-              Eq("Expected operand for OpNamedBarrierInitialize instruction, "
-                 "but found the end of the stream."));
+              Eq("Expected operand, found end of stream."));
   EXPECT_THAT(
       CompiledInstructions("%bar = OpNamedBarrierInitialize %type %count",
                            SPV_ENV_UNIVERSAL_1_1),

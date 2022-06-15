@@ -166,8 +166,7 @@ TEST_F(MemoryRoundTripTest, OpCopyMemoryNoMemAccessGood) {
 TEST_F(MemoryRoundTripTest, OpCopyMemoryTooFewArgsBad) {
   std::string spirv = "OpCopyMemory %1\n";
   std::string err = CompileFailure(spirv);
-  EXPECT_THAT(err, HasSubstr("Expected operand for OpCopyMemory instruction, "
-                             "but found the end of the stream."));
+  EXPECT_THAT(err, HasSubstr("Expected operand, found end of stream"));
 }
 
 TEST_F(MemoryRoundTripTest, OpCopyMemoryTooManyArgsBad) {
@@ -296,8 +295,7 @@ TEST_F(MemoryRoundTripTest, OpCopyMemorySizedNoMemAccessGood) {
 TEST_F(MemoryRoundTripTest, OpCopyMemorySizedTooFewArgsBad) {
   std::string spirv = "OpCopyMemorySized %1 %2\n";
   std::string err = CompileFailure(spirv);
-  EXPECT_THAT(err, HasSubstr("Expected operand for OpCopyMemorySized "
-                             "instruction, but found the end of the stream."));
+  EXPECT_THAT(err, HasSubstr("Expected operand, found end of stream"));
 }
 
 TEST_F(MemoryRoundTripTest, OpCopyMemorySizedTooManyArgsBad) {

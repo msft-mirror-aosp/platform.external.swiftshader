@@ -59,12 +59,10 @@ TEST_F(OpConstantPipeStorageTest, ArgumentCount) {
          "'OpConstantPipeStorage'."));
   EXPECT_THAT(
       CompileFailure("%1 = OpConstantPipeStorage", SPV_ENV_UNIVERSAL_1_1),
-      Eq("Expected operand for OpConstantPipeStorage instruction, but found "
-         "the end of the stream."));
+      Eq("Expected operand, found end of stream."));
   EXPECT_THAT(CompileFailure("%1 = OpConstantPipeStorage %2 3 4",
                              SPV_ENV_UNIVERSAL_1_1),
-              Eq("Expected operand for OpConstantPipeStorage instruction, but "
-                 "found the end of the stream."));
+              Eq("Expected operand, found end of stream."));
   EXPECT_THAT(CompiledInstructions("%1 = OpConstantPipeStorage %2 3 4 5",
                                    SPV_ENV_UNIVERSAL_1_1),
               Eq(MakeInstruction(SpvOpConstantPipeStorage, {1, 2, 3, 4, 5})));
@@ -103,12 +101,10 @@ TEST_F(OpCreatePipeFromPipeStorageTest, ArgumentCount) {
          "'OpCreatePipeFromPipeStorage'."));
   EXPECT_THAT(
       CompileFailure("%1 = OpCreatePipeFromPipeStorage", SPV_ENV_UNIVERSAL_1_1),
-      Eq("Expected operand for OpCreatePipeFromPipeStorage instruction, but "
-         "found the end of the stream."));
+      Eq("Expected operand, found end of stream."));
   EXPECT_THAT(CompileFailure("%1 = OpCreatePipeFromPipeStorage %2 OpNop",
                              SPV_ENV_UNIVERSAL_1_1),
-              Eq("Expected operand for OpCreatePipeFromPipeStorage "
-                 "instruction, but found the next instruction instead."));
+              Eq("Expected operand, found next instruction instead."));
   EXPECT_THAT(CompiledInstructions("%1 = OpCreatePipeFromPipeStorage %2 %3",
                                    SPV_ENV_UNIVERSAL_1_1),
               Eq(MakeInstruction(SpvOpCreatePipeFromPipeStorage, {1, 2, 3})));

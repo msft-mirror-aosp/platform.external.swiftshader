@@ -117,15 +117,12 @@ TEST(CInterface, SpecifyConsumerNullDiagnosticForAssembling) {
                     const spv_position_t& position, const char* message) {
         ++invocation;
         EXPECT_EQ(SPV_MSG_ERROR, level);
-        // The error happens at scanning the beginning of second line.
+        // The error happens at scanning the begining of second line.
         EXPECT_STREQ("input", source);
         EXPECT_EQ(1u, position.line);
         EXPECT_EQ(0u, position.column);
         EXPECT_EQ(12u, position.index);
-        EXPECT_STREQ(
-            "Expected operand for OpName instruction, but found the end of the "
-            "stream.",
-            message);
+        EXPECT_STREQ("Expected operand, found end of stream.", message);
       });
 
   spv_binary binary = nullptr;
@@ -231,10 +228,7 @@ TEST(CInterface, SpecifyConsumerSpecifyDiagnosticForAssembling) {
             spvTextToBinary(context, input_text, sizeof(input_text), &binary,
                             &diagnostic));
   EXPECT_EQ(0, invocation);  // Consumer should not be invoked at all.
-  EXPECT_STREQ(
-      "Expected operand for OpName instruction, but found the end of the "
-      "stream.",
-      diagnostic->error);
+  EXPECT_STREQ("Expected operand, found end of stream.", diagnostic->error);
 
   spvDiagnosticDestroy(diagnostic);
   spvBinaryDestroy(binary);

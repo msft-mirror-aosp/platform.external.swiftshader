@@ -46,7 +46,6 @@ LLVM_TARGETS = [
     ('X86', ('__i386__', '__x86_64__')),
     ('Mips', ('__mips__',)),
     ('PowerPC', ('__powerpc64__',)),
-    ('RISCV', ('__riscv',)),
 ]
 
 # Per-platform arches
@@ -65,7 +64,6 @@ LLVM_TRIPLES = {
         ('__mips__', 'mipsel-linux-gnu'),
         ('__mips64', 'mips64el-linux-gnuabi64'),
         ('__powerpc64__', 'powerpc64le-unknown-linux-gnu'),
-        ('__riscv', 'riscv64-unknown-linux-gnu'),
     ],
     'darwin': [
         ('__x86_64__', 'x86_64-apple-darwin'),

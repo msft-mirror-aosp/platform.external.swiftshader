@@ -1053,18 +1053,18 @@ TEST_F(ValidateLogicals, OpSGreaterThanDifferentBitWidth) {
 
 TEST_F(ValidateLogicals, PSBSelectSuccess) {
   const std::string body = R"(
-OpCapability PhysicalStorageBufferAddresses
+OpCapability PhysicalStorageBufferAddressesEXT
 OpCapability Int64
 OpCapability Shader
 OpExtension "SPV_EXT_physical_storage_buffer"
-OpMemoryModel PhysicalStorageBuffer64 GLSL450
+OpMemoryModel PhysicalStorageBuffer64EXT GLSL450
 OpEntryPoint Fragment %main "main"
 OpExecutionMode %main OriginUpperLeft
-OpDecorate %val1 AliasedPointer
+OpDecorate %val1 AliasedPointerEXT
 %uint64 = OpTypeInt 64 0
 %bool = OpTypeBool
 %true = OpConstantTrue %bool
-%ptr = OpTypePointer PhysicalStorageBuffer %uint64
+%ptr = OpTypePointer PhysicalStorageBufferEXT %uint64
 %pptr_f = OpTypePointer Function %ptr
 %void = OpTypeVoid
 %voidfn = OpTypeFunction %void

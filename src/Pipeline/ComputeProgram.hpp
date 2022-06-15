@@ -37,7 +37,6 @@ struct Constants;
 
 // ComputeProgram builds a SPIR-V compute shader.
 class ComputeProgram : public Coroutine<SpirvShader::YieldResult(
-                           const vk::Device *device,
                            void *data,
                            int32_t workgroupX,
                            int32_t workgroupY,
@@ -47,7 +46,7 @@ class ComputeProgram : public Coroutine<SpirvShader::YieldResult(
                            int32_t subgroupCount)>
 {
 public:
-	ComputeProgram(vk::Device *device, std::shared_ptr<SpirvShader> spirvShader, vk::PipelineLayout const *pipelineLayout, const vk::DescriptorSet::Bindings &descriptorSets);
+	ComputeProgram(vk::Device *device, SpirvShader const *spirvShader, vk::PipelineLayout const *pipelineLayout, const vk::DescriptorSet::Bindings &descriptorSets);
 
 	virtual ~ComputeProgram();
 
@@ -78,11 +77,12 @@ protected:
 		uint32_t subgroupsPerWorkgroup;    // SPIR-V: "NumSubgroups"
 		uint32_t invocationsPerWorkgroup;  // Total number of invocations per workgroup.
 		vk::Pipeline::PushConstantStorage pushConstants;
+		const Constants *constants;
 	};
 
 	vk::Device *const device;
-	const std::shared_ptr<SpirvShader> shader;
-	const vk::PipelineLayout *const pipelineLayout;  // Reference held by vk::Pipeline
+	SpirvShader const *const shader;
+	vk::PipelineLayout const *const pipelineLayout;
 	const vk::DescriptorSet::Bindings &descriptorSets;
 };
 

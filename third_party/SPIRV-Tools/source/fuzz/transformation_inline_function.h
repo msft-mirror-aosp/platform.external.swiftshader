@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationInlineFunction : public Transformation {
  public:
   explicit TransformationInlineFunction(
-      protobufs::TransformationInlineFunction message);
+      const protobufs::TransformationInlineFunction& message);
 
   TransformationInlineFunction(
       uint32_t function_call_id,

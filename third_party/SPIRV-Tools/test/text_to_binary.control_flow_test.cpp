@@ -163,8 +163,7 @@ TEST_F(TextToBinaryTest, SwitchGoodTwoTargets) {
 
 TEST_F(TextToBinaryTest, SwitchBadMissingSelector) {
   EXPECT_THAT(CompileFailure("OpSwitch"),
-              Eq("Expected operand for OpSwitch instruction, but found the end "
-                 "of the stream."));
+              Eq("Expected operand, found end of stream."));
 }
 
 TEST_F(TextToBinaryTest, SwitchBadInvalidSelector) {
@@ -174,8 +173,7 @@ TEST_F(TextToBinaryTest, SwitchBadInvalidSelector) {
 
 TEST_F(TextToBinaryTest, SwitchBadMissingDefault) {
   EXPECT_THAT(CompileFailure("OpSwitch %selector"),
-              Eq("Expected operand for OpSwitch instruction, but found the end "
-                 "of the stream."));
+              Eq("Expected operand, found end of stream."));
 }
 
 TEST_F(TextToBinaryTest, SwitchBadInvalidDefault) {
@@ -197,8 +195,7 @@ TEST_F(TextToBinaryTest, SwitchBadMissingTarget) {
   EXPECT_THAT(CompileFailure("%1 = OpTypeInt 32 0\n"
                              "%2 = OpConstant %1 52\n"
                              "OpSwitch %2 %default 12"),
-              Eq("Expected operand for OpSwitch instruction, but found the end "
-                 "of the stream."));
+              Eq("Expected operand, found end of stream."));
 }
 
 // A test case for an OpSwitch.
@@ -382,7 +379,7 @@ INSTANTIATE_TEST_SUITE_P(
        "OpTypeQueue",
        "OpTypePipe ReadOnly",
 
-       // Skip OpTypeForwardPointer because it doesn't even produce a result
+       // Skip OpTypeForwardPointer becasuse it doesn't even produce a result
        // ID.
 
        // At least one thing that isn't a type at all

@@ -147,8 +147,8 @@ spv_result_t ValidateFunctionParameter(ValidationState_t& _,
               "type of the same index.";
   }
 
-  // Validate that PhysicalStorageBuffer have one of Restrict, Aliased,
-  // RestrictPointer, or AliasedPointer.
+  // Validate that PhysicalStorageBufferEXT have one of Restrict, Aliased,
+  // RestrictPointerEXT, or AliasedPointerEXT.
   auto param_nonarray_type_id = param_type->id();
   while (_.GetIdOpcode(param_nonarray_type_id) == SpvOpTypeArray) {
     param_nonarray_type_id =
@@ -157,7 +157,7 @@ spv_result_t ValidateFunctionParameter(ValidationState_t& _,
   if (_.GetIdOpcode(param_nonarray_type_id) == SpvOpTypePointer) {
     auto param_nonarray_type = _.FindDef(param_nonarray_type_id);
     if (param_nonarray_type->GetOperandAs<uint32_t>(1u) ==
-        SpvStorageClassPhysicalStorageBuffer) {
+        SpvStorageClassPhysicalStorageBufferEXT) {
       // check for Aliased or Restrict
       const auto& decorations = _.id_decorations(inst->id());
 
@@ -174,14 +174,14 @@ spv_result_t ValidateFunctionParameter(ValidationState_t& _,
       if (!foundAliased && !foundRestrict) {
         return _.diag(SPV_ERROR_INVALID_ID, inst)
                << "OpFunctionParameter " << inst->id()
-               << ": expected Aliased or Restrict for PhysicalStorageBuffer "
+               << ": expected Aliased or Restrict for PhysicalStorageBufferEXT "
                   "pointer.";
       }
       if (foundAliased && foundRestrict) {
         return _.diag(SPV_ERROR_INVALID_ID, inst)
                << "OpFunctionParameter " << inst->id()
                << ": can't specify both Aliased and Restrict for "
-                  "PhysicalStorageBuffer pointer.";
+                  "PhysicalStorageBufferEXT pointer.";
       }
     } else {
       const auto pointee_type_id =
@@ -189,31 +189,31 @@ spv_result_t ValidateFunctionParameter(ValidationState_t& _,
       const auto pointee_type = _.FindDef(pointee_type_id);
       if (SpvOpTypePointer == pointee_type->opcode() &&
           pointee_type->GetOperandAs<uint32_t>(1u) ==
-              SpvStorageClassPhysicalStorageBuffer) {
-        // check for AliasedPointer/RestrictPointer
+              SpvStorageClassPhysicalStorageBufferEXT) {
+        // check for AliasedPointerEXT/RestrictPointerEXT
         const auto& decorations = _.id_decorations(inst->id());
 
         bool foundAliased = std::any_of(
             decorations.begin(), decorations.end(), [](const Decoration& d) {
-              return SpvDecorationAliasedPointer == d.dec_type();
+              return SpvDecorationAliasedPointerEXT == d.dec_type();
             });
 
         bool foundRestrict = std::any_of(
             decorations.begin(), decorations.end(), [](const Decoration& d) {
-              return SpvDecorationRestrictPointer == d.dec_type();
+              return SpvDecorationRestrictPointerEXT == d.dec_type();
             });
 
         if (!foundAliased && !foundRestrict) {
           return _.diag(SPV_ERROR_INVALID_ID, inst)
                  << "OpFunctionParameter " << inst->id()
-                 << ": expected AliasedPointer or RestrictPointer for "
-                    "PhysicalStorageBuffer pointer.";
+                 << ": expected AliasedPointerEXT or RestrictPointerEXT for "
+                    "PhysicalStorageBufferEXT pointer.";
         }
         if (foundAliased && foundRestrict) {
           return _.diag(SPV_ERROR_INVALID_ID, inst)
                  << "OpFunctionParameter " << inst->id()
-                 << ": can't specify both AliasedPointer and "
-                    "RestrictPointer for PhysicalStorageBuffer pointer.";
+                 << ": can't specify both AliasedPointerEXT and "
+                    "RestrictPointerEXT for PhysicalStorageBufferEXT pointer.";
         }
       }
     }
@@ -300,7 +300,7 @@ spv_result_t ValidateFunctionCall(ValidationState_t& _,
             // These are always allowed.
             break;
           case SpvStorageClassStorageBuffer:
-            if (!_.features().variable_pointers) {
+            if (!_.features().variable_pointers_storage_buffer) {
               return _.diag(SPV_ERROR_INVALID_ID, inst)
                      << "StorageBuffer pointer operand "
                      << _.getIdName(argument_id)
@@ -316,10 +316,11 @@ spv_result_t ValidateFunctionCall(ValidationState_t& _,
         // Validate memory object declaration requirements.
         if (argument->opcode() != SpvOpVariable &&
             argument->opcode() != SpvOpFunctionParameter) {
-          const bool ssbo_vptr = _.features().variable_pointers &&
-                                 sc == SpvStorageClassStorageBuffer;
-          const bool wg_vptr = _.HasCapability(SpvCapabilityVariablePointers) &&
-                               sc == SpvStorageClassWorkgroup;
+          const bool ssbo_vptr =
+              _.features().variable_pointers_storage_buffer &&
+              sc == SpvStorageClassStorageBuffer;
+          const bool wg_vptr =
+              _.features().variable_pointers && sc == SpvStorageClassWorkgroup;
           const bool uc_ptr = sc == SpvStorageClassUniformConstant;
           if (!ssbo_vptr && !wg_vptr && !uc_ptr) {
             return _.diag(SPV_ERROR_INVALID_ID, inst)

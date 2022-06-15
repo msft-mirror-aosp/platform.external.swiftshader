@@ -32,12 +32,19 @@ if(WIN32)
         Win32SurfaceKHR.hpp
     )
 elseif(LINUX)
-    if(HAVE_XCB_H)
+    if(X11)
+        list(APPEND WSI_SRC_FILES
+            XlibSurfaceKHR.cpp
+            XlibSurfaceKHR.hpp
+            libX11.cpp
+            libX11.hpp
+        )
+    endif()
+
+    if(XCB)
         list(APPEND WSI_SRC_FILES
             XcbSurfaceKHR.cpp
             XcbSurfaceKHR.hpp
-            libXCB.cpp
-            libXCB.hpp
         )
     endif()
 
@@ -68,13 +75,6 @@ elseif(APPLE)
     )
 endif()
 
-set(WSI_COMPILE_OPTIONS "")
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    list(APPEND WSI_COMPILE_OPTIONS
-        "-Wexit-time-destructors"  # declaration requires an exit-time destructor
-    )
-endif()
-
 add_library(vk_wsi EXCLUDE_FROM_ALL
     ${WSI_SRC_FILES}
 )
@@ -93,7 +93,6 @@ target_include_directories(vk_wsi
 target_compile_options(vk_wsi
     PRIVATE
         ${ROOT_PROJECT_COMPILE_OPTIONS}
-        ${WSI_COMPILE_OPTIONS}
 )
 
 target_link_options(vk_wsi
