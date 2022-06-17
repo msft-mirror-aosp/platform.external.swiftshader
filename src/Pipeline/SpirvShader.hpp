@@ -1048,10 +1048,10 @@ private:
 	// VisitMemoryObject() walks a type tree in an explicitly laid out
 	// storage class, calling the MemoryVisitor for each scalar element
 	// within the
-	void VisitMemoryObject(Object::ID id, const MemoryVisitor &v) const;
+	void VisitMemoryObject(Object::ID id, bool resultIsPointer, const MemoryVisitor &v) const;
 
 	// VisitMemoryObjectInner() is internally called by VisitMemoryObject()
-	void VisitMemoryObjectInner(Type::ID id, Decorations d, uint32_t &index, uint32_t offset, const MemoryVisitor &v) const;
+	void VisitMemoryObjectInner(Type::ID id, Decorations d, uint32_t &index, uint32_t offset, bool resultIsPointer, const MemoryVisitor &v) const;
 
 	Object &CreateConstant(InsnIterator it);
 
@@ -1218,6 +1218,18 @@ private:
 			return SIMD::UInt(constant[i]);
 		}
 
+		const SIMD::Pointer &Pointer(uint32_t i) const
+		{
+			ASSERT(intermediate == nullptr);
+
+			return pointer[i];
+		}
+
+		bool isPointer() const
+		{
+			return (pointer != nullptr);
+		}
+
 	private:
 		RR_PRINT_ONLY(friend struct rr::PrintValue::Ty<Operand>;)
 
@@ -1226,6 +1238,7 @@ private:
 
 		const uint32_t *constant;
 		const Intermediate *intermediate;
+		const SIMD::Pointer *pointer;
 
 	public:
 		const uint32_t componentCount;
@@ -1368,6 +1381,7 @@ private:
 	EmitResult EmitMemoryBarrier(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitGroupNonUniform(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitArrayLength(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitPointerBitCast(Object::ID resultID, Operand &src, EmitState *state) const;
 
 	// Emits code to sample an image, regardless of whether any SIMD lanes are active.
 	void EmitImageSampleUnconditional(Array<SIMD::Float> &out, const ImageInstruction &instruction, EmitState *state) const;
