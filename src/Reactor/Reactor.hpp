@@ -2198,6 +2198,14 @@ struct Pointer4
 	Pointer<Byte> getPointerForLane(int lane) const;
 	static Pointer4 IfThenElse(Int4 condition, const Pointer4 &lhs, const Pointer4 &rhs);
 
+	// 64-bit pointer bit cast utilities
+	void castFrom(UInt4 lowerBits, UInt4 upperBits);
+	void castTo(UInt4 &lowerBits, UInt4 &upperBits) const;
+
+	// 32-bit pointer bit cast utilities
+	void castFrom(UInt4 bits);
+	void castTo(UInt4 &bits) const;
+
 #ifdef ENABLE_RR_PRINT
 	std::vector<rr::Value *> getPrintValues() const;
 #endif
@@ -3452,6 +3460,22 @@ inline T Pointer4::Load(OutOfBoundsBehavior robustness, Int4 mask, bool atomic /
 	}
 }
 
+template<>
+inline Pointer4 Pointer4::Load(OutOfBoundsBehavior robustness, Int4 mask, bool atomic /* = false */, std::memory_order order /* = std::memory_order_relaxed */, int alignment /* = sizeof(float) */)
+{
+	Pointer4 out(nullptr, nullptr, nullptr, nullptr);
+
+	for(int i = 0; i < 4; i++)
+	{
+		If(Extract(mask, i) != 0)
+		{
+			out.pointers[i] = rr::Load(Pointer<Pointer<Byte>>(getPointerForLane(i)), alignment, atomic, order);
+		}
+	}
+
+	return out;
+}
+
 template<typename T>
 inline void Pointer4::Store(T val, OutOfBoundsBehavior robustness, Int4 mask, bool atomic /* = false */, std::memory_order order /* = std::memory_order_relaxed */)
 {
@@ -3535,6 +3559,20 @@ inline void Pointer4::Store(T val, OutOfBoundsBehavior robustness, Int4 mask, bo
 					rr::Store(Extract(val, i), Pointer<EL>(&base[offset]), alignment, atomic, order);
 				}
 			}
+		}
+	}
+}
+
+template<>
+inline void Pointer4::Store(Pointer4 val, OutOfBoundsBehavior robustness, Int4 mask, bool atomic /* = false */, std::memory_order order /* = std::memory_order_relaxed */)
+{
+	constexpr size_t alignment = sizeof(void *);
+
+	for(int i = 0; i < 4; i++)
+	{
+		If(Extract(mask, i) != 0)
+		{
+			rr::Store(val.getPointerForLane(i), Pointer<Pointer<Byte>>(getPointerForLane(i)), alignment, atomic, order);
 		}
 	}
 }
