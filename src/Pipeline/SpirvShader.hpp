@@ -726,6 +726,8 @@ public:
 		bool ShaderNonUniform : 1;
 		bool RuntimeDescriptorArray : 1;
 		bool StorageBufferArrayNonUniformIndexing : 1;
+		bool StorageTexelBufferArrayNonUniformIndexing : 1;
+		bool PhysicalStorageBufferAddresses : 1;
 	};
 
 	const Capabilities &getUsedCapabilities() const
@@ -1048,10 +1050,10 @@ private:
 	// VisitMemoryObject() walks a type tree in an explicitly laid out
 	// storage class, calling the MemoryVisitor for each scalar element
 	// within the
-	void VisitMemoryObject(Object::ID id, const MemoryVisitor &v) const;
+	void VisitMemoryObject(Object::ID id, bool resultIsPointer, const MemoryVisitor &v) const;
 
 	// VisitMemoryObjectInner() is internally called by VisitMemoryObject()
-	void VisitMemoryObjectInner(Type::ID id, Decorations d, uint32_t &index, uint32_t offset, const MemoryVisitor &v) const;
+	void VisitMemoryObjectInner(Type::ID id, Decorations d, uint32_t &index, uint32_t offset, bool resultIsPointer, const MemoryVisitor &v) const;
 
 	Object &CreateConstant(InsnIterator it);
 
@@ -1218,6 +1220,18 @@ private:
 			return SIMD::UInt(constant[i]);
 		}
 
+		const SIMD::Pointer &Pointer(uint32_t i) const
+		{
+			ASSERT(intermediate == nullptr);
+
+			return pointer[i];
+		}
+
+		bool isPointer() const
+		{
+			return (pointer != nullptr);
+		}
+
 	private:
 		RR_PRINT_ONLY(friend struct rr::PrintValue::Ty<Operand>;)
 
@@ -1226,6 +1240,7 @@ private:
 
 		const uint32_t *constant;
 		const Intermediate *intermediate;
+		const SIMD::Pointer *pointer;
 
 	public:
 		const uint32_t componentCount;
@@ -1291,7 +1306,7 @@ private:
 	OutOfBoundsBehavior getOutOfBoundsBehavior(Object::ID pointerId, EmitState const *state) const;
 
 	SIMD::Pointer WalkExplicitLayoutAccessChain(Object::ID id, Object::ID elementId, const Span &indexIds, bool nonUniform, const EmitState *state) const;
-	SIMD::Pointer WalkAccessChain(Object::ID id, Object::ID elementId, const Span &indexIds, const EmitState *state) const;
+	SIMD::Pointer WalkAccessChain(Object::ID id, Object::ID elementId, const Span &indexIds, bool nonUniform, const EmitState *state) const;
 
 	// Returns the *component* offset in the literal for the given access chain.
 	uint32_t WalkLiteralAccessChain(Type::ID id, const Span &indexes) const;
@@ -1368,6 +1383,7 @@ private:
 	EmitResult EmitMemoryBarrier(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitGroupNonUniform(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitArrayLength(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitPointerBitCast(Object::ID resultID, Operand &src, EmitState *state) const;
 
 	// Emits code to sample an image, regardless of whether any SIMD lanes are active.
 	void EmitImageSampleUnconditional(Array<SIMD::Float> &out, const ImageInstruction &instruction, EmitState *state) const;
@@ -1376,6 +1392,15 @@ private:
 	void callSamplerFunction(Pointer<Byte> samplerFunction, Array<SIMD::Float> &out, Pointer<Byte> imageDescriptor, const ImageInstruction &instruction, EmitState *state) const;
 
 	void GetImageDimensions(EmitState const *state, Type const &resultTy, Object::ID imageId, Object::ID lodId, Intermediate &dst) const;
+	struct TexelAddressData
+	{
+		bool isArrayed;
+		spv::Dim dim;
+		int dims, texelSize;
+		SIMD::Int u, v, w, ptrOffset;
+	};
+	static TexelAddressData setupTexelAddressData(SIMD::Int rowPitch, SIMD::Int slicePitch, SIMD::Int samplePitch, ImageInstructionSignature instruction, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, const EmitState *state);
+	static SIMD::Pointer GetNonUniformTexelAddress(ImageInstructionSignature instruction, SIMD::Pointer descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const EmitState *state);
 	static SIMD::Pointer GetTexelAddress(ImageInstructionSignature instruction, Pointer<Byte> descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const EmitState *state);
 	static void WriteImage(ImageInstructionSignature instruction, Pointer<Byte> descriptor, const Pointer<SIMD::Int> &coord, const Pointer<SIMD::Int> &texelAndMask, vk::Format imageFormat);
 	uint32_t GetConstScalarInt(Object::ID id) const;
