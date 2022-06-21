@@ -62,7 +62,7 @@ TEST_F(BasicTest, ICD_Check)
 TEST_F(BasicTest, Version)
 {
 	uint32_t apiVersion = 0;
-	uint32_t expectedVersion = static_cast<uint32_t>(VK_API_VERSION_1_3);
+	uint32_t expectedVersion = static_cast<uint32_t>(VK_API_VERSION_1_2);
 	VkResult result = driver.vkEnumerateInstanceVersion(&apiVersion);
 	EXPECT_EQ(apiVersion, expectedVersion);
 
