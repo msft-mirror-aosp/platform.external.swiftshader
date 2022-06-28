@@ -453,6 +453,7 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityRuntimeDescriptorArray: capabilities.RuntimeDescriptorArray = true; break;
 				case spv::CapabilityStorageBufferArrayNonUniformIndexing: capabilities.StorageBufferArrayNonUniformIndexing = true; break;
 				case spv::CapabilityStorageTexelBufferArrayNonUniformIndexing: capabilities.StorageTexelBufferArrayNonUniformIndexing = true; break;
+				case spv::CapabilityStorageTexelBufferArrayDynamicIndexing: capabilities.StorageTexelBufferArrayDynamicIndexing = true; break;
 				case spv::CapabilityPhysicalStorageBufferAddresses: capabilities.PhysicalStorageBufferAddresses = true; break;
 				default:
 					UNSUPPORTED("Unsupported capability %u", insn.word(1));
@@ -2455,6 +2456,10 @@ SpirvShader::EmitResult SpirvShader::EmitSelect(InsnIterator insn, EmitState *st
 			auto &lhs = state->getPointer(insn.word(4));
 			auto &rhs = state->getPointer(insn.word(5));
 			state->createPointer(insn.resultId(), SIMD::Pointer::IfThenElse(cond.Int(0), lhs, rhs));
+
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(3), cond);
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(4), lhs);
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(5), rhs);
 		}
 		break;
 	default:
@@ -2467,14 +2472,14 @@ SpirvShader::EmitResult SpirvShader::EmitSelect(InsnIterator insn, EmitState *st
 				auto sel = cond.Int(condIsScalar ? 0 : i);
 				dst.move(i, (sel & lhs.Int(i)) | (~sel & rhs.Int(i)));  // TODO: IfThenElse()
 			}
+
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(2), dst);
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(3), cond);
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(4), lhs);
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(5), rhs);
 		}
 		break;
 	}
-
-	SPIRV_SHADER_DBG("{0}: {1}", insn.word(2), result);
-	SPIRV_SHADER_DBG("{0}: {1}", insn.word(3), cond);
-	SPIRV_SHADER_DBG("{0}: {1}", insn.word(4), lhs);
-	SPIRV_SHADER_DBG("{0}: {1}", insn.word(5), rhs);
 
 	return EmitResult::Continue;
 }
@@ -2769,7 +2774,7 @@ SpirvShader::Operand::Operand(const SpirvShader *shader, const EmitState *state,
 SpirvShader::Operand::Operand(const EmitState *state, const Object &object)
     : constant(object.kind == SpirvShader::Object::Kind::Constant ? object.constantValue.data() : nullptr)
     , intermediate(object.kind == SpirvShader::Object::Kind::Intermediate ? &state->getIntermediate(object.id()) : nullptr)
-	, pointer(object.kind == SpirvShader::Object::Kind::Pointer ? &state->getPointer(object.id()) : nullptr)
+    , pointer(object.kind == SpirvShader::Object::Kind::Pointer ? &state->getPointer(object.id()) : nullptr)
     , componentCount(intermediate ? intermediate->componentCount : object.constantValue.size())
 {
 	ASSERT(intermediate || constant || pointer);
