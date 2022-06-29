@@ -50,7 +50,7 @@ SpirvShader::EmitResult SpirvShader::EmitMatrixTimesVector(InsnIterator insn, Em
 		SIMD::Float v = lhs.Float(i) * rhs.Float(0);
 		for(auto j = 1u; j < rhs.componentCount; j++)
 		{
-			v += lhs.Float(i + type.componentCount * j) * rhs.Float(j);
+			v = MulAdd(lhs.Float(i + type.componentCount * j), rhs.Float(j), v);
 		}
 		dst.move(i, v);
 	}
@@ -70,7 +70,7 @@ SpirvShader::EmitResult SpirvShader::EmitVectorTimesMatrix(InsnIterator insn, Em
 		SIMD::Float v = lhs.Float(0) * rhs.Float(i * lhs.componentCount);
 		for(auto j = 1u; j < lhs.componentCount; j++)
 		{
-			v += lhs.Float(j) * rhs.Float(i * lhs.componentCount + j);
+			v = MulAdd(lhs.Float(j), rhs.Float(i * lhs.componentCount + j), v);
 		}
 		dst.move(i, v);
 	}
@@ -93,10 +93,10 @@ SpirvShader::EmitResult SpirvShader::EmitMatrixTimesMatrix(InsnIterator insn, Em
 	{
 		for(auto col = 0u; col < numColumns; col++)
 		{
-			SIMD::Float v = SIMD::Float(0);
-			for(auto i = 0u; i < numAdds; i++)
+			SIMD::Float v = lhs.Float(row) * rhs.Float(col * numAdds);
+			for(auto i = 1u; i < numAdds; i++)
 			{
-				v += lhs.Float(i * numRows + row) * rhs.Float(col * numAdds + i);
+				v = MulAdd(lhs.Float(i * numRows + row), rhs.Float(col * numAdds + i), v);
 			}
 			dst.move(numRows * col + row, v);
 		}
@@ -146,11 +146,68 @@ SpirvShader::EmitResult SpirvShader::EmitTranspose(InsnIterator insn, EmitState 
 	return EmitResult::Continue;
 }
 
+SpirvShader::EmitResult SpirvShader::EmitPointerBitCast(Object::ID resultID, Operand &src, EmitState *state) const
+{
+	if(src.isPointer())  // Pointer -> Integer bits
+	{
+		if(sizeof(void *) == 4)  // 32-bit pointers
+		{
+			SIMD::UInt bits;
+			src.Pointer(0).castTo(bits);
+
+			auto &dst = state->createIntermediate(resultID, 1);
+			dst.move(0, bits);
+		}
+		else  // 64-bit pointers
+		{
+			ASSERT(sizeof(void *) == 8);
+			// Casting a 64 bit pointer into 2 32bit integers
+			auto &ptr = src.Pointer(0);
+			SIMD::UInt lowerBits, upperBits;
+			ptr.castTo(lowerBits, upperBits);
+
+			auto &dst = state->createIntermediate(resultID, 2);
+			dst.move(0, lowerBits);
+			dst.move(1, upperBits);
+		}
+	}
+	else  // Integer bits -> Pointer
+	{
+		SIMD::Pointer dst(nullptr, nullptr, nullptr, nullptr);
+
+		if(sizeof(void *) == 4)  // 32-bit pointers
+		{
+			dst.castFrom(src.UInt(0));
+		}
+		else  // 64-bit pointers
+		{
+			ASSERT(sizeof(void *) == 8);
+			// Casting 2 32bit integers into a 64 bit pointer
+			dst.castFrom(src.UInt(0), src.UInt(1));
+		}
+
+		state->createPointer(resultID, dst);
+	}
+
+	return EmitResult::Continue;
+}
+
 SpirvShader::EmitResult SpirvShader::EmitUnaryOp(InsnIterator insn, EmitState *state) const
 {
 	auto &type = getType(insn.resultTypeId());
-	auto &dst = state->createIntermediate(insn.resultId(), type.componentCount);
 	auto src = Operand(this, state, insn.word(3));
+
+	bool dstIsPointer = getObject(insn.resultId()).kind == Object::Kind::Pointer;
+	bool srcIsPointer = src.isPointer();
+	if(srcIsPointer || dstIsPointer)
+	{
+		ASSERT(insn.opcode() == spv::OpBitcast);
+		ASSERT((srcIsPointer || (type.componentCount == 1)));  // When the ouput is a pointer, it's a single pointer
+
+		return EmitPointerBitCast(insn.resultId(), src, state);
+	}
+
+	auto &dst = state->createIntermediate(insn.resultId(), type.componentCount);
 
 	for(auto i = 0u; i < type.componentCount; i++)
 	{
@@ -581,7 +638,7 @@ SIMD::Float SpirvShader::FDot(unsigned numComponents, Operand const &x, Operand 
 
 	for(auto i = 1u; i < numComponents; i++)
 	{
-		d += x.Float(i) * y.Float(i);
+		d = MulAdd(x.Float(i), y.Float(i), d);
 	}
 
 	return d;

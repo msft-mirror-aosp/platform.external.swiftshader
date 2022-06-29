@@ -104,6 +104,8 @@ Ice::Variable *allocateStackVariable(Ice::Cfg *function, Ice::Type type, int arr
 	auto alloca = Ice::InstAlloca::create(function, address, bytes, typeSize);  // SRoA depends on the alignment to match the type size.
 	function->getEntryNode()->getInsts().push_front(alloca);
 
+	ASSERT(!rr::getPragmaState(rr::InitializeLocalVariables) && "Subzero does not support initializing local variables");
+
 	return address;
 }
 
@@ -1681,7 +1683,7 @@ Value *Nucleus::createBitCast(Value *v, Type *destType)
 	// Bitcasts must be between types of the same logical size. But with emulated narrow vectors we need
 	// support for casting between scalars and wide vectors. For platforms where this is not supported,
 	// emulate them by writing to the stack and reading back as the destination type.
-	if(emulateMismatchedBitCast)
+	if(emulateMismatchedBitCast || (v->getType() == Ice::Type::IceType_i64))
 	{
 		if(!Ice::isVectorType(v->getType()) && Ice::isVectorType(T(destType)))
 		{

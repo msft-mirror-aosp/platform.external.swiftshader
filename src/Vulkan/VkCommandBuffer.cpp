@@ -430,6 +430,25 @@ private:
 	const uint32_t scissorID;
 };
 
+class CmdSetLineWidth : public vk::CommandBuffer::Command
+{
+public:
+	CmdSetLineWidth(float lineWidth)
+	    : lineWidth(lineWidth)
+	{
+	}
+
+	void execute(vk::CommandBuffer::ExecutionState &executionState) override
+	{
+		executionState.dynamicState.lineWidth = lineWidth;
+	}
+
+	std::string description() override { return "vkCmdSetLineWidth()"; }
+
+private:
+	const float lineWidth;
+};
+
 class CmdSetDepthBias : public vk::CommandBuffer::Command
 {
 public:
@@ -880,6 +899,7 @@ public:
 		auto const &pipelineState = executionState.pipelineState[VK_PIPELINE_BIND_POINT_GRAPHICS];
 
 		auto *pipeline = static_cast<vk::GraphicsPipeline *>(pipelineState.pipeline);
+		bool hasDynamicVertexStride = pipeline->hasDynamicVertexStride();
 
 		vk::Attachments &attachments = pipeline->getAttachments();
 		executionState.bindAttachments(&attachments);
@@ -889,7 +909,7 @@ public:
 		                            pipelineState.descriptorSets,
 		                            pipelineState.descriptorDynamicOffsets);
 		inputs.setVertexInputBinding(executionState.vertexInputBindings);
-		inputs.bindVertexInputs(firstInstance);
+		inputs.bindVertexInputs(firstInstance, hasDynamicVertexStride);
 
 		vk::IndexBuffer &indexBuffer = pipeline->getIndexBuffer();
 		indexBuffer.setIndexBufferBinding(executionState.indexBufferBinding, executionState.indexType);
@@ -916,7 +936,7 @@ public:
 				}
 			}
 
-			inputs.advanceInstanceAttributes();
+			inputs.advanceInstanceAttributes(hasDynamicVertexStride);
 		}
 	}
 };
@@ -1945,8 +1965,7 @@ void CommandBuffer::setScissor(uint32_t firstScissor, uint32_t scissorCount, con
 
 void CommandBuffer::setLineWidth(float lineWidth)
 {
-	// If the wide lines feature is not enabled, lineWidth must be 1.0
-	ASSERT(lineWidth == 1.0f);
+	addCommand<::CmdSetLineWidth>(lineWidth);
 }
 
 void CommandBuffer::setDepthBias(float depthBiasConstantFactor, float depthBiasClamp, float depthBiasSlopeFactor)

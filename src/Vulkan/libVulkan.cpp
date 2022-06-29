@@ -291,7 +291,7 @@ static const ExtensionProperties instanceExtensionProperties[] = {
 	{ { VK_KHR_XCB_SURFACE_EXTENSION_NAME, VK_KHR_XCB_SURFACE_SPEC_VERSION }, [] { return vk::XcbSurfaceKHR::isSupported(); } },
 #endif
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
-	{ { VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_SPEC_VERSION } },
+	{ { VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_SPEC_VERSION }, [] { return vk::WaylandSurfaceKHR::isSupported(); } },
 #endif
 #ifdef VK_USE_PLATFORM_DIRECTFB_EXT
 	{ { VK_EXT_DIRECTFB_SURFACE_EXTENSION_NAME, VK_EXT_DIRECTFB_SURFACE_SPEC_VERSION } },
@@ -1044,6 +1044,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_4444_FORMATS_FEATURES_EXT:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES:
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXEL_BUFFER_ALIGNMENT_FEATURES_EXT:
+			// Workaround for a test bug (see https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3564)
 			break;
 		default:
 			// "the [driver] must skip over, without processing (other than reading the sType and pNext members) any structures in the chain with sType values not defined by [supported extenions]"
@@ -1795,24 +1799,27 @@ VKAPI_ATTR uint64_t VKAPI_CALL vkGetBufferDeviceAddress(VkDevice device, const V
 {
 	TRACE("(VkDevice device = %p, const VkBufferDeviceAddressInfo* pInfo = %p)",
 	      device, pInfo);
-	UNSUPPORTED("VK_KHR_buffer_device_address");
-	return 0;
+
+	// This function must return VkBufferDeviceAddressCreateInfoEXT::deviceAddress if provided
+	ASSERT(!vk::Cast(device)->hasExtension(VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME));
+
+	return vk::Cast(pInfo->buffer)->getOpaqueCaptureAddress();
 }
 
 VKAPI_ATTR uint64_t VKAPI_CALL vkGetBufferOpaqueCaptureAddress(VkDevice device, const VkBufferDeviceAddressInfo *pInfo)
 {
 	TRACE("(VkDevice device = %p, const VkBufferDeviceAddressInfo* pInfo = %p)",
 	      device, pInfo);
-	UNSUPPORTED("VK_KHR_buffer_device_address");
-	return 0;
+
+	return vk::Cast(pInfo->buffer)->getOpaqueCaptureAddress();
 }
 
 VKAPI_ATTR uint64_t VKAPI_CALL vkGetDeviceMemoryOpaqueCaptureAddress(VkDevice device, const VkDeviceMemoryOpaqueCaptureAddressInfo *pInfo)
 {
 	TRACE("(VkDevice device = %p, const VkDeviceMemoryOpaqueCaptureAddressInfo* pInfo = %p)",
 	      device, pInfo);
-	UNSUPPORTED("VK_KHR_buffer_device_address");
-	return 0;
+
+	return vk::Cast(pInfo->memory)->getOpaqueCaptureAddress();
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateBufferView(VkDevice device, const VkBufferViewCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkBufferView *pView)
@@ -2012,6 +2019,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateImageView(VkDevice device, const VkImageV
 			break;
 		case VK_STRUCTURE_TYPE_MAX_ENUM:
 			// dEQP tests that this value is ignored.
+			break;
+		case VK_STRUCTURE_TYPE_IMAGE_VIEW_MIN_LOD_CREATE_INFO_EXT:
+			// TODO(b/218318109): Part of the VK_EXT_image_view_min_lod extension, which we don't support.
+			// Remove when https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3094#note_348979 has been fixed.
 			break;
 		default:
 			UNSUPPORTED("pCreateInfo->pNext sType = %s", vk::Stringify(extensionCreateInfo->sType).c_str());
@@ -2228,10 +2239,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreatePipelineLayout(VkDevice device, const VkP
 	TRACE("(VkDevice device = %p, const VkPipelineLayoutCreateInfo* pCreateInfo = %p, const VkAllocationCallbacks* pAllocator = %p, VkPipelineLayout* pPipelineLayout = %p)",
 	      device, pCreateInfo, pAllocator, pPipelineLayout);
 
-	if((pCreateInfo->flags != 0) &&
-	   // FIXME(b/228307968) : VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT is used by dEQP
-	   //                      without checking if VK_EXT_graphics_pipeline_library is present
-	   (pCreateInfo->flags != VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT))
+	if(pCreateInfo->flags != 0)
 	{
 		// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
 		UNSUPPORTED("pCreateInfo->flags %d", int(pCreateInfo->flags));

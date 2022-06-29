@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import("../swiftshader.gni")
+import("//build_overrides/wayland.gni")
 
 config("WSI_metal_weak_framework") {
   if (is_mac) {
@@ -40,6 +41,15 @@ swiftshader_source_set("WSI") {
       "libXCB.cpp",
       "libXCB.hpp",
     ]
+
+    if (ozone_platform_wayland) {
+      sources += [
+        "WaylandSurfaceKHR.cpp",
+        "WaylandSurfaceKHR.hpp",
+        "libWaylandClient.cpp",
+        "libWaylandClient.hpp",
+      ]
+    }
   }
 
   if (is_win) {
@@ -73,6 +83,11 @@ swiftshader_source_set("WSI") {
     "../System",
     "../Vulkan:swiftshader_libvulkan_headers",
   ]
+
+  if (is_linux && !use_system_libwayland) {
+    # Use third-party targets
+    deps += [ "$wayland_gn_dir:wayland_client" ]
+  }
 
   configs = [ "../Vulkan:swiftshader_libvulkan_private_config" ]
 }

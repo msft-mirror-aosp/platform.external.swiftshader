@@ -238,6 +238,13 @@ SpirvShader::ImageInstruction::ImageInstruction(InsnIterator insn, const SpirvSh
 		imageOperands &= ~spv::ImageOperandsVolatileTexelMask;
 	}
 
+	if(imageOperands & spv::ImageOperandsNontemporalMask)
+	{
+		// Hints that the accessed texels are not likely
+		// to be accessed again in the near future.
+		imageOperands &= ~spv::ImageOperandsNontemporalMask;
+	}
+
 	// There should be no remaining image operands.
 	if(imageOperands != 0)
 	{
@@ -341,7 +348,7 @@ SpirvShader::EmitResult SpirvShader::EmitImageSample(const ImageInstruction &ins
 
 void SpirvShader::EmitImageSampleUnconditional(Array<SIMD::Float> &out, const ImageInstruction &instruction, EmitState *state) const
 {
-	Pointer<Byte> imageDescriptor = state->getPointer(instruction.imageId).base;  // vk::SampledImageDescriptor*
+	Pointer<Byte> imageDescriptor = state->getPointer(instruction.imageId).getUniformPointer();  // vk::SampledImageDescriptor*
 
 	Pointer<Byte> samplerFunction = lookupSamplerFunction(imageDescriptor, instruction, state);
 
@@ -354,7 +361,7 @@ Pointer<Byte> SpirvShader::lookupSamplerFunction(Pointer<Byte> imageDescriptor, 
 
 	if(instruction.samplerId != 0)
 	{
-		Pointer<Byte> samplerDescriptor = state->getPointer(instruction.samplerId).base;  // vk::SampledImageDescriptor*
+		Pointer<Byte> samplerDescriptor = state->getPointer(instruction.samplerId).getUniformPointer();  // vk::SampledImageDescriptor*
 
 		samplerId = *Pointer<rr::Int>(samplerDescriptor + OFFSET(vk::SampledImageDescriptor, samplerId));  // vk::Sampler::id
 	}
@@ -497,7 +504,7 @@ void SpirvShader::GetImageDimensions(EmitState const *state, Type const &resultT
 	const DescriptorDecorations &d = descriptorDecorations.at(imageId);
 	auto descriptorType = routine->pipelineLayout->getDescriptorType(d.DescriptorSet, d.Binding);
 
-	Pointer<Byte> descriptor = state->getPointer(imageId).base;
+	Pointer<Byte> descriptor = state->getPointer(imageId).getUniformPointer();
 
 	Int width;
 	Int height;
@@ -556,7 +563,7 @@ SpirvShader::EmitResult SpirvShader::EmitImageQueryLevels(InsnIterator insn, Emi
 	const DescriptorDecorations &d = descriptorDecorations.at(imageId);
 	auto descriptorType = state->routine->pipelineLayout->getDescriptorType(d.DescriptorSet, d.Binding);
 
-	Pointer<Byte> descriptor = state->getPointer(imageId).base;
+	Pointer<Byte> descriptor = state->getPointer(imageId).getUniformPointer();
 	Int mipLevels = 0;
 	switch(descriptorType)
 	{
@@ -588,7 +595,7 @@ SpirvShader::EmitResult SpirvShader::EmitImageQuerySamples(InsnIterator insn, Em
 	const DescriptorDecorations &d = descriptorDecorations.at(imageId);
 	auto descriptorType = state->routine->pipelineLayout->getDescriptorType(d.DescriptorSet, d.Binding);
 
-	Pointer<Byte> descriptor = state->getPointer(imageId).base;
+	Pointer<Byte> descriptor = state->getPointer(imageId).getUniformPointer();
 	Int sampleCount = 0;
 	switch(descriptorType)
 	{
@@ -610,27 +617,130 @@ SpirvShader::EmitResult SpirvShader::EmitImageQuerySamples(InsnIterator insn, Em
 	return EmitResult::Continue;
 }
 
+SpirvShader::TexelAddressData SpirvShader::setupTexelAddressData(SIMD::Int rowPitch, SIMD::Int slicePitch, SIMD::Int samplePitch, ImageInstructionSignature instruction, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, const EmitState *state)
+{
+	TexelAddressData data;
+
+	data.isArrayed = instruction.arrayed;
+	data.dim = static_cast<spv::Dim>(instruction.dim);
+	data.texelSize = imageFormat.bytes();
+	data.dims = instruction.coordinates - (data.isArrayed ? 1 : 0);
+
+	data.u = coordinate[0];
+	data.v = SIMD::Int(0);
+
+	if(data.dims > 1)
+	{
+		data.v = coordinate[1];
+	}
+
+	if(data.dim == spv::DimSubpassData)
+	{
+		data.u += state->routine->windowSpacePosition[0];
+		data.v += state->routine->windowSpacePosition[1];
+	}
+
+	data.ptrOffset = data.u * SIMD::Int(data.texelSize);
+
+	if(data.dims > 1)
+	{
+		data.ptrOffset += data.v * rowPitch;
+	}
+
+	data.w = 0;
+	if((data.dims > 2) || data.isArrayed)
+	{
+		if(data.dims > 2)
+		{
+			data.w += coordinate[2];
+		}
+
+		if(data.isArrayed)
+		{
+			data.w += coordinate[data.dims];
+		}
+
+		data.ptrOffset += data.w * slicePitch;
+	}
+
+	if(data.dim == spv::DimSubpassData)
+	{
+		// Multiview input attachment access is to the layer corresponding to the current view
+		data.ptrOffset += SIMD::Int(state->routine->layer) * slicePitch;
+	}
+
+	if(instruction.sample)
+	{
+		data.ptrOffset += sample * samplePitch;
+	}
+
+	return data;
+}
+
+SIMD::Pointer SpirvShader::GetNonUniformTexelAddress(ImageInstructionSignature instruction, SIMD::Pointer descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const EmitState *state)
+{
+	const bool useStencilAspect = (imageFormat == VK_FORMAT_S8_UINT);
+	auto rowPitch = (descriptor + (useStencilAspect
+	                                   ? OFFSET(vk::StorageImageDescriptor, stencilRowPitchBytes)
+	                                   : OFFSET(vk::StorageImageDescriptor, rowPitchBytes)))
+	                    .Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask());
+
+	auto slicePitch = (descriptor + (useStencilAspect
+	                                     ? OFFSET(vk::StorageImageDescriptor, stencilSlicePitchBytes)
+	                                     : OFFSET(vk::StorageImageDescriptor, slicePitchBytes)))
+	                      .Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask());
+	auto samplePitch = (descriptor + (useStencilAspect
+	                                      ? OFFSET(vk::StorageImageDescriptor, stencilSamplePitchBytes)
+	                                      : OFFSET(vk::StorageImageDescriptor, samplePitchBytes)))
+	                       .Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask());
+
+	auto texelData = setupTexelAddressData(rowPitch, slicePitch, samplePitch, instruction, coordinate, sample, imageFormat, state);
+
+	// If the out-of-bounds behavior is set to nullify, then each coordinate must be tested individually.
+	// Other out-of-bounds behaviors work properly by just comparing the offset against the total size.
+	if(outOfBoundsBehavior == OutOfBoundsBehavior::Nullify)
+	{
+		SIMD::UInt width = (descriptor + OFFSET(vk::StorageImageDescriptor, width)).Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask());
+		SIMD::Int oobMask = As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(texelData.u), width));
+
+		if(texelData.dims > 1)
+		{
+			SIMD::UInt height = As<SIMD::UInt>((descriptor + OFFSET(vk::StorageImageDescriptor, height)).Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask()));
+			oobMask |= As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(texelData.v), height));
+		}
+
+		if((texelData.dims > 2) || texelData.isArrayed)
+		{
+			SIMD::UInt depth = As<SIMD::UInt>((descriptor + OFFSET(vk::StorageImageDescriptor, depth)).Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask()));
+			if(texelData.dim == spv::DimCube) { depth *= 6; }
+			oobMask |= As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(texelData.w), depth));
+		}
+
+		if(instruction.sample)
+		{
+			SIMD::UInt sampleCount = As<SIMD::UInt>((descriptor + OFFSET(vk::StorageImageDescriptor, sampleCount)).Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask()));
+			oobMask |= As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(sample), sampleCount));
+		}
+
+		constexpr int32_t OOB_OFFSET = 0x7FFFFFFF - 16;  // SIMD pointer offsets are signed 32-bit, so this is the largest offset (for 16-byte texels).
+		static_assert(OOB_OFFSET >= vk::MAX_MEMORY_ALLOCATION_SIZE, "the largest offset must be guaranteed to be out-of-bounds");
+
+		texelData.ptrOffset = (texelData.ptrOffset & ~oobMask) | (oobMask & SIMD::Int(OOB_OFFSET));  // oob ? OOB_OFFSET : ptrOffset  // TODO: IfThenElse()
+	}
+
+	std::array<Pointer<Byte>, SIMD::Width> imageBase;
+	for(int i = 0; i < SIMD::Width; i++)
+	{
+		imageBase[i] = *Pointer<Pointer<Byte>>(descriptor.getPointerForLane(i) + (useStencilAspect
+		                                                                              ? OFFSET(vk::StorageImageDescriptor, stencilPtr)
+		                                                                              : OFFSET(vk::StorageImageDescriptor, ptr)));
+	}
+
+	return SIMD::Pointer(imageBase) + texelData.ptrOffset;
+}
+
 SIMD::Pointer SpirvShader::GetTexelAddress(ImageInstructionSignature instruction, Pointer<Byte> descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const EmitState *state)
 {
-	bool isArrayed = instruction.arrayed;
-	spv::Dim dim = static_cast<spv::Dim>(instruction.dim);
-	int dims = instruction.coordinates - (isArrayed ? 1 : 0);
-
-	SIMD::Int u = coordinate[0];
-	SIMD::Int v = SIMD::Int(0);
-
-	if(dims > 1)
-	{
-		v = coordinate[1];
-	}
-
-	if(dim == spv::DimSubpassData)
-	{
-		u += state->routine->windowSpacePosition[0];
-		v += state->routine->windowSpacePosition[1];
-	}
-
-	const int texelSize = imageFormat.bytes();
 	const bool useStencilAspect = (imageFormat == VK_FORMAT_S8_UINT);
 	auto rowPitch = SIMD::Int(*Pointer<Int>(descriptor + (useStencilAspect
 	                                                          ? OFFSET(vk::StorageImageDescriptor, stencilRowPitchBytes)
@@ -644,58 +754,26 @@ SIMD::Pointer SpirvShader::GetTexelAddress(ImageInstructionSignature instruction
 	                                    ? OFFSET(vk::StorageImageDescriptor, stencilSamplePitchBytes)
 	                                    : OFFSET(vk::StorageImageDescriptor, samplePitchBytes))));
 
-	SIMD::Int ptrOffset = u * SIMD::Int(texelSize);
-
-	if(dims > 1)
-	{
-		ptrOffset += v * rowPitch;
-	}
-
-	SIMD::Int w = 0;
-	if((dims > 2) || isArrayed)
-	{
-		if(dims > 2)
-		{
-			w += coordinate[2];
-		}
-
-		if(isArrayed)
-		{
-			w += coordinate[dims];
-		}
-
-		ptrOffset += w * slicePitch;
-	}
-
-	if(dim == spv::DimSubpassData)
-	{
-		// Multiview input attachment access is to the layer corresponding to the current view
-		ptrOffset += SIMD::Int(state->routine->layer) * slicePitch;
-	}
-
-	if(instruction.sample)
-	{
-		ptrOffset += sample * samplePitch;
-	}
+	auto texelData = setupTexelAddressData(rowPitch, slicePitch, samplePitch, instruction, coordinate, sample, imageFormat, state);
 
 	// If the out-of-bounds behavior is set to nullify, then each coordinate must be tested individually.
 	// Other out-of-bounds behaviors work properly by just comparing the offset against the total size.
 	if(outOfBoundsBehavior == OutOfBoundsBehavior::Nullify)
 	{
 		SIMD::UInt width = *Pointer<UInt>(descriptor + OFFSET(vk::StorageImageDescriptor, width));
-		SIMD::Int oobMask = As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(u), width));
+		SIMD::Int oobMask = As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(texelData.u), width));
 
-		if(dims > 1)
+		if(texelData.dims > 1)
 		{
 			SIMD::UInt height = *Pointer<UInt>(descriptor + OFFSET(vk::StorageImageDescriptor, height));
-			oobMask |= As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(v), height));
+			oobMask |= As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(texelData.v), height));
 		}
 
-		if((dims > 2) || isArrayed)
+		if((texelData.dims > 2) || texelData.isArrayed)
 		{
 			UInt depth = *Pointer<UInt>(descriptor + OFFSET(vk::StorageImageDescriptor, depth));
-			if(dim == spv::DimCube) { depth *= 6; }
-			oobMask |= As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(w), SIMD::UInt(depth)));
+			if(texelData.dim == spv::DimCube) { depth *= 6; }
+			oobMask |= As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(texelData.w), SIMD::UInt(depth)));
 		}
 
 		if(instruction.sample)
@@ -707,7 +785,7 @@ SIMD::Pointer SpirvShader::GetTexelAddress(ImageInstructionSignature instruction
 		constexpr int32_t OOB_OFFSET = 0x7FFFFFFF - 16;  // SIMD pointer offsets are signed 32-bit, so this is the largest offset (for 16-byte texels).
 		static_assert(OOB_OFFSET >= vk::MAX_MEMORY_ALLOCATION_SIZE, "the largest offset must be guaranteed to be out-of-bounds");
 
-		ptrOffset = (ptrOffset & ~oobMask) | (oobMask & SIMD::Int(OOB_OFFSET));  // oob ? OOB_OFFSET : ptrOffset  // TODO: IfThenElse()
+		texelData.ptrOffset = (texelData.ptrOffset & ~oobMask) | (oobMask & SIMD::Int(OOB_OFFSET));  // oob ? OOB_OFFSET : ptrOffset  // TODO: IfThenElse()
 	}
 
 	Pointer<Byte> imageBase = *Pointer<Pointer<Byte>>(descriptor + (useStencilAspect
@@ -716,7 +794,7 @@ SIMD::Pointer SpirvShader::GetTexelAddress(ImageInstructionSignature instruction
 
 	Int imageSizeInBytes = *Pointer<Int>(descriptor + OFFSET(vk::StorageImageDescriptor, sizeInBytes));
 
-	return SIMD::Pointer(imageBase, imageSizeInBytes, ptrOffset);
+	return SIMD::Pointer(imageBase, imageSizeInBytes, texelData.ptrOffset);
 }
 
 SpirvShader::EmitResult SpirvShader::EmitImageRead(const ImageInstruction &instruction, EmitState *state) const
@@ -747,33 +825,32 @@ SpirvShader::EmitResult SpirvShader::EmitImageRead(const ImageInstruction &instr
 		imageFormat = VK_FORMAT_S8_UINT;
 	}
 
-	Pointer<Byte> descriptor = state->getPointer(instruction.imageId).base;  // vk::StorageImageDescriptor*
 	auto &dst = state->createIntermediate(instruction.resultId, resultType.componentCount);
-
-	// VK_EXT_image_robustness requires replacing out-of-bounds access with zero.
-	// TODO(b/162327166): Only perform bounds checks when VK_EXT_image_robustness is enabled.
-	auto robustness = OutOfBoundsBehavior::Nullify;
+	SIMD::Pointer ptr = state->getPointer(instruction.imageId);
 
 	SIMD::Int uvwa[4];
 	SIMD::Int sample;
+	const int texelSize = imageFormat.bytes();
+	// VK_EXT_image_robustness requires replacing out-of-bounds access with zero.
+	// TODO(b/162327166): Only perform bounds checks when VK_EXT_image_robustness is enabled.
+	auto robustness = OutOfBoundsBehavior::Nullify;
 
 	for(uint32_t i = 0; i < instruction.coordinates; i++)
 	{
 		uvwa[i] = coordinate.Int(i);
 	}
-
 	if(instruction.sample)
 	{
 		sample = Operand(this, state, instruction.sampleId).Int(0);
 	}
 
-	auto texelPtr = GetTexelAddress(instruction, descriptor, uvwa, sample, imageFormat, robustness, state);
-
-	const int texelSize = imageFormat.bytes();
-
 	// Gather packed texel data. Texels larger than 4 bytes occupy multiple SIMD::Int elements.
 	// TODO(b/160531165): Provide gather abstractions for various element sizes.
 	SIMD::Int packed[4];
+
+	SIMD::Pointer texelPtr = ptr.isBasePlusOffset
+	                             ? GetTexelAddress(instruction, ptr.getUniformPointer(), uvwa, sample, imageFormat, robustness, state)
+	                             : GetNonUniformTexelAddress(instruction, ptr, uvwa, sample, imageFormat, robustness, state);
 	if(texelSize == 4 || texelSize == 8 || texelSize == 16)
 	{
 		for(auto i = 0; i < texelSize / 4; i++)
@@ -784,27 +861,24 @@ SpirvShader::EmitResult SpirvShader::EmitImageRead(const ImageInstruction &instr
 	}
 	else if(texelSize == 2)
 	{
-		SIMD::Int offsets = texelPtr.offsets();
 		SIMD::Int mask = state->activeLaneMask() & texelPtr.isInBounds(2, robustness);
 
 		for(int i = 0; i < SIMD::Width; i++)
 		{
 			If(Extract(mask, i) != 0)
 			{
-				packed[0] = Insert(packed[0], Int(*Pointer<Short>(texelPtr.base + Extract(offsets, i))), i);
+				packed[0] = Insert(packed[0], Int(*Pointer<Short>(texelPtr.getPointerForLane(i))), i);
 			}
 		}
 	}
 	else if(texelSize == 1)
 	{
-		SIMD::Int offsets = texelPtr.offsets();
 		SIMD::Int mask = state->activeLaneMask() & texelPtr.isInBounds(1, robustness);
-
 		for(int i = 0; i < SIMD::Width; i++)
 		{
 			If(Extract(mask, i) != 0)
 			{
-				packed[0] = Insert(packed[0], Int(*Pointer<Byte>(texelPtr.base + Extract(offsets, i))), i);
+				packed[0] = Insert(packed[0], Int(*Pointer<Byte>(texelPtr.getPointerForLane(i))), i);
 			}
 		}
 	}
@@ -1171,19 +1245,43 @@ SpirvShader::EmitResult SpirvShader::EmitImageWrite(const ImageInstruction &inst
 	texelAndMask[3] = texel.Int(3);
 	texelAndMask[4] = state->activeStoresAndAtomicsMask();
 
-	Pointer<Byte> descriptor = state->getPointer(instruction.imageId).base;  // vk::StorageImageDescriptor*
-
 	vk::Format imageFormat = SpirvFormatToVulkanFormat(static_cast<spv::ImageFormat>(instruction.imageFormat));
 
-	if(imageFormat == VK_FORMAT_UNDEFINED)  // spv::ImageFormatUnknown
+	SIMD::Pointer ptr = state->getPointer(instruction.imageId);
+	if(ptr.isBasePlusOffset)
 	{
-		Pointer<Byte> samplerFunction = lookupSamplerFunction(descriptor, instruction, state);
+		Pointer<Byte> descriptor = ptr.getUniformPointer();  // vk::StorageImageDescriptor*
 
-		Call<ImageSampler>(samplerFunction, descriptor, &coord, &texelAndMask, state->routine->constants);
+		if(imageFormat == VK_FORMAT_UNDEFINED)  // spv::ImageFormatUnknown
+		{
+			Pointer<Byte> samplerFunction = lookupSamplerFunction(descriptor, instruction, state);
+
+			Call<ImageSampler>(samplerFunction, descriptor, &coord, &texelAndMask, state->routine->constants);
+		}
+		else
+		{
+			WriteImage(instruction, descriptor, &coord, &texelAndMask, imageFormat);
+		}
 	}
 	else
 	{
-		WriteImage(instruction, descriptor, &coord, &texelAndMask, imageFormat);
+		for(int j = 0; j < SIMD::Width; j++)
+		{
+			SIMD::Int singleLaneMask = 0;
+			singleLaneMask = Insert(singleLaneMask, 0xffffffff, j);
+			texelAndMask[4] = state->activeStoresAndAtomicsMask() & singleLaneMask;
+			Pointer<Byte> descriptor = ptr.getPointerForLane(j);
+			if(imageFormat == VK_FORMAT_UNDEFINED)  // spv::ImageFormatUnknown
+			{
+				Pointer<Byte> samplerFunction = lookupSamplerFunction(descriptor, instruction, state);
+
+				Call<ImageSampler>(samplerFunction, descriptor, &coord, &texelAndMask, state->routine->constants);
+			}
+			else
+			{
+				WriteImage(instruction, descriptor, &coord, &texelAndMask, imageFormat);
+			}
+		}
 	}
 
 	return EmitResult::Continue;
@@ -1231,7 +1329,7 @@ void SpirvShader::WriteImage(ImageInstructionSignature instruction, Pointer<Byte
 		packed[0] = (SIMD::UInt(Round(Min(Max(linearToSRGB(As<SIMD::Float>(texel[2])), SIMD::Float(0.0f)), SIMD::Float(1.0f)) * SIMD::Float(255.0f)))) |
 		            ((SIMD::UInt(Round(Min(Max(linearToSRGB(As<SIMD::Float>(texel[1])), SIMD::Float(0.0f)), SIMD::Float(1.0f)) * SIMD::Float(255.0f)))) << 8) |
 		            ((SIMD::UInt(Round(Min(Max(linearToSRGB(As<SIMD::Float>(texel[0])), SIMD::Float(0.0f)), SIMD::Float(1.0f)) * SIMD::Float(255.0f)))) << 16) |
-		            ((SIMD::UInt(Round(Min(Max(linearToSRGB(As<SIMD::Float>(texel[3])), SIMD::Float(0.0f)), SIMD::Float(1.0f)) * SIMD::Float(255.0f)))) << 24);
+		            ((SIMD::UInt(Round(Min(Max(As<SIMD::Float>(texel[3]), SIMD::Float(0.0f)), SIMD::Float(1.0f)) * SIMD::Float(255.0f)))) << 24);
 		break;
 	case VK_FORMAT_R8G8B8A8_SNORM:
 	case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
@@ -1393,27 +1491,25 @@ void SpirvShader::WriteImage(ImageInstructionSignature instruction, Pointer<Byte
 	}
 	else if(texelSize == 2)
 	{
-		SIMD::Int offsets = texelPtr.offsets();
 		mask = mask & texelPtr.isInBounds(2, robustness);
 
 		for(int i = 0; i < SIMD::Width; i++)
 		{
 			If(Extract(mask, i) != 0)
 			{
-				*Pointer<Short>(texelPtr.base + Extract(offsets, i)) = Short(Extract(packed[0], i));
+				*Pointer<Short>(texelPtr.getPointerForLane(i)) = Short(Extract(packed[0], i));
 			}
 		}
 	}
 	else if(texelSize == 1)
 	{
-		SIMD::Int offsets = texelPtr.offsets();
 		mask = mask & texelPtr.isInBounds(1, robustness);
 
 		for(int i = 0; i < SIMD::Width; i++)
 		{
 			If(Extract(mask, i) != 0)
 			{
-				*Pointer<Byte>(texelPtr.base + Extract(offsets, i)) = Byte(Extract(packed[0], i));
+				*Pointer<Byte>(texelPtr.getPointerForLane(i)) = Byte(Extract(packed[0], i));
 			}
 		}
 	}
@@ -1425,7 +1521,7 @@ SpirvShader::EmitResult SpirvShader::EmitImageTexelPointer(const ImageInstructio
 {
 	auto coordinate = Operand(this, state, instruction.coordinateId);
 
-	Pointer<Byte> descriptor = state->getPointer(instruction.imageId).base;  // vk::StorageImageDescriptor*
+	Pointer<Byte> descriptor = state->getPointer(instruction.imageId).getUniformPointer();  // vk::StorageImageDescriptor*
 
 	// VK_EXT_image_robustness requires checking for out-of-bounds accesses.
 	// TODO(b/162327166): Only perform bounds checks when VK_EXT_image_robustness is enabled.

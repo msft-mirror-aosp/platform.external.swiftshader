@@ -17,6 +17,7 @@
 #include "CPUID.hpp"
 #include "Debug.hpp"
 #include "LLVMReactorDebugInfo.hpp"
+#include "PragmaInternals.hpp"
 #include "Print.hpp"
 #include "Reactor.hpp"
 #include "x86.hpp"
@@ -631,6 +632,18 @@ Value *Nucleus::allocateStackVariable(Type *type, int arraySize)
 
 	entryBlock.getInstList().push_front(declaration);
 
+	if(getPragmaState(InitializeLocalVariables))
+	{
+		llvm::Type *i8PtrTy = llvm::Type::getInt8Ty(*jit->context)->getPointerTo();
+		llvm::Type *i32Ty = llvm::Type::getInt32Ty(*jit->context);
+		llvm::Function *memset = llvm::Intrinsic::getDeclaration(jit->module.get(), llvm::Intrinsic::memset, { i8PtrTy, i32Ty });
+
+		jit->builder->CreateCall(memset, { jit->builder->CreatePointerCast(declaration, i8PtrTy),
+		                                   V(Nucleus::createConstantByte((unsigned char)0)),
+		                                   V(Nucleus::createConstantInt((int)typeSize(type) * (arraySize ? arraySize : 1))),
+		                                   V(Nucleus::createConstantBool(false)) });
+	}
+
 	return V(declaration);
 }
 
@@ -878,7 +891,6 @@ Value *Nucleus::createLoad(Value *ptr, Type *type, bool isVolatile, unsigned int
 	case Type_LLVM:
 		{
 			auto elTy = T(type);
-			ASSERT(V(ptr)->getType()->getContainedType(0) == elTy);
 
 			if(!atomic)
 			{
@@ -962,7 +974,6 @@ Value *Nucleus::createStore(Value *value, Value *ptr, Type *type, bool isVolatil
 	case Type_LLVM:
 		{
 			auto elTy = T(type);
-			ASSERT(V(ptr)->getType()->getContainedType(0) == elTy);
 
 			if(__has_feature(memory_sanitizer) && !jit->msanInstrumentation)
 			{
@@ -1238,7 +1249,7 @@ void Nucleus::createFence(std::memory_order memoryOrder)
 Value *Nucleus::createGEP(Value *ptr, Type *type, Value *index, bool unsignedIndex)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	ASSERT(V(ptr)->getType()->getContainedType(0) == T(type));
+
 	if(sizeof(void *) == 8)
 	{
 		// LLVM manual: "When indexing into an array, pointer or vector,
@@ -2671,7 +2682,7 @@ RValue<Int4> Min(RValue<Int4> x, RValue<Int4> y)
 RValue<Int4> RoundInt(RValue<Float4> cast)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	return x86::cvtps2dq(cast);
 #else
 	return As<Int4>(V(lowerRoundInt(V(cast.value()), T(Int4::type()))));
@@ -2683,7 +2694,7 @@ RValue<Int4> RoundIntClamped(RValue<Float4> cast)
 	RR_DEBUG_INFO_UPDATE_LOC();
 
 // TODO(b/165000222): Check if fptosi_sat produces optimal code for x86 and ARM.
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	// cvtps2dq produces 0x80000000, a negative value, for input larger than
 	// 2147483520.0, so clamp to 2147483520. Values less than -2147483520.0
 	// saturate to 0x80000000.
@@ -2698,7 +2709,7 @@ RValue<Int4> RoundIntClamped(RValue<Float4> cast)
 	    jit->module.get(), llvm::Intrinsic::fptosi_sat, { T(Int4::type()), T(Float4::type()) });
 	return RValue<Int4>(V(jit->builder->CreateCall(fptosi_sat, { rounded })));
 #else
-	RValue<Float4> clamped = Max(Min(cast, Float4(0x7FFFFF80)), Float4(0x80000000));
+	RValue<Float4> clamped = Max(Min(cast, Float4(0x7FFFFF80)), Float4(static_cast<int>(0x80000000)));
 	return As<Int4>(V(lowerRoundInt(V(clamped.value()), T(Int4::type()))));
 #endif
 }
@@ -3210,7 +3221,7 @@ RValue<Int4> CmpUNLE(RValue<Float4> x, RValue<Float4> y)
 RValue<Float4> Round(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	if(CPUID::supportsSSE4_1())
 	{
 		return x86::roundps(x, 0);
@@ -3227,7 +3238,7 @@ RValue<Float4> Round(RValue<Float4> x)
 RValue<Float4> Trunc(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	if(CPUID::supportsSSE4_1())
 	{
 		return x86::roundps(x, 3);
@@ -3246,7 +3257,7 @@ RValue<Float4> Frac(RValue<Float4> x)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Float4 frc;
 
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	if(CPUID::supportsSSE4_1())
 	{
 		frc = x - x86::floorps(x);
@@ -3269,7 +3280,7 @@ RValue<Float4> Frac(RValue<Float4> x)
 RValue<Float4> Floor(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	if(CPUID::supportsSSE4_1())
 	{
 		return x86::floorps(x);
@@ -3286,7 +3297,7 @@ RValue<Float4> Floor(RValue<Float4> x)
 RValue<Float4> Ceil(RValue<Float4> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#if defined(__i386__) || defined(__x86_64__)
+#if(defined(__i386__) || defined(__x86_64__)) && !__has_feature(memory_sanitizer)
 	if(CPUID::supportsSSE4_1())
 	{
 		return x86::ceilps(x);
@@ -3591,22 +3602,14 @@ RValue<Int> cvtss2si(RValue<Float> val)
 
 RValue<Int4> cvtps2dq(RValue<Float4> val)
 {
+	ASSERT(!__has_feature(memory_sanitizer));  // TODO(b/172238865): Not correctly instrumented by MemorySanitizer.
+
 	return RValue<Int4>(createInstruction(llvm::Intrinsic::x86_sse2_cvtps2dq, val.value()));
 }
 
 RValue<Float> rcpss(RValue<Float> val)
 {
-	Value *undef = V(llvm::UndefValue::get(T(Float4::type())));
-
-	// TODO(b/172238865): MemorySanitizer does not support the rcpss instruction,
-	// which makes it look at the entire 128-bit input operand for undefined bits.
-	// Use zero-initialized values instead.
-	if(__has_feature(memory_sanitizer))
-	{
-		undef = Float4(0).loadValue();
-	}
-
-	Value *vector = Nucleus::createInsertElement(undef, val.value(), 0);
+	Value *vector = Nucleus::createInsertElement(V(llvm::UndefValue::get(T(Float4::type()))), val.value(), 0);
 
 	return RValue<Float>(Nucleus::createExtractElement(createInstruction(llvm::Intrinsic::x86_sse_rcp_ss, vector), Float::type(), 0));
 }
@@ -3618,17 +3621,7 @@ RValue<Float> sqrtss(RValue<Float> val)
 
 RValue<Float> rsqrtss(RValue<Float> val)
 {
-	Value *undef = V(llvm::UndefValue::get(T(Float4::type())));
-
-	// TODO(b/172238865): MemorySanitizer does not support the rsqrtss instruction,
-	// which makes it look at the entire 128-bit input operand for undefined bits.
-	// Use zero-initialized values instead.
-	if(__has_feature(memory_sanitizer))
-	{
-		undef = Float4(0).loadValue();
-	}
-
-	Value *vector = Nucleus::createInsertElement(undef, val.value(), 0);
+	Value *vector = Nucleus::createInsertElement(V(llvm::UndefValue::get(T(Float4::type()))), val.value(), 0);
 
 	return RValue<Float>(Nucleus::createExtractElement(createInstruction(llvm::Intrinsic::x86_sse_rsqrt_ss, vector), Float::type(), 0));
 }
@@ -3663,15 +3656,6 @@ RValue<Float> roundss(RValue<Float> val, unsigned char imm)
 	llvm::Function *roundss = llvm::Intrinsic::getDeclaration(jit->module.get(), llvm::Intrinsic::x86_sse41_round_ss);
 
 	Value *undef = V(llvm::UndefValue::get(T(Float4::type())));
-
-	// TODO(b/172238865): MemorySanitizer does not support the roundss instruction,
-	// which makes it look at the entire 128-bit input operands for undefined bits.
-	// Use zero-initialized values instead.
-	if(__has_feature(memory_sanitizer))
-	{
-		undef = Float4(0).loadValue();
-	}
-
 	Value *vector = Nucleus::createInsertElement(undef, val.value(), 0);
 
 	return RValue<Float>(Nucleus::createExtractElement(V(jit->builder->CreateCall(roundss, { V(undef), V(vector), V(Nucleus::createConstantInt(imm)) })), Float::type(), 0));
@@ -3689,6 +3673,8 @@ RValue<Float> ceilss(RValue<Float> val)
 
 RValue<Float4> roundps(RValue<Float4> val, unsigned char imm)
 {
+	ASSERT(!__has_feature(memory_sanitizer));  // TODO(b/172238865): Not correctly instrumented by MemorySanitizer.
+
 	return RValue<Float4>(createInstruction(llvm::Intrinsic::x86_sse41_round_ps, val.value(), Nucleus::createConstantInt(imm)));
 }
 
@@ -4200,7 +4186,11 @@ void Nucleus::createCoroutine(Type *YieldType, const std::vector<Type *> &Params
 	auto promisePtrTy = promiseTy->getPointerTo();
 
 	jit->function = rr::createFunction("coroutine_begin", handleTy, T(Params));
+#if LLVM_VERSION_MAJOR >= 15
+	jit->function->setPresplitCoroutine();
+#else
 	jit->function->addFnAttr("coroutine.presplit", "0");
+#endif
 	jit->coroutine.await = rr::createFunction("coroutine_await", boolTy, { handleTy, promisePtrTy });
 	jit->coroutine.destroy = rr::createFunction("coroutine_destroy", voidTy, { handleTy });
 	jit->coroutine.yieldType = promiseTy;
