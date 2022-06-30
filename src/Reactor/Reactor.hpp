@@ -100,6 +100,12 @@ class Float;
 class Float2;
 class Float4;
 
+namespace SIMD {
+class Int;
+class UInt;
+class Float;
+}  // namespace SIMD
+
 template<>
 struct Scalar<Float4>
 {
@@ -114,6 +120,24 @@ struct Scalar<Int4>
 
 template<>
 struct Scalar<UInt4>
+{
+	using Type = UInt;
+};
+
+template<>
+struct Scalar<SIMD::Float>
+{
+	using Type = Float;
+};
+
+template<>
+struct Scalar<SIMD::Int>
+{
+	using Type = Int;
+};
+
+template<>
+struct Scalar<SIMD::UInt>
 {
 	using Type = UInt;
 };
@@ -315,6 +339,24 @@ struct BroadcastLiteral<Float4>
 	using Type = float;
 };
 
+template<>
+struct BroadcastLiteral<SIMD::Int>
+{
+	using Type = int;
+};
+
+template<>
+struct BroadcastLiteral<SIMD::UInt>
+{
+	using Type = unsigned int;
+};
+
+template<>
+struct BroadcastLiteral<SIMD::Float>
+{
+	using Type = float;
+};
+
 template<class T>
 class RValue
 {
@@ -336,6 +378,8 @@ public:
 	RValue<T> &operator=(const RValue<T> &) = delete;
 
 	Value *value() const { return val; }
+
+	static int element_count() { return T::element_count(); }
 
 private:
 	Value *const val;
@@ -626,6 +670,7 @@ public:
 	//	RValue<Byte4> operator=(const Reference<Byte4> &rhs);
 
 	static Type *type();
+	static int element_count() { return 4; }
 };
 
 RValue<Byte4> Insert(RValue<Byte4> val, RValue<Byte> element, int i);
@@ -672,6 +717,7 @@ public:
 	//	RValue<SByte4> operator=(const Reference<SByte4> &rhs);
 
 	static Type *type();
+	static int element_count() { return 4; }
 };
 
 //	RValue<SByte4> operator+(RValue<SByte4> lhs, RValue<SByte4> rhs);
@@ -716,6 +762,7 @@ public:
 	RValue<Byte8> operator=(const Reference<Byte8> &rhs);
 
 	static Type *type();
+	static int element_count() { return 8; }
 };
 
 RValue<Byte8> operator+(RValue<Byte8> lhs, RValue<Byte8> rhs);
@@ -771,6 +818,7 @@ public:
 	RValue<SByte8> operator=(const Reference<SByte8> &rhs);
 
 	static Type *type();
+	static int element_count() { return 8; }
 };
 
 RValue<SByte8> operator+(RValue<SByte8> lhs, RValue<SByte8> rhs);
@@ -822,6 +870,7 @@ public:
 	RValue<Byte16> operator=(const Reference<Byte16> &rhs);
 
 	static Type *type();
+	static int element_count() { return 16; }
 };
 
 //	RValue<Byte16> operator+(RValue<Byte16> lhs, RValue<Byte16> rhs);
@@ -867,6 +916,7 @@ public:
 	//	RValue<SByte16> operator=(const Reference<SByte16> &rhs);
 
 	static Type *type();
+	static int element_count() { return 16; }
 };
 
 //	RValue<SByte16> operator+(RValue<SByte16> lhs, RValue<SByte16> rhs);
@@ -903,6 +953,7 @@ public:
 	explicit Short2(RValue<Short4> cast);
 
 	static Type *type();
+	static int element_count() { return 2; }
 };
 
 class UShort2 : public LValue<UShort2>
@@ -911,6 +962,7 @@ public:
 	explicit UShort2(RValue<UShort4> cast);
 
 	static Type *type();
+	static int element_count() { return 2; }
 };
 
 class Short4 : public LValue<Short4>
@@ -940,6 +992,7 @@ public:
 	RValue<Short4> operator=(const Reference<UShort4> &rhs);
 
 	static Type *type();
+	static int element_count() { return 4; }
 };
 
 RValue<Short4> operator+(RValue<Short4> lhs, RValue<Short4> rhs);
@@ -1018,6 +1071,7 @@ public:
 	RValue<UShort4> operator=(const Reference<Short4> &rhs);
 
 	static Type *type();
+	static int element_count() { return 4; }
 };
 
 RValue<UShort4> operator+(RValue<UShort4> lhs, RValue<UShort4> rhs);
@@ -1072,6 +1126,7 @@ public:
 	RValue<Short8> operator=(const Reference<Short8> &rhs);
 
 	static Type *type();
+	static int element_count() { return 8; }
 };
 
 RValue<Short8> operator+(RValue<Short8> lhs, RValue<Short8> rhs);
@@ -1112,7 +1167,6 @@ RValue<Short8> operator>>(RValue<Short8> lhs, unsigned char rhs);
 
 RValue<Short8> MulHigh(RValue<Short8> x, RValue<Short8> y);
 RValue<Int4> MulAdd(RValue<Short8> x, RValue<Short8> y);
-RValue<Int4> Abs(RValue<Int4> x);
 
 class UShort8 : public LValue<UShort8>
 {
@@ -1130,6 +1184,7 @@ public:
 	RValue<UShort8> operator=(const Reference<UShort8> &rhs);
 
 	static Type *type();
+	static int element_count() { return 8; }
 };
 
 RValue<UShort8> operator+(RValue<UShort8> lhs, RValue<UShort8> rhs);
@@ -1417,6 +1472,7 @@ public:
 	RValue<Int2> operator=(const Reference<Int2> &rhs);
 
 	static Type *type();
+	static int element_count() { return 2; }
 };
 
 RValue<Int2> operator+(RValue<Int2> lhs, RValue<Int2> rhs);
@@ -1473,6 +1529,7 @@ public:
 	RValue<UInt2> operator=(const Reference<UInt2> &rhs);
 
 	static Type *type();
+	static int element_count() { return 2; }
 };
 
 RValue<UInt2> operator+(RValue<UInt2> lhs, RValue<UInt2> rhs);
@@ -1547,6 +1604,7 @@ public:
 	RValue<Int4> operator=(const Reference<Int4> &rhs);
 
 	static Type *type();
+	static int element_count() { return 4; }
 
 private:
 	void constant(int x, int y, int z, int w);
@@ -1602,6 +1660,7 @@ inline RValue<Int4> CmpGE(RValue<Int4> x, RValue<Int4> y)
 {
 	return CmpNLT(x, y);
 }
+RValue<Int4> Abs(RValue<Int4> x);
 RValue<Int4> Max(RValue<Int4> x, RValue<Int4> y);
 RValue<Int4> Min(RValue<Int4> x, RValue<Int4> y);
 // Convert to nearest integer. If a converted value is outside of the integer
@@ -1647,6 +1706,7 @@ public:
 	RValue<UInt4> operator=(const Reference<UInt4> &rhs);
 
 	static Type *type();
+	static int element_count() { return 4; }
 
 private:
 	void constant(int x, int y, int z, int w);
@@ -1839,6 +1899,7 @@ public:
 	//	RValue<Float2> operator=(const SwizzleMask1<T> &rhs);
 
 	static Type *type();
+	static int element_count() { return 2; }
 };
 
 //	RValue<Float2> operator+(RValue<Float2> lhs, RValue<Float2> rhs);
@@ -1912,6 +1973,7 @@ public:
 	static Float4 infinity();
 
 	static Type *type();
+	static int element_count() { return 4; }
 
 private:
 	void constant(float x, float y, float z, float w);
@@ -2013,6 +2075,84 @@ RValue<Float4> Exp(RValue<Float4> x);
 RValue<Float4> Log(RValue<Float4> x);
 RValue<Float4> Exp2(RValue<Float4> x);
 RValue<Float4> Log2(RValue<Float4> x);
+
+// Call a unary C function on each element of a vector type.
+template<typename Func, typename T>
+inline RValue<T> ScalarizeCall(Func func, const RValue<T> &x)
+{
+	T result;
+	for(int i = 0; i < T::element_count(); i++)
+	{
+		result = Insert(result, Call(func, Extract(x, i)), i);
+	}
+
+	return result;
+}
+
+// Call a binary C function on each element of a vector type.
+template<typename Func, typename T>
+inline RValue<T> ScalarizeCall(Func func, const RValue<T> &x, const RValue<T> &y)
+{
+	T result;
+	for(int i = 0; i < T::element_count(); i++)
+	{
+		result = Insert(result, Call(func, Extract(x, i), Extract(y, i)), i);
+	}
+
+	return result;
+}
+
+// Call a ternary C function on each element of a vector type.
+template<typename Func, typename T>
+inline RValue<T> ScalarizeCall(Func func, const RValue<T> &x, const RValue<T> &y, const RValue<T> &z)
+{
+	T result;
+	for(int i = 0; i < T::element_count(); i++)
+	{
+		result = Insert(result, Call(func, Extract(x, i), Extract(y, i), Extract(z, i)), i);
+	}
+
+	return result;
+}
+
+// Invoke a unary lambda expression on each element of a vector type.
+template<typename Func, typename T>
+inline RValue<T> Scalarize(Func func, const RValue<T> &x)
+{
+	T result;
+	for(int i = 0; i < T::element_count(); i++)
+	{
+		result = Insert(result, func(Extract(x, i)), i);
+	}
+
+	return result;
+}
+
+// Invoke a binary lambda expression on each element of a vector type.
+template<typename Func, typename T>
+inline RValue<T> Scalarize(Func func, const RValue<T> &x, const RValue<T> &y)
+{
+	T result;
+	for(int i = 0; i < T::element_count(); i++)
+	{
+		result = Insert(result, func(Extract(x, i), Extract(y, i)), i);
+	}
+
+	return result;
+}
+
+// Invoke a ternary lambda expression on each element of a vector type.
+template<typename Func, typename T>
+inline RValue<T> Scalarize(Func func, const RValue<T> &x, const RValue<T> &y, const RValue<T> &z)
+{
+	T result;
+	for(int i = 0; i < T::element_count(); i++)
+	{
+		result = Insert(result, func(Extract(x, i), Extract(y, i), Extract(z, i)), i);
+	}
+
+	return result;
+}
 
 // Bit Manipulation functions.
 // TODO: Currently unimplemented for Subzero.
@@ -2493,44 +2633,38 @@ inline RValue<Float>::RValue(float f)
 	RR_DEBUG_INFO_EMIT_VAR(val);
 }
 
-inline Value *broadcastInt4(int i)
+inline Value *broadcast(int i, Type *type)
 {
-	int64_t constantVector[4] = { i, i, i, i };
-	return Nucleus::createConstantVector(constantVector, Int4::type());
+	std::vector<int64_t> constantVector = { i };
+	return Nucleus::createConstantVector(constantVector, type);
 }
 
 template<>
 inline RValue<Int4>::RValue(int i)
-    : val(broadcastInt4(i))
+    : val(broadcast(i, Int4::type()))
 {
 	RR_DEBUG_INFO_EMIT_VAR(val);
-}
-
-inline Value *broadcastUInt4(unsigned int i)
-{
-	int64_t constantVector[4] = { i, i, i, i };
-	return Nucleus::createConstantVector(constantVector, UInt4::type());
 }
 
 template<>
 inline RValue<UInt4>::RValue(unsigned int i)
-    : val(broadcastInt4(i))
+    : val(broadcast(int(i), UInt4::type()))
 {
 	RR_DEBUG_INFO_EMIT_VAR(val);
 }
 
-inline Value *broadcastFloat4(float f)
+inline Value *broadcast(float f, Type *type)
 {
 	// See Float(float) constructor for the rationale behind this assert.
 	assert(std::isfinite(f));
 
-	double constantVector[4] = { f, f, f, f };
-	return Nucleus::createConstantVector(constantVector, Float4::type());
+	std::vector<double> constantVector = { f };
+	return Nucleus::createConstantVector(constantVector, type);
 }
 
 template<>
 inline RValue<Float4>::RValue(float f)
-    : val(broadcastFloat4(f))
+    : val(broadcast(f, Float4::type()))
 {
 	RR_DEBUG_INFO_EMIT_VAR(val);
 }
