@@ -31,7 +31,7 @@ __pragma(warning(push))
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/IR/DiagnosticInfo.h"
-#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/TargetSelect.h"
@@ -39,6 +39,24 @@ __pragma(warning(push))
 #include "llvm/Transforms/Instrumentation/MemorySanitizer.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/GVN.h"
+
+#if LLVM_VERSION_MAJOR >= 13  // New pass manager
+#	include "llvm/IR/PassManager.h"
+#	include "llvm/Passes/PassBuilder.h"
+#	include "llvm/Transforms/Scalar/ADCE.h"
+#	include "llvm/Transforms/Scalar/DeadStoreElimination.h"
+#	include "llvm/Transforms/Scalar/EarlyCSE.h"
+#	include "llvm/Transforms/Scalar/LICM.h"
+#	include "llvm/Transforms/Scalar/Reassociate.h"
+#	include "llvm/Transforms/Scalar/SCCP.h"
+#	include "llvm/Transforms/Scalar/SROA.h"
+#	include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#else  // Legacy pass manager
+#	include "llvm/IR/LegacyPassManager.h"
+#	include "llvm/Pass.h"
+#	include "llvm/Transforms/Coroutines.h"
+#	include "llvm/Transforms/IPO.h"
+#endif
 
 #ifdef _MSC_VER
     __pragma(warning(pop))
@@ -152,14 +170,6 @@ JITGlobals *JITGlobals::get()
 #endif
 #if LLVM_VERSION_MAJOR <= 12
 			"-warn-stack-size=524288"  // Warn when a function uses more than 512 KiB of stack memory
-#else
-		// TODO(b/191193823): TODO(ndesaulniers): Update this after
-		// go/compilers/fc018ebb608ee0c1239b405460e49f1835ab6175
-#	if LLVM_VERSION_MAJOR <= 15
-		// Resolve TODO
-#	elif LLVM_VERSION_MAJOR < 9999
-#		warning Implement stack size checks using the "warn-stack-size" function attribute.
-#	endif
 #endif
 		};
 
@@ -722,12 +732,21 @@ public:
 		// introduces RTDyldObjectLinkingLayer::registerJITEventListener().
 		// The current API does not appear to have any way to bind the
 		// rr::DebugInfo::NotifyFreeingObject event.
+#	if LLVM_VERSION_MAJOR >= 12
+		objectLayer.setNotifyLoaded([](llvm::orc::MaterializationResponsibility &R,
+		                               const llvm::object::ObjectFile &obj,
+		                               const llvm::RuntimeDyld::LoadedObjectInfo &l) {
+			static std::atomic<uint64_t> unique_key{ 0 };
+			rr::DebugInfo::NotifyObjectEmitted(unique_key++, obj, l);
+		});
+#	else
 		objectLayer.setNotifyLoaded([](llvm::orc::VModuleKey,
 		                               const llvm::object::ObjectFile &obj,
 		                               const llvm::RuntimeDyld::LoadedObjectInfo &l) {
 			static std::atomic<uint64_t> unique_key{ 0 };
 			rr::DebugInfo::NotifyObjectEmitted(unique_key++, obj, l);
 		});
+#	endif
 #endif  // ENABLE_RR_DEBUG_INFO
 
 		if(JITGlobals::get()->getTargetTriple().isOSBinFormatCOFF())
@@ -744,7 +763,7 @@ public:
 
 		for(size_t i = 0; i < count; i++)
 		{
-			auto func = funcs[i];
+			llvm::Function *func = funcs[i];
 
 			if(!func->hasName())
 			{
@@ -838,8 +857,46 @@ JITBuilder::JITBuilder(const rr::Config &config)
 	}
 }
 
-void JITBuilder::optimize(const rr::Config &cfg)
+void JITBuilder::runPasses(const rr::Config &cfg)
 {
+	if(coroutine.id)  // Run manadory coroutine transforms.
+	{
+#if LLVM_VERSION_MAJOR >= 13  // New pass manager
+		llvm::PassBuilder pb;
+		llvm::LoopAnalysisManager lam;
+		llvm::FunctionAnalysisManager fam;
+		llvm::CGSCCAnalysisManager cgam;
+		llvm::ModuleAnalysisManager mam;
+
+		pb.registerModuleAnalyses(mam);
+		pb.registerCGSCCAnalyses(cgam);
+		pb.registerFunctionAnalyses(fam);
+		pb.registerLoopAnalyses(lam);
+		pb.crossRegisterProxies(lam, fam, cgam, mam);
+
+		llvm::ModulePassManager mpm =
+		    pb.buildO0DefaultPipeline(llvm::OptimizationLevel::O0);
+		mpm.run(*module, mam);
+#else  // Legacy pass manager
+		llvm::legacy::PassManager pm;
+
+		pm.add(llvm::createCoroEarlyLegacyPass());
+		pm.add(llvm::createCoroSplitLegacyPass());
+		pm.add(llvm::createCoroElideLegacyPass());
+		pm.add(llvm::createBarrierNoopPass());
+		pm.add(llvm::createCoroCleanupLegacyPass());
+
+		pm.run(*module);
+#endif
+	}
+
+#if defined(ENABLE_RR_LLVM_IR_VERIFICATION) || !defined(NDEBUG)
+	if(llvm::verifyModule(*module, &llvm::errs()))
+	{
+		llvm::report_fatal_error("Invalid LLVM module");
+	}
+#endif
+
 #ifdef ENABLE_RR_DEBUG_INFO
 	if(debugInfo != nullptr)
 	{
@@ -847,6 +904,59 @@ void JITBuilder::optimize(const rr::Config &cfg)
 	}
 #endif  // ENABLE_RR_DEBUG_INFO
 
+#if LLVM_VERSION_MAJOR >= 13  // New pass manager
+	llvm::LoopAnalysisManager lam;
+	llvm::FunctionAnalysisManager fam;
+	llvm::CGSCCAnalysisManager cgam;
+	llvm::ModuleAnalysisManager mam;
+	llvm::PassBuilder pb;
+
+	pb.registerModuleAnalyses(mam);
+	pb.registerCGSCCAnalyses(cgam);
+	pb.registerFunctionAnalyses(fam);
+	pb.registerLoopAnalyses(lam);
+	pb.crossRegisterProxies(lam, fam, cgam, mam);
+
+	llvm::ModulePassManager pm;
+	llvm::FunctionPassManager fpm;
+
+	if(__has_feature(memory_sanitizer) && msanInstrumentation)
+	{
+		llvm::MemorySanitizerOptions msanOpts;
+		pm.addPass(llvm::ModuleMemorySanitizerPass(msanOpts));
+		pm.addPass(llvm::createModuleToFunctionPassAdaptor(llvm::MemorySanitizerPass(msanOpts)));
+	}
+
+	for(auto pass : cfg.getOptimization().getPasses())
+	{
+		switch(pass)
+		{
+		case rr::Optimization::Pass::Disabled: break;
+		case rr::Optimization::Pass::CFGSimplification: fpm.addPass(llvm::SimplifyCFGPass()); break;
+		case rr::Optimization::Pass::LICM:
+			fpm.addPass(llvm::createFunctionToLoopPassAdaptor(
+			    llvm::LICMPass(llvm::SetLicmMssaOptCap, llvm::SetLicmMssaNoAccForPromotionCap, true)));
+			break;
+		case rr::Optimization::Pass::AggressiveDCE: fpm.addPass(llvm::ADCEPass()); break;
+		case rr::Optimization::Pass::GVN: fpm.addPass(llvm::GVNPass()); break;
+		case rr::Optimization::Pass::InstructionCombining: fpm.addPass(llvm::InstCombinePass()); break;
+		case rr::Optimization::Pass::Reassociate: fpm.addPass(llvm::ReassociatePass()); break;
+		case rr::Optimization::Pass::DeadStoreElimination: fpm.addPass(llvm::DSEPass()); break;
+		case rr::Optimization::Pass::SCCP: fpm.addPass(llvm::SCCPPass()); break;
+		case rr::Optimization::Pass::ScalarReplAggregates: fpm.addPass(llvm::SROAPass()); break;
+		case rr::Optimization::Pass::EarlyCSEPass: fpm.addPass(llvm::EarlyCSEPass()); break;
+		default:
+			UNREACHABLE("pass: %d", int(pass));
+		}
+	}
+
+	if(!fpm.isEmpty())
+	{
+		pm.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(fpm)));
+	}
+
+	pm.run(*module, mam);
+#else  // Legacy pass manager
 	llvm::legacy::PassManager passManager;
 
 	if(__has_feature(memory_sanitizer) && msanInstrumentation)
@@ -875,6 +985,7 @@ void JITBuilder::optimize(const rr::Config &cfg)
 	}
 
 	passManager.run(*module);
+#endif
 }
 
 std::shared_ptr<rr::Routine> JITBuilder::acquireRoutine(const char *name, llvm::Function **funcs, size_t count, const rr::Config &cfg)

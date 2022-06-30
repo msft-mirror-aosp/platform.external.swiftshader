@@ -23,14 +23,9 @@
 
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IntrinsicsX86.h"
-#include "llvm/IR/LegacyPassManager.h"
-#include "llvm/IR/Verifier.h"
-#include "llvm/Pass.h"
 #include "llvm/Support/Alignment.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/ManagedStatic.h"
-#include "llvm/Transforms/Coroutines.h"
-#include "llvm/Transforms/IPO.h"
-#include "llvm/Transforms/Scalar.h"
 
 #include <fstream>
 #include <iostream>
@@ -524,6 +519,8 @@ static llvm::Function *createFunction(const char *name, llvm::Type *retTy, const
 		func->addFnAttr(llvm::Attribute::SanitizeMemory);
 	}
 
+	func->addFnAttr("warn-stack-size", "524288");  // Warn when a function uses more than 512 KiB of stack memory
+
 	return func;
 }
 
@@ -611,15 +608,7 @@ std::shared_ptr<Routine> Nucleus::acquireRoutine(const char *name, const Config:
 			jit->module->print(file, 0);
 		}
 
-#if defined(ENABLE_RR_LLVM_IR_VERIFICATION) || !defined(NDEBUG)
-		{
-			llvm::legacy::PassManager pm;
-			pm.add(llvm::createVerifierPass());
-			pm.run(*jit->module);
-		}
-#endif  // defined(ENABLE_RR_LLVM_IR_VERIFICATION) || !defined(NDEBUG)
-
-		jit->optimize(cfg);
+		jit->runPasses(cfg);
 
 		if(false)
 		{
@@ -4354,8 +4343,7 @@ void Nucleus::yield(Value *val)
 
 std::shared_ptr<Routine> Nucleus::acquireCoroutine(const char *name, const Config::Edit *cfgEdit /* = nullptr */)
 {
-	bool isCoroutine = jit->coroutine.id != nullptr;
-	if(isCoroutine)
+	if(jit->coroutine.id)
 	{
 		jit->builder->CreateBr(jit->coroutine.endBlock);
 	}
@@ -4387,34 +4375,12 @@ std::shared_ptr<Routine> Nucleus::acquireCoroutine(const char *name, const Confi
 		jit->module->print(file, 0);
 	}
 
-	if(isCoroutine)
-	{
-		// Run manadory coroutine transforms.
-		llvm::legacy::PassManager pm;
-
-		pm.add(llvm::createCoroEarlyLegacyPass());
-		pm.add(llvm::createCoroSplitLegacyPass());
-		pm.add(llvm::createCoroElideLegacyPass());
-		pm.add(llvm::createBarrierNoopPass());
-		pm.add(llvm::createCoroCleanupLegacyPass());
-
-		pm.run(*jit->module);
-	}
-
-#if defined(ENABLE_RR_LLVM_IR_VERIFICATION) || !defined(NDEBUG)
-	{
-		llvm::legacy::PassManager pm;
-		pm.add(llvm::createVerifierPass());
-		pm.run(*jit->module);
-	}
-#endif  // defined(ENABLE_RR_LLVM_IR_VERIFICATION) || !defined(NDEBUG)
-
 	Config cfg = jit->config;
 	if(cfgEdit)
 	{
 		cfg = cfgEdit->apply(jit->config);
 	}
-	jit->optimize(cfg);
+	jit->runPasses(cfg);
 
 	if(false)
 	{

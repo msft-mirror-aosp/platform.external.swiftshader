@@ -107,7 +107,6 @@ void IndexBuffer::setIndexBufferBinding(const VertexInputBinding &indexBufferBin
 
 void IndexBuffer::getIndexBuffers(VkPrimitiveTopology topology, uint32_t count, uint32_t first, bool indexed, bool hasPrimitiveRestartEnable, std::vector<std::pair<uint32_t, void *>> *indexBuffers) const
 {
-
 	if(indexed)
 	{
 		void *indexBuffer = binding.buffer->getOffsetPointer(binding.offset + first * bytesPerIndex());
@@ -493,12 +492,12 @@ GraphicsState::GraphicsState(const Device *device, const VkGraphicsPipelineCreat
 			UNSUPPORTED("VkPhysicalDeviceFeatures::multiViewport");
 		}
 
-		if(!dynamicStateFlags.dynamicScissor)
+		if(!dynamicStateFlags.dynamicScissor && !dynamicStateFlags.dynamicScissorWithCount)
 		{
 			scissor = viewportState->pScissors[0];
 		}
 
-		if(!dynamicStateFlags.dynamicViewport)
+		if(!dynamicStateFlags.dynamicViewport && !dynamicStateFlags.dynamicViewportWithCount)
 		{
 			viewport = viewportState->pViewports[0];
 		}
