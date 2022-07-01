@@ -360,7 +360,7 @@ llvm::Value *lowerMulHigh(llvm::Value *x, llvm::Value *y, bool sext)
 
 namespace rr {
 
-const int SIMD::Width = 8;
+const int SIMD::Width = 4;
 
 std::string Caps::backendName()
 {
@@ -1153,14 +1153,14 @@ static llvm::Value *createGather(llvm::Value *base, llvm::Type *elTy, llvm::Valu
 	}
 }
 
-RValue<Float4> Gather(RValue<Pointer<Float>> base, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes /* = false */)
+RValue<SIMD::Float> Gather(RValue<Pointer<Float>> base, RValue<SIMD::Int> offsets, RValue<SIMD::Int> mask, unsigned int alignment, bool zeroMaskedLanes /* = false */)
 {
-	return As<Float4>(V(createGather(V(base.value()), T(Float::type()), V(offsets.value()), V(mask.value()), alignment, zeroMaskedLanes)));
+	return As<SIMD::Float>(V(createGather(V(base.value()), T(Float::type()), V(offsets.value()), V(mask.value()), alignment, zeroMaskedLanes)));
 }
 
-RValue<Int4> Gather(RValue<Pointer<Int>> base, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes /* = false */)
+RValue<SIMD::Int> Gather(RValue<Pointer<Int>> base, RValue<SIMD::Int> offsets, RValue<SIMD::Int> mask, unsigned int alignment, bool zeroMaskedLanes /* = false */)
 {
-	return As<Int4>(V(createGather(V(base.value()), T(Int::type()), V(offsets.value()), V(mask.value()), alignment, zeroMaskedLanes)));
+	return As<SIMD::Int>(V(createGather(V(base.value()), T(Int::type()), V(offsets.value()), V(mask.value()), alignment, zeroMaskedLanes)));
 }
 
 static void createScatter(llvm::Value *base, llvm::Value *val, llvm::Value *offsets, llvm::Value *mask, unsigned int alignment)
@@ -1216,12 +1216,12 @@ static void createScatter(llvm::Value *base, llvm::Value *val, llvm::Value *offs
 	}
 }
 
-void Scatter(RValue<Pointer<Float>> base, RValue<Float4> val, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment)
+void Scatter(RValue<Pointer<Float>> base, RValue<SIMD::Float> val, RValue<SIMD::Int> offsets, RValue<SIMD::Int> mask, unsigned int alignment)
 {
 	return createScatter(V(base.value()), V(val.value()), V(offsets.value()), V(mask.value()), alignment);
 }
 
-void Scatter(RValue<Pointer<Int>> base, RValue<Int4> val, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment)
+void Scatter(RValue<Pointer<Int>> base, RValue<SIMD::Int> val, RValue<SIMD::Int> offsets, RValue<SIMD::Int> mask, unsigned int alignment)
 {
 	return createScatter(V(base.value()), V(val.value()), V(offsets.value()), V(mask.value()), alignment);
 }
@@ -4148,6 +4148,7 @@ Nucleus::CoroutineHandle Nucleus::invokeCoroutineBegin(Routine &routine, std::fu
 }
 
 SIMD::Int::Int(RValue<scalar::Int> rhs)
+    : XYZW(this)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Value *vector = loadValue();
@@ -4258,12 +4259,28 @@ RValue<SIMD::Int> RoundIntClamped(RValue<SIMD::Float> cast)
 #endif
 }
 
+RValue<Int4> Extract128(RValue<SIMD::Int> val, int i)
+{
+	llvm::Value *v128 = jit->builder->CreateBitCast(V(val.value()), llvm::FixedVectorType::get(llvm::IntegerType::get(*jit->context, 128), SIMD::Width / 4));
+
+	return As<Int4>(V(jit->builder->CreateExtractElement(v128, i)));
+}
+
+RValue<SIMD::Int> Insert128(RValue<SIMD::Int> val, RValue<Int4> element, int i)
+{
+	llvm::Value *v128 = jit->builder->CreateBitCast(V(val.value()), llvm::FixedVectorType::get(llvm::IntegerType::get(*jit->context, 128), SIMD::Width / 4));
+	llvm::Value *a = jit->builder->CreateBitCast(V(element.value()), llvm::IntegerType::get(*jit->context, 128));
+
+	return As<SIMD::Int>(V(jit->builder->CreateInsertElement(v128, a, i)));
+}
+
 Type *SIMD::Int::type()
 {
 	return T(llvm::VectorType::get(T(scalar::Int::type()), SIMD::Width, false));
 }
 
 SIMD::UInt::UInt(RValue<SIMD::Float> cast)
+    : XYZW(this)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Value *xyzw = Nucleus::createFPToUI(cast.value(), SIMD::UInt::type());
@@ -4271,6 +4288,7 @@ SIMD::UInt::UInt(RValue<SIMD::Float> cast)
 }
 
 SIMD::UInt::UInt(RValue<scalar::UInt> rhs)
+    : XYZW(this)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Value *vector = loadValue();
@@ -4344,12 +4362,28 @@ RValue<SIMD::UInt> Min(RValue<SIMD::UInt> x, RValue<SIMD::UInt> y)
 	return (x & less) | (y & ~less);
 }
 
+RValue<UInt4> Extract128(RValue<SIMD::UInt> val, int i)
+{
+	llvm::Value *v128 = jit->builder->CreateBitCast(V(val.value()), llvm::FixedVectorType::get(llvm::IntegerType::get(*jit->context, 128), SIMD::Width / 4));
+
+	return As<UInt4>(V(jit->builder->CreateExtractElement(v128, i)));
+}
+
+RValue<SIMD::UInt> Insert128(RValue<SIMD::UInt> val, RValue<UInt4> element, int i)
+{
+	llvm::Value *v128 = jit->builder->CreateBitCast(V(val.value()), llvm::FixedVectorType::get(llvm::IntegerType::get(*jit->context, 128), SIMD::Width / 4));
+	llvm::Value *a = jit->builder->CreateBitCast(V(element.value()), llvm::IntegerType::get(*jit->context, 128));
+
+	return As<SIMD::UInt>(V(jit->builder->CreateInsertElement(v128, a, i)));
+}
+
 Type *SIMD::UInt::type()
 {
 	return T(llvm::VectorType::get(T(scalar::UInt::type()), SIMD::Width, false));
 }
 
 SIMD::Float::Float(RValue<scalar::Float> rhs)
+    : XYZW(this)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Value *vector = loadValue();
@@ -4506,6 +4540,21 @@ RValue<SIMD::Float> Ceil(RValue<SIMD::Float> x)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	return -Floor(-x);
+}
+
+RValue<Float4> Extract128(RValue<SIMD::Float> val, int i)
+{
+	llvm::Value *v128 = jit->builder->CreateBitCast(V(val.value()), llvm::FixedVectorType::get(llvm::IntegerType::get(*jit->context, 128), SIMD::Width / 4));
+
+	return As<Float4>(V(jit->builder->CreateExtractElement(v128, i)));
+}
+
+RValue<SIMD::Float> Insert128(RValue<SIMD::Float> val, RValue<Float4> element, int i)
+{
+	llvm::Value *v128 = jit->builder->CreateBitCast(V(val.value()), llvm::FixedVectorType::get(llvm::IntegerType::get(*jit->context, 128), SIMD::Width / 4));
+	llvm::Value *a = jit->builder->CreateBitCast(V(element.value()), llvm::IntegerType::get(*jit->context, 128));
+
+	return As<SIMD::Float>(V(jit->builder->CreateInsertElement(v128, a, i)));
 }
 
 Type *SIMD::Float::type()
