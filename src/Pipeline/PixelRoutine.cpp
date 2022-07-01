@@ -92,7 +92,6 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[MAX_COLOR_BUFFERS], Pointer<Byte> 
 
 		stencilTest(sBuffer, x, sMask, samples);
 
-		Float4 f;
 		Float4 rhwCentroid;
 
 		Float4 xxxx = Float4(Float(x)) + *Pointer<Float4>(primitive + OFFSET(Primitive, xQuad), 16);
@@ -105,14 +104,14 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[MAX_COLOR_BUFFERS], Pointer<Byte> 
 
 				if(state.enableMultiSampling)
 				{
-					x -= *Pointer<Float4>(constants + OFFSET(Constants, X) + q * sizeof(float4));
+					x -= Float4(*Pointer<Float>(constants + OFFSET(Constants, SampleLocationsX) + q * sizeof(float)));
 				}
 
 				z[q] = interpolate(x, Dz[q], z[q], primitive + OFFSET(Primitive, z), false, false);
 
 				if(state.depthBias)
 				{
-					z[q] += *Pointer<Float4>(primitive + OFFSET(Primitive, zBias), 16);
+					z[q] += Float4(*Pointer<Float>(primitive + OFFSET(Primitive, zBias)));
 				}
 
 				unclampedZ[q] = z[q];
@@ -194,8 +193,8 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[MAX_COLOR_BUFFERS], Pointer<Byte> 
 
 				if(perSampleShading && (state.multiSampleCount > 1))
 				{
-					xxxx += Constants::SampleLocationsX[samples[0]];
-					yyyy += Constants::SampleLocationsY[samples[0]];
+					xxxx += SampleLocationsX[samples[0]];
+					yyyy += SampleLocationsY[samples[0]];
 				}
 
 				int packedInterpolant = 0;
@@ -350,14 +349,14 @@ void PixelRoutine::stencilTest(const Pointer<Byte> &sBuffer, const Int &x, Int s
 		value = value | (*Pointer<Byte8>(buffer + pitch - 2) & Byte8(0, 0, -1, -1, 0, 0, 0, 0));
 		Byte8 valueBack = value;
 
-		if(state.frontStencil.compareMask != 0xff)
+		if(state.frontStencil.useCompareMask)
 		{
 			value &= *Pointer<Byte8>(data + OFFSET(DrawData, stencil[0].testMaskQ));
 		}
 
 		stencilTest(value, state.frontStencil.compareOp, false);
 
-		if(state.backStencil.compareMask != 0xff)
+		if(state.backStencil.useCompareMask)
 		{
 			valueBack &= *Pointer<Byte8>(data + OFFSET(DrawData, stencil[1].testMaskQ));
 		}
@@ -675,7 +674,7 @@ void PixelRoutine::alphaToCoverage(Int cMask[4], const Float4 &alpha, const Samp
 
 	for(unsigned int q : samples)
 	{
-		Int4 coverage = CmpNLT(alpha, *Pointer<Float4>(data + a2c[q]));
+		Int4 coverage = CmpNLT(alpha, Float4(*Pointer<Float>(data + a2c[q])));
 		Int aMask = SignMask(coverage);
 		cMask[q] &= aMask;
 	}
@@ -789,7 +788,7 @@ void PixelRoutine::writeStencil(Pointer<Byte> &sBuffer, const Int &x, const Int 
 		}
 	}
 
-	if((state.frontStencil.writeMask == 0) && (state.backStencil.writeMask == 0))
+	if(!state.frontStencil.writeEnabled && !state.backStencil.writeEnabled)
 	{
 		return;
 	}
@@ -808,7 +807,7 @@ void PixelRoutine::writeStencil(Pointer<Byte> &sBuffer, const Int &x, const Int 
 		bufferValue = bufferValue | (*Pointer<Byte8>(buffer + pitch - 2) & Byte8(0, 0, -1, -1, 0, 0, 0, 0));
 		Byte8 newValue = stencilOperation(bufferValue, state.frontStencil, false, zMask[q], sMask[q]);
 
-		if((state.frontStencil.writeMask & 0xFF) != 0xFF)  // Assume 8-bit stencil buffer
+		if(state.frontStencil.useWriteMask)  // Assume 8-bit stencil buffer
 		{
 			Byte8 maskedValue = bufferValue;
 			newValue &= *Pointer<Byte8>(data + OFFSET(DrawData, stencil[0].writeMaskQ));
@@ -818,7 +817,7 @@ void PixelRoutine::writeStencil(Pointer<Byte> &sBuffer, const Int &x, const Int 
 
 		Byte8 newValueBack = stencilOperation(bufferValue, state.backStencil, true, zMask[q], sMask[q]);
 
-		if((state.backStencil.writeMask & 0xFF) != 0xFF)  // Assume 8-bit stencil buffer
+		if(state.backStencil.useWriteMask)  // Assume 8-bit stencil buffer
 		{
 			Byte8 maskedValue = bufferValue;
 			newValueBack &= *Pointer<Byte8>(data + OFFSET(DrawData, stencil[1].writeMaskQ));
