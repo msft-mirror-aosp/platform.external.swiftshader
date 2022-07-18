@@ -64,6 +64,8 @@ SpirvShader::EmitResult SpirvShader::EmitLoad(InsnIterator insn, EmitState *stat
 			auto p = GetElementPointer(ptr, el.offset, interleavedByLane);
 			state->createPointer(resultId, p.Load<SIMD::Pointer>(robustness, state->activeLaneMask(), atomic, memoryOrder, sizeof(void *)));
 		});
+
+		SPIRV_SHADER_DBG("Load(atomic: {0}, order: {1}, ptr: {2}, mask: {3})", atomic, int(memoryOrder), ptr, state->activeLaneMask());
 	}
 	else
 	{
@@ -72,9 +74,9 @@ SpirvShader::EmitResult SpirvShader::EmitLoad(InsnIterator insn, EmitState *stat
 			auto p = GetElementPointer(ptr, el.offset, interleavedByLane);
 			dst.move(el.index, p.Load<SIMD::Float>(robustness, state->activeLaneMask(), atomic, memoryOrder));
 		});
-	}
 
-	SPIRV_SHADER_DBG("Load(atomic: {0}, order: {1}, ptr: {2}, val: {3}, mask: {4})", atomic, int(memoryOrder), ptr, dst, state->activeLaneMask());
+		SPIRV_SHADER_DBG("Load(atomic: {0}, order: {1}, ptr: {2}, val: {3}, mask: {4})", atomic, int(memoryOrder), ptr, dst, state->activeLaneMask());
+	}
 
 	return EmitResult::Continue;
 }
@@ -430,7 +432,7 @@ SIMD::Pointer SpirvShader::GetPointerToData(Object::ID id, SIMD::Int arrayIndice
 				auto robustness = getOutOfBoundsBehavior(id, state);
 				ASSERT(routine->pipelineLayout->getDescriptorType(d.DescriptorSet, d.Binding) != VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT);
 
-				std::array<Pointer<Byte>, 4> pointers;
+				std::vector<Pointer<Byte>> pointers(SIMD::Width);
 				for(int i = 0; i < SIMD::Width; i++)
 				{
 					pointers[i] = *Pointer<Pointer<Byte>>(set.getPointerForLane(i) + Extract(descriptorOffset, i) + OFFSET(vk::BufferDescriptor, ptr));
@@ -572,10 +574,10 @@ sw::SIMD::Pointer SpirvShader::GetElementPointer(sw::SIMD::Pointer structure, ui
 {
 	if(interleavedByLane)
 	{
-		structure.staticOffsets[0] += 0 * sizeof(float);
-		structure.staticOffsets[1] += 1 * sizeof(float);
-		structure.staticOffsets[2] += 2 * sizeof(float);
-		structure.staticOffsets[3] += 3 * sizeof(float);
+		for(int i = 0; i < SIMD::Width; i++)
+		{
+			structure.staticOffsets[i] += i * sizeof(float);
+		}
 
 		return structure + offset * sw::SIMD::Width;
 	}

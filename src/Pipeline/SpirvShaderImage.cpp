@@ -238,6 +238,13 @@ SpirvShader::ImageInstruction::ImageInstruction(InsnIterator insn, const SpirvSh
 		imageOperands &= ~spv::ImageOperandsVolatileTexelMask;
 	}
 
+	if(imageOperands & spv::ImageOperandsNontemporalMask)
+	{
+		// Hints that the accessed texels are not likely
+		// to be accessed again in the near future.
+		imageOperands &= ~spv::ImageOperandsNontemporalMask;
+	}
+
 	// There should be no remaining image operands.
 	if(imageOperands != 0)
 	{
@@ -721,7 +728,7 @@ SIMD::Pointer SpirvShader::GetNonUniformTexelAddress(ImageInstructionSignature i
 		texelData.ptrOffset = (texelData.ptrOffset & ~oobMask) | (oobMask & SIMD::Int(OOB_OFFSET));  // oob ? OOB_OFFSET : ptrOffset  // TODO: IfThenElse()
 	}
 
-	std::array<Pointer<Byte>, SIMD::Width> imageBase;
+	std::vector<Pointer<Byte>> imageBase(SIMD::Width);
 	for(int i = 0; i < SIMD::Width; i++)
 	{
 		imageBase[i] = *Pointer<Pointer<Byte>>(descriptor.getPointerForLane(i) + (useStencilAspect
