@@ -455,7 +455,10 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityRuntimeDescriptorArray: capabilities.RuntimeDescriptorArray = true; break;
 				case spv::CapabilityStorageBufferArrayNonUniformIndexing: capabilities.StorageBufferArrayNonUniformIndexing = true; break;
 				case spv::CapabilityStorageTexelBufferArrayNonUniformIndexing: capabilities.StorageTexelBufferArrayNonUniformIndexing = true; break;
+				case spv::CapabilityUniformTexelBufferArrayNonUniformIndexing: capabilities.UniformTexelBufferArrayNonUniformIndexing = true; break;
+				case spv::CapabilityUniformTexelBufferArrayDynamicIndexing: capabilities.UniformTexelBufferArrayDynamicIndexing = true; break;
 				case spv::CapabilityStorageTexelBufferArrayDynamicIndexing: capabilities.StorageTexelBufferArrayDynamicIndexing = true; break;
+				case spv::CapabilityUniformBufferArrayNonUniformIndexing: capabilities.UniformBufferArrayNonUniformIndex = true; break;
 				case spv::CapabilityPhysicalStorageBufferAddresses: capabilities.PhysicalStorageBufferAddresses = true; break;
 				default:
 					UNSUPPORTED("Unsupported capability %u", insn.word(1));
