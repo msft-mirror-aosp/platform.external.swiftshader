@@ -671,7 +671,7 @@ const VkPhysicalDeviceLimits &PhysicalDevice::getLimits()
 		{ -2 * sw::MAX_VIEWPORT_DIM,
 		  2 * sw::MAX_VIEWPORT_DIM - 1 },                 // viewportBoundsRange[2]
 		0,                                                // viewportSubPixelBits
-		64,                                               // minMemoryMapAlignment
+		vk::MIN_MEMORY_MAP_ALIGNMENT,                     // minMemoryMapAlignment
 		vk::MIN_TEXEL_BUFFER_OFFSET_ALIGNMENT,            // minTexelBufferOffsetAlignment
 		vk::MIN_UNIFORM_BUFFER_OFFSET_ALIGNMENT,          // minUniformBufferOffsetAlignment
 		vk::MIN_STORAGE_BUFFER_OFFSET_ALIGNMENT,          // minStorageBufferOffsetAlignment
@@ -1066,7 +1066,7 @@ void PhysicalDevice::getProperties(const VkPhysicalDeviceExternalSemaphoreInfo *
 
 void PhysicalDevice::getProperties(VkPhysicalDeviceExternalMemoryHostPropertiesEXT *properties) const
 {
-	properties->minImportedHostPointerAlignment = REQUIRED_MEMORY_ALIGNMENT;
+	properties->minImportedHostPointerAlignment = vk::MIN_IMPORTED_HOST_POINTER_ALIGNMENT;
 }
 
 template<typename T>
