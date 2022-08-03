@@ -59,8 +59,6 @@ protected:
 	void writeColor(int index, const Pointer<Byte> &cBuffer, const Int &x, Vector4s &current, const Int &sMask, const Int &zMask, const Int &cMask);
 
 	bool isSRGB(int index) const;
-	UShort4 convertFixed16(const Float4 &cf, bool saturate = true);
-	Float4 convertFloat32(const UShort4 &cf);
 	void linearToSRGB12_16(Vector4s &c);
 
 private:
@@ -107,8 +105,8 @@ private:
 	void linearToSRGB16_12_16(Vector4s &c);
 	Float4 sRGBtoLinear(const Float4 &x);
 
-	SIMD::Float getDepthValue32F(const Pointer<Byte> &zBuffer, int q, const Int &x) const;
-	SIMD::Float getDepthValue16(const Pointer<Byte> &zBuffer, int q, const Int &x) const;
+	SIMD::Float readDepth32F(const Pointer<Byte> &zBuffer, int q, const Int &x) const;
+	SIMD::Float readDepth16(const Pointer<Byte> &zBuffer, int q, const Int &x) const;
 
 	void writeDepth32F(Pointer<Byte> &zBuffer, int q, const Int &x, const Float4 &z, const Int &zMask);
 	void writeDepth16(Pointer<Byte> &zBuffer, int q, const Int &x, const Float4 &z, const Int &zMask);

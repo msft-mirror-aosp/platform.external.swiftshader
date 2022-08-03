@@ -720,6 +720,7 @@ public:
 		bool GroupNonUniformQuad : 1;
 		bool DeviceGroup : 1;
 		bool MultiView : 1;
+		bool SignedZeroInfNanPreserve : 1;
 		bool DemoteToHelperInvocation : 1;
 		bool StencilExportEXT : 1;
 		bool VulkanMemoryModel : 1;
@@ -729,6 +730,9 @@ public:
 		bool StorageBufferArrayNonUniformIndexing : 1;
 		bool StorageTexelBufferArrayNonUniformIndexing : 1;
 		bool StorageTexelBufferArrayDynamicIndexing : 1;
+		bool UniformTexelBufferArrayNonUniformIndexing : 1;
+		bool UniformTexelBufferArrayDynamicIndexing : 1;
+		bool UniformBufferArrayNonUniformIndex : 1;
 		bool PhysicalStorageBufferAddresses : 1;
 	};
 
