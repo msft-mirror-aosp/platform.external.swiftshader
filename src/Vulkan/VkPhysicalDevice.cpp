@@ -244,20 +244,20 @@ template<typename T>
 static void getPhysicalDeviceDescriptorIndexingFeatures(T *features)
 {
 	features->shaderInputAttachmentArrayDynamicIndexing = VK_FALSE;
-	features->shaderUniformTexelBufferArrayDynamicIndexing = VK_FALSE;
+	features->shaderUniformTexelBufferArrayDynamicIndexing = VK_TRUE;
 	features->shaderStorageTexelBufferArrayDynamicIndexing = VK_TRUE;
-	features->shaderUniformBufferArrayNonUniformIndexing = VK_FALSE;
+	features->shaderUniformBufferArrayNonUniformIndexing = VK_TRUE;
 	features->shaderSampledImageArrayNonUniformIndexing = VK_FALSE;
 	features->shaderStorageBufferArrayNonUniformIndexing = VK_TRUE;
 	features->shaderStorageImageArrayNonUniformIndexing = VK_FALSE;
 	features->shaderInputAttachmentArrayNonUniformIndexing = VK_FALSE;
-	features->shaderUniformTexelBufferArrayNonUniformIndexing = VK_FALSE;
+	features->shaderUniformTexelBufferArrayNonUniformIndexing = VK_TRUE;
 	features->shaderStorageTexelBufferArrayNonUniformIndexing = VK_TRUE;
 	features->descriptorBindingUniformBufferUpdateAfterBind = VK_FALSE;
 	features->descriptorBindingSampledImageUpdateAfterBind = VK_FALSE;
 	features->descriptorBindingStorageImageUpdateAfterBind = VK_FALSE;
 	features->descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
-	features->descriptorBindingUniformTexelBufferUpdateAfterBind = VK_FALSE;
+	features->descriptorBindingUniformTexelBufferUpdateAfterBind = VK_TRUE;
 	features->descriptorBindingStorageTexelBufferUpdateAfterBind = VK_TRUE;
 	features->descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
 	features->descriptorBindingPartiallyBound = VK_TRUE;
@@ -583,10 +583,15 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 			// Workaround for a test bug (see https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3564)
 			reinterpret_cast<struct VkPhysicalDeviceTexelBufferAlignmentFeaturesEXT *>(curExtension)->texelBufferAlignment = VK_TRUE;
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_MERGE_FEEDBACK_FEATURES_EXT:
+			// TODO(b/216982034): Workaround for a test bug (see https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3879)
+			reinterpret_cast<struct VkPhysicalDeviceSubpassMergeFeedbackFeaturesEXT *>(curExtension)->subpassMergeFeedback = VK_FALSE;
+			break;
 		case VK_STRUCTURE_TYPE_MAX_ENUM:  // TODO(b/176893525): This may not be legal. dEQP tests that this value is ignored.
 			break;
 		default:
-			UNSUPPORTED("curExtension->sType: %s", vk::Stringify(curExtension->sType).c_str());
+			// TODO(b/216982034): Revert to UNSUPPORTED() when https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3879 is fixed.
+			WARN("curExtension->sType: %s", vk::Stringify(curExtension->sType).c_str());
 			break;
 		}
 		curExtension = reinterpret_cast<VkBaseOutStructure *>(curExtension->pNext);
@@ -659,7 +664,7 @@ const VkPhysicalDeviceLimits &PhysicalDevice::getLimits()
 		vk::MAX_COMPUTE_WORKGROUP_INVOCATIONS,       // maxComputeWorkGroupInvocations
 		{ 256, 256, 64 },                            // maxComputeWorkGroupSize[3]
 		vk::SUBPIXEL_PRECISION_BITS,                 // subPixelPrecisionBits
-		4,                                           // subTexelPrecisionBits
+		8,                                           // subTexelPrecisionBits
 		4,                                           // mipmapPrecisionBits
 		UINT32_MAX,                                  // maxDrawIndexedIndexValue
 		UINT32_MAX,                                  // maxDrawIndirectCount
@@ -671,7 +676,7 @@ const VkPhysicalDeviceLimits &PhysicalDevice::getLimits()
 		{ -2 * sw::MAX_VIEWPORT_DIM,
 		  2 * sw::MAX_VIEWPORT_DIM - 1 },                 // viewportBoundsRange[2]
 		0,                                                // viewportSubPixelBits
-		64,                                               // minMemoryMapAlignment
+		vk::MIN_MEMORY_MAP_ALIGNMENT,                     // minMemoryMapAlignment
 		vk::MIN_TEXEL_BUFFER_OFFSET_ALIGNMENT,            // minTexelBufferOffsetAlignment
 		vk::MIN_UNIFORM_BUFFER_OFFSET_ALIGNMENT,          // minUniformBufferOffsetAlignment
 		vk::MIN_STORAGE_BUFFER_OFFSET_ALIGNMENT,          // minStorageBufferOffsetAlignment
@@ -829,7 +834,8 @@ static void getSubgroupProperties(T *properties)
 	    VK_SUBGROUP_FEATURE_ARITHMETIC_BIT |
 	    VK_SUBGROUP_FEATURE_BALLOT_BIT |
 	    VK_SUBGROUP_FEATURE_SHUFFLE_BIT |
-	    VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT;
+	    VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT |
+	    VK_SUBGROUP_FEATURE_QUAD_BIT;
 	properties->quadOperationsInAllStages = VK_FALSE;
 }
 
@@ -1065,7 +1071,7 @@ void PhysicalDevice::getProperties(const VkPhysicalDeviceExternalSemaphoreInfo *
 
 void PhysicalDevice::getProperties(VkPhysicalDeviceExternalMemoryHostPropertiesEXT *properties) const
 {
-	properties->minImportedHostPointerAlignment = REQUIRED_MEMORY_ALIGNMENT;
+	properties->minImportedHostPointerAlignment = vk::MIN_IMPORTED_HOST_POINTER_ALIGNMENT;
 }
 
 template<typename T>
@@ -1108,9 +1114,9 @@ static void getFloatControlsProperties(T *properties)
 	// or rounding controls.
 	properties->denormBehaviorIndependence = VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE;
 	properties->roundingModeIndependence = VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE;
-	properties->shaderSignedZeroInfNanPreserveFloat16 = VK_FALSE;
-	properties->shaderSignedZeroInfNanPreserveFloat32 = VK_FALSE;
-	properties->shaderSignedZeroInfNanPreserveFloat64 = VK_FALSE;
+	properties->shaderSignedZeroInfNanPreserveFloat16 = VK_TRUE;
+	properties->shaderSignedZeroInfNanPreserveFloat32 = VK_TRUE;
+	properties->shaderSignedZeroInfNanPreserveFloat64 = VK_TRUE;
 	properties->shaderDenormPreserveFloat16 = VK_FALSE;
 	properties->shaderDenormPreserveFloat32 = VK_FALSE;
 	properties->shaderDenormPreserveFloat64 = VK_FALSE;

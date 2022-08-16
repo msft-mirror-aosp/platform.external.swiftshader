@@ -443,8 +443,10 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityGroupNonUniformBallot: capabilities.GroupNonUniformBallot = true; break;
 				case spv::CapabilityGroupNonUniformShuffle: capabilities.GroupNonUniformShuffle = true; break;
 				case spv::CapabilityGroupNonUniformShuffleRelative: capabilities.GroupNonUniformShuffleRelative = true; break;
+				case spv::CapabilityGroupNonUniformQuad: capabilities.GroupNonUniformQuad = true; break;
 				case spv::CapabilityDeviceGroup: capabilities.DeviceGroup = true; break;
 				case spv::CapabilityMultiView: capabilities.MultiView = true; break;
+				case spv::CapabilitySignedZeroInfNanPreserve: capabilities.SignedZeroInfNanPreserve = true; break;
 				case spv::CapabilityDemoteToHelperInvocation: capabilities.DemoteToHelperInvocation = true; break;
 				case spv::CapabilityStencilExportEXT: capabilities.StencilExportEXT = true; break;
 				case spv::CapabilityVulkanMemoryModel: capabilities.VulkanMemoryModel = true; break;
@@ -453,7 +455,10 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityRuntimeDescriptorArray: capabilities.RuntimeDescriptorArray = true; break;
 				case spv::CapabilityStorageBufferArrayNonUniformIndexing: capabilities.StorageBufferArrayNonUniformIndexing = true; break;
 				case spv::CapabilityStorageTexelBufferArrayNonUniformIndexing: capabilities.StorageTexelBufferArrayNonUniformIndexing = true; break;
+				case spv::CapabilityUniformTexelBufferArrayNonUniformIndexing: capabilities.UniformTexelBufferArrayNonUniformIndexing = true; break;
+				case spv::CapabilityUniformTexelBufferArrayDynamicIndexing: capabilities.UniformTexelBufferArrayDynamicIndexing = true; break;
 				case spv::CapabilityStorageTexelBufferArrayDynamicIndexing: capabilities.StorageTexelBufferArrayDynamicIndexing = true; break;
+				case spv::CapabilityUniformBufferArrayNonUniformIndexing: capabilities.UniformBufferArrayNonUniformIndex = true; break;
 				case spv::CapabilityPhysicalStorageBufferAddresses: capabilities.PhysicalStorageBufferAddresses = true; break;
 				default:
 					UNSUPPORTED("Unsupported capability %u", insn.word(1));
@@ -732,6 +737,8 @@ SpirvShader::SpirvShader(
 		case spv::OpGroupNonUniformAllEqual:
 		case spv::OpGroupNonUniformBroadcast:
 		case spv::OpGroupNonUniformBroadcastFirst:
+		case spv::OpGroupNonUniformQuadBroadcast:
+		case spv::OpGroupNonUniformQuadSwap:
 		case spv::OpGroupNonUniformBallot:
 		case spv::OpGroupNonUniformInverseBallot:
 		case spv::OpGroupNonUniformBallotBitExtract:
@@ -1055,6 +1062,9 @@ void SpirvShader::ProcessExecutionMode(InsnIterator insn)
 		break;
 	case spv::ExecutionModeOriginUpperLeft:
 		// This is always the case for a Vulkan shader. Do nothing.
+		break;
+	case spv::ExecutionModeSignedZeroInfNanPreserve:
+		// We currently don't perform any aggressive fast-math optimizations.
 		break;
 	default:
 		UNREACHABLE("Execution mode: %d", int(mode));
@@ -1431,7 +1441,7 @@ SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, Object::ID element
 							// NonUniform array data can deal with pointers not bound by a 32-bit address
 							// space, so we need to ensure we're using an array pointer, and not a base+offset
 							// pointer.
-							std::array<Pointer<Byte>, SIMD::Width> pointers;
+							std::vector<Pointer<Byte>> pointers(SIMD::Width);
 							for(int i = 0; i < SIMD::Width; i++)
 							{
 								pointers[i] = ptr.getPointerForLane(i);
@@ -2216,6 +2226,8 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 	case spv::OpGroupNonUniformAllEqual:
 	case spv::OpGroupNonUniformBroadcast:
 	case spv::OpGroupNonUniformBroadcastFirst:
+	case spv::OpGroupNonUniformQuadBroadcast:
+	case spv::OpGroupNonUniformQuadSwap:
 	case spv::OpGroupNonUniformBallot:
 	case spv::OpGroupNonUniformInverseBallot:
 	case spv::OpGroupNonUniformBallotBitExtract:

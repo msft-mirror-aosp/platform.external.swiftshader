@@ -173,20 +173,16 @@ SpirvShader::EmitResult SpirvShader::EmitPointerBitCast(Object::ID resultID, Ope
 	}
 	else  // Integer bits -> Pointer
 	{
-		SIMD::Pointer dst(nullptr, nullptr, nullptr, nullptr);
-
 		if(sizeof(void *) == 4)  // 32-bit pointers
 		{
-			dst.castFrom(src.UInt(0));
+			state->createPointer(resultID, SIMD::Pointer(src.UInt(0)));
 		}
 		else  // 64-bit pointers
 		{
 			ASSERT(sizeof(void *) == 8);
-			// Casting 2 32bit integers into a 64 bit pointer
-			dst.castFrom(src.UInt(0), src.UInt(1));
+			// Casting two 32-bit integers into a 64-bit pointer
+			state->createPointer(resultID, SIMD::Pointer(src.UInt(0), src.UInt(1)));
 		}
-
-		state->createPointer(resultID, dst);
 	}
 
 	return EmitResult::Continue;
@@ -295,7 +291,7 @@ SpirvShader::EmitResult SpirvShader::EmitUnaryOp(InsnIterator insn, EmitState *s
 			// Derivative instructions: FS invocations are laid out like so:
 			//    0 1
 			//    2 3
-			static_assert(SIMD::Width == 4, "All cross-lane instructions will need care when using a different width");
+			ASSERT(SIMD::Width == 4);  // All cross-lane instructions will need care when using a different width
 			dst.move(i, SIMD::Float(Extract(src.Float(i), 1) - Extract(src.Float(i), 0)));
 			break;
 		case spv::OpDPdy:
