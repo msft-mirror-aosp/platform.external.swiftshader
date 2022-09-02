@@ -166,7 +166,7 @@ public:
 	class Type;
 	class Object;
 
-	// Pseudo-iterator over SPIRV instructions, designed to support range-based-for.
+	// Pseudo-iterator over SPIR-V instructions, designed to support range-based-for.
 	class InsnIterator
 	{
 	public:
@@ -195,14 +195,14 @@ public:
 			return iter[n];
 		}
 
-		uint32_t const *wordPointer(uint32_t n) const
+		const uint32_t *data() const
 		{
-			return &iter[n];
+			return &iter[0];
 		}
 
 		const char *string(uint32_t n) const
 		{
-			return reinterpret_cast<const char *>(wordPointer(n));
+			return reinterpret_cast<const char *>(&iter[n]);
 		}
 
 		// Returns the number of whole-words that a string literal starting at
@@ -214,8 +214,7 @@ public:
 			uint32_t c = wordCount();
 			for(uint32_t i = n; n < c; i++)
 			{
-				auto *u32 = wordPointer(i);
-				auto *u8 = reinterpret_cast<const uint8_t *>(u32);
+				const char *s = string(i);
 				// SPIR-V spec 2.2.1. Instructions:
 				// A string is interpreted as a nul-terminated stream of
 				// characters. The character set is Unicode in the UTF-8
@@ -225,7 +224,7 @@ public:
 				// The final word contains the string's nul-termination
 				// character (0), and all contents past the end of the string in
 				// the final word are padded with 0.
-				if(u8[3] == 0)
+				if(s[3] == 0)
 				{
 					return 1 + i - n;
 				}
@@ -302,6 +301,32 @@ public:
 	{
 		return InsnIterator{ insns.cend() };
 	}
+
+	// A range of contiguous instruction words.
+	struct Span
+	{
+		Span(const InsnIterator &insn, uint32_t offset, uint32_t size)
+		    : insn(insn)
+		    , offset(offset)
+		    , wordCount(size)
+		{}
+
+		uint32_t operator[](uint32_t index) const
+		{
+			ASSERT(index < wordCount);
+			return insn.word(offset + index);
+		}
+
+		uint32_t size() const
+		{
+			return wordCount;
+		}
+
+	private:
+		const InsnIterator &insn;
+		const uint32_t offset;
+		const uint32_t wordCount;
+	};
 
 	class Type
 	{
@@ -629,6 +654,7 @@ public:
 		bool DepthGreater : 1;
 		bool DepthLess : 1;
 		bool DepthUnchanged : 1;
+		bool StencilRefReplacing : 1;
 
 		// Compute workgroup dimensions
 		Object::ID WorkgroupSizeX = 1;
@@ -644,7 +670,7 @@ public:
 
 	struct Analysis
 	{
-		bool ContainsKill : 1;
+		bool ContainsDiscard : 1;  // OpKill, OpTerminateInvocation, or OpDemoteToHelperInvocation
 		bool ContainsControlBarriers : 1;
 		bool NeedsCentroid : 1;
 		bool ContainsSampleQualifier : 1;
@@ -653,6 +679,12 @@ public:
 	const Analysis &getAnalysis() const
 	{
 		return analysis;
+	}
+
+	bool coverageModified() const
+	{
+		return analysis.ContainsDiscard ||
+		       (outputBuiltins.find(spv::BuiltInSampleMask) != outputBuiltins.end());
 	}
 
 	struct Capabilities
@@ -686,11 +718,23 @@ public:
 		bool GroupNonUniformShuffle : 1;
 		bool GroupNonUniformShuffleRelative : 1;
 		bool GroupNonUniformArithmetic : 1;
+		bool GroupNonUniformQuad : 1;
 		bool DeviceGroup : 1;
 		bool MultiView : 1;
+		bool SignedZeroInfNanPreserve : 1;
+		bool DemoteToHelperInvocation : 1;
 		bool StencilExportEXT : 1;
 		bool VulkanMemoryModel : 1;
 		bool VulkanMemoryModelDeviceScope : 1;
+		bool ShaderNonUniform : 1;
+		bool RuntimeDescriptorArray : 1;
+		bool StorageBufferArrayNonUniformIndexing : 1;
+		bool StorageTexelBufferArrayNonUniformIndexing : 1;
+		bool StorageTexelBufferArrayDynamicIndexing : 1;
+		bool UniformTexelBufferArrayNonUniformIndexing : 1;
+		bool UniformTexelBufferArrayDynamicIndexing : 1;
+		bool UniformBufferArrayNonUniformIndex : 1;
+		bool PhysicalStorageBufferAddresses : 1;
 	};
 
 	const Capabilities &getUsedCapabilities() const
@@ -773,6 +817,7 @@ public:
 		bool RelaxedPrecision : 1;
 		bool RowMajor : 1;      // RowMajor if true; ColMajor if false
 		bool InsideMatrix : 1;  // pseudo-decoration for whether we're inside a matrix.
+		bool NonUniform : 1;
 
 		Decorations()
 		    : Location{ -1 }
@@ -796,6 +841,7 @@ public:
 		    , RelaxedPrecision{ false }
 		    , RowMajor{ false }
 		    , InsideMatrix{ false }
+		    , NonUniform{ false }
 		{
 		}
 
@@ -932,7 +978,7 @@ private:
 	Decorations GetDecorationsForId(TypeOrObjectID id) const;
 	void ApplyDecorationsForId(Decorations *d, TypeOrObjectID id) const;
 	void ApplyDecorationsForIdMember(Decorations *d, Type::ID id, uint32_t member) const;
-	void ApplyDecorationsForAccessChain(Decorations *d, DescriptorDecorations *dd, Object::ID baseId, uint32_t numIndexes, uint32_t const *indexIds) const;
+	void ApplyDecorationsForAccessChain(Decorations *d, DescriptorDecorations *dd, Object::ID baseId, const Span &indexIds) const;
 
 	// Creates an Object for the instruction's result in 'defs'.
 	void DefineResult(const InsnIterator &insn);
@@ -986,7 +1032,7 @@ private:
 	static bool IsStorageInterleavedByLane(spv::StorageClass storageClass);
 	static bool IsExplicitLayout(spv::StorageClass storageClass);
 
-	static sw::SIMD::Pointer InterleaveByLane(sw::SIMD::Pointer p);
+	static SIMD::Pointer GetElementPointer(SIMD::Pointer structure, uint32_t offset, bool interleavedByLane);
 
 	// Output storage buffers and images should not be affected by helper invocations
 	static bool StoresInHelperInvocation(spv::StorageClass storageClass);
@@ -1011,10 +1057,10 @@ private:
 	// VisitMemoryObject() walks a type tree in an explicitly laid out
 	// storage class, calling the MemoryVisitor for each scalar element
 	// within the
-	void VisitMemoryObject(Object::ID id, const MemoryVisitor &v) const;
+	void VisitMemoryObject(Object::ID id, bool resultIsPointer, const MemoryVisitor &v) const;
 
 	// VisitMemoryObjectInner() is internally called by VisitMemoryObject()
-	void VisitMemoryObjectInner(Type::ID id, Decorations d, uint32_t &index, uint32_t offset, const MemoryVisitor &v) const;
+	void VisitMemoryObjectInner(Type::ID id, Decorations d, uint32_t &index, uint32_t offset, bool resultIsPointer, const MemoryVisitor &v) const;
 
 	Object &CreateConstant(InsnIterator it);
 
@@ -1181,6 +1227,18 @@ private:
 			return SIMD::UInt(constant[i]);
 		}
 
+		const SIMD::Pointer &Pointer(uint32_t i) const
+		{
+			ASSERT(intermediate == nullptr);
+
+			return pointer[i];
+		}
+
+		bool isPointer() const
+		{
+			return (pointer != nullptr);
+		}
+
 	private:
 		RR_PRINT_ONLY(friend struct rr::PrintValue::Ty<Operand>;)
 
@@ -1189,6 +1247,7 @@ private:
 
 		const uint32_t *constant;
 		const Intermediate *intermediate;
+		const SIMD::Pointer *pointer;
 
 	public:
 		const uint32_t componentCount;
@@ -1248,15 +1307,16 @@ private:
 	//  - Pointer
 	//  - InterfaceVariable
 	// Calling GetPointerToData with objects of any other kind will assert.
-	SIMD::Pointer GetPointerToData(Object::ID id, Int arrayIndex, EmitState const *state) const;
+	SIMD::Pointer GetPointerToData(Object::ID id, SIMD::Int arrayIndex, bool nonUniform, EmitState const *state) const;
+	void OffsetToElement(SIMD::Pointer &ptr, Object::ID elementId, int32_t arrayStride, EmitState const *state) const;
 
 	OutOfBoundsBehavior getOutOfBoundsBehavior(Object::ID pointerId, EmitState const *state) const;
 
-	SIMD::Pointer WalkExplicitLayoutAccessChain(Object::ID id, uint32_t numIndexes, uint32_t const *indexIds, EmitState const *state) const;
-	SIMD::Pointer WalkAccessChain(Object::ID id, uint32_t numIndexes, uint32_t const *indexIds, EmitState const *state) const;
+	SIMD::Pointer WalkExplicitLayoutAccessChain(Object::ID id, Object::ID elementId, const Span &indexIds, bool nonUniform, const EmitState *state) const;
+	SIMD::Pointer WalkAccessChain(Object::ID id, Object::ID elementId, const Span &indexIds, bool nonUniform, const EmitState *state) const;
 
 	// Returns the *component* offset in the literal for the given access chain.
-	uint32_t WalkLiteralAccessChain(Type::ID id, uint32_t numIndexes, uint32_t const *indexes) const;
+	uint32_t WalkLiteralAccessChain(Type::ID id, const Span &indexes) const;
 
 	// Lookup the active lane mask for the edge from -> to.
 	// If from is unreachable, then a mask of all zeros is returned.
@@ -1265,6 +1325,7 @@ private:
 
 	// Updates the current active lane mask.
 	void SetActiveLaneMask(RValue<SIMD::Int> mask, EmitState *state) const;
+	void SetStoresAndAtomicsMask(RValue<SIMD::Int> mask, EmitState *state) const;
 
 	// Emit all the unvisited blocks (except for ignore) in DFS order,
 	// starting with id.
@@ -1307,7 +1368,9 @@ private:
 	EmitResult EmitSwitch(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitUnreachable(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitReturn(InsnIterator insn, EmitState *state) const;
-	EmitResult EmitKill(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitTerminateInvocation(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitDemoteToHelperInvocation(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitIsHelperInvocation(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitFunctionCall(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitPhi(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitImageSample(const ImageInstruction &instruction, EmitState *state) const;
@@ -1327,6 +1390,7 @@ private:
 	EmitResult EmitMemoryBarrier(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitGroupNonUniform(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitArrayLength(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitPointerBitCast(Object::ID resultID, Operand &src, EmitState *state) const;
 
 	// Emits code to sample an image, regardless of whether any SIMD lanes are active.
 	void EmitImageSampleUnconditional(Array<SIMD::Float> &out, const ImageInstruction &instruction, EmitState *state) const;
@@ -1335,6 +1399,15 @@ private:
 	void callSamplerFunction(Pointer<Byte> samplerFunction, Array<SIMD::Float> &out, Pointer<Byte> imageDescriptor, const ImageInstruction &instruction, EmitState *state) const;
 
 	void GetImageDimensions(EmitState const *state, Type const &resultTy, Object::ID imageId, Object::ID lodId, Intermediate &dst) const;
+	struct TexelAddressData
+	{
+		bool isArrayed;
+		spv::Dim dim;
+		int dims, texelSize;
+		SIMD::Int u, v, w, ptrOffset;
+	};
+	static TexelAddressData setupTexelAddressData(SIMD::Int rowPitch, SIMD::Int slicePitch, SIMD::Int samplePitch, ImageInstructionSignature instruction, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, const EmitState *state);
+	static SIMD::Pointer GetNonUniformTexelAddress(ImageInstructionSignature instruction, SIMD::Pointer descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const EmitState *state);
 	static SIMD::Pointer GetTexelAddress(ImageInstructionSignature instruction, Pointer<Byte> descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const EmitState *state);
 	static void WriteImage(ImageInstructionSignature instruction, Pointer<Byte> descriptor, const Pointer<SIMD::Int> &coord, const Pointer<SIMD::Int> &texelAndMask, vk::Format imageFormat);
 	uint32_t GetConstScalarInt(Object::ID id) const;
@@ -1351,8 +1424,8 @@ private:
 		AtSample,
 		AtOffset,
 	};
-	SIMD::Float Interpolate(SIMD::Pointer const &ptr, int32_t location, Object::ID paramId,
-	                        uint32_t component, EmitState *state, InterpolationType type) const;
+	SIMD::Float EmitInterpolate(SIMD::Pointer const &ptr, int32_t location, Object::ID paramId,
+	                            uint32_t component, EmitState *state, InterpolationType type) const;
 
 	// Helper for implementing OpStore, which doesn't take an InsnIterator so it
 	// can also store independent operands.
@@ -1397,12 +1470,6 @@ private:
 	static SIMD::Int SUDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum);
 	static SIMD::Int AddSat(RValue<SIMD::Int> a, RValue<SIMD::Int> b);
 	static SIMD::UInt AddSat(RValue<SIMD::UInt> a, RValue<SIMD::UInt> b);
-
-	// Splits x into a floating-point significand in the range [0.5, 1.0)
-	// and an integral exponent of two, such that:
-	//   x = significand * 2^exponent
-	// Returns the pair <significand, exponent>
-	std::pair<SIMD::Float, SIMD::Int> Frexp(RValue<SIMD::Float> val) const;
 
 	static ImageSampler *getImageSampler(const vk::Device *device, uint32_t signature, uint32_t samplerId, uint32_t imageViewId);
 	static std::shared_ptr<rr::Routine> emitSamplerRoutine(ImageInstructionSignature instruction, const Sampler &samplerState);
@@ -1486,6 +1553,13 @@ public:
 		Pointer<Byte> function;
 	};
 
+	enum Interpolation
+	{
+		Perspective = 0,
+		Linear,
+		Flat,
+	};
+
 	struct InterpolationData
 	{
 		Pointer<Byte> primitive;
@@ -1502,6 +1576,7 @@ public:
 	std::unordered_map<SpirvShader::Object::ID, Variable> variables;
 	std::unordered_map<uint32_t, SamplerCache> samplerCache;  // Indexed by the instruction position, in words.
 	SIMD::Float inputs[MAX_INTERFACE_COMPONENTS];
+	Interpolation inputsInterpolation[MAX_INTERFACE_COMPONENTS];
 	SIMD::Float outputs[MAX_INTERFACE_COMPONENTS];
 	InterpolationData interpolationData;
 
@@ -1511,19 +1586,19 @@ public:
 	Pointer<Int> descriptorDynamicOffsets;
 	Pointer<Byte> pushConstants;
 	Pointer<Byte> constants;
-	Int killMask = Int{ 0 };
+	Int discardMask = 0;
 
 	// Shader invocation state.
 	// Not all of these variables are used for every type of shader, and some
 	// are only used when debugging. See b/146486064 for more information.
 	// Give careful consideration to the runtime performance loss before adding
 	// more state here.
-	std::array<SIMD::Int, 2> windowSpacePosition;
-	Int layer;  // slice offset into input attachments for multiview, even if the shader doesn't use ViewIndex
+	std::array<SIMD::Int, 2> windowSpacePosition;  // TODO(b/236162233): SIMD::Int2
+	Int layer;                                     // slice offset into input attachments for multiview, even if the shader doesn't use ViewIndex
 	Int instanceID;
 	SIMD::Int vertexIndex;
-	std::array<SIMD::Float, 4> fragCoord;
-	std::array<SIMD::Float, 4> pointCoord;
+	std::array<SIMD::Float, 4> fragCoord;   // TODO(b/236162233): SIMD::Float4
+	std::array<SIMD::Float, 2> pointCoord;  // TODO(b/236162233): SIMD::Float2
 	SIMD::Int helperInvocation;
 	Int4 numWorkgroups;
 	Int4 workgroupID;
@@ -1532,8 +1607,8 @@ public:
 	Int invocationsPerSubgroup;
 	Int subgroupIndex;
 	SIMD::Int localInvocationIndex;
-	std::array<SIMD::Int, 3> localInvocationID;
-	std::array<SIMD::Int, 3> globalInvocationID;
+	std::array<SIMD::Int, 3> localInvocationID;   // TODO(b/236162233): SIMD::Int3
+	std::array<SIMD::Int, 3> globalInvocationID;  // TODO(b/236162233): SIMD::Int3
 
 	Pointer<Byte> dbgState;  // Pointer to a debugger state.
 
@@ -1554,7 +1629,7 @@ public:
 	// common for all shader types.
 	void setImmutableInputBuiltins(SpirvShader const *shader);
 
-	static SIMD::Float interpolateAtXY(const SIMD::Float &x, const SIMD::Float &y, const SIMD::Float &rhw, Pointer<Byte> planeEquation, bool flat, bool perspective);
+	static SIMD::Float interpolateAtXY(const SIMD::Float &x, const SIMD::Float &y, const SIMD::Float &rhw, Pointer<Byte> planeEquation, Interpolation interpolation);
 
 	// setInputBuiltin() calls f() with the builtin and value if the shader
 	// uses the input builtin, otherwise the call is a no-op.

@@ -15,12 +15,13 @@
 #ifndef sw_SwiftConfig_hpp
 #define sw_SwiftConfig_hpp
 
-#include <stdint.h>
-
 #include "Reactor/Nucleus.hpp"
 #include "marl/scheduler.h"
 
+#include <stdint.h>
+
 namespace sw {
+
 struct Configuration
 {
 	enum class AffinityPolicy : int
@@ -31,17 +32,16 @@ struct Configuration
 		OneOf = 1,
 	};
 
+	// -------- [Processor] --------
 	// Number of threads used by the scheduler. A thread count of 0 is
 	// interpreted as min(cpu_cores_available, 16).
 	uint32_t threadCount = 0;
 
 	// Core affinity and affinity policy used by the scheduler.
-	uint64_t affinityMask = 0xffffffffffffffff;
+	uint64_t affinityMask = 0xFFFFFFFFFFFFFFFFu;
 	AffinityPolicy affinityPolicy = AffinityPolicy::AnyOf;
 
-	// Directory where ASM listings of JITted code will be emitted.
-	std::string asmEmitDir = "";
-
+	// -------- [Profiler] --------
 	// Whether SPIR-V profiling is enabled.
 	bool enableSpirvProfiling = false;
 	// Period controlling how often SPIR-V profiles are reported.
@@ -56,8 +56,6 @@ const Configuration &getConfiguration();
 // Get the scheduler configuration given a configuration.
 marl::Scheduler::Config getSchedulerConfiguration(const Configuration &config);
 
-// Get the debug configuration for Reactor given a configuration.
-rr::DebugConfig getReactorDebugConfig(const Configuration &config);
 }  // namespace sw
 
 #endif

@@ -267,6 +267,7 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 	draw->descriptorSetObjects = inputs.getDescriptorSetObjects();
 	draw->pipelineLayout = pipelineState.getPipelineLayout();
 	draw->depthClipEnable = pipelineState.getDepthClipEnable();
+	draw->depthClipNegativeOneToOne = pipelineState.getDepthClipNegativeOneToOne();
 
 	draw->vertexRoutine = vertexRoutine;
 	draw->setupRoutine = setupRoutine;
@@ -304,19 +305,19 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 	{
 		if(ms == 4)
 		{
-			data->a2c0 = float4(0.2f);
-			data->a2c1 = float4(0.4f);
-			data->a2c2 = float4(0.6f);
-			data->a2c3 = float4(0.8f);
+			data->a2c0 = 0.2f;
+			data->a2c1 = 0.4f;
+			data->a2c2 = 0.6f;
+			data->a2c3 = 0.8f;
 		}
 		else if(ms == 2)
 		{
-			data->a2c0 = float4(0.25f);
-			data->a2c1 = float4(0.75f);
+			data->a2c0 = 0.25f;
+			data->a2c1 = 0.75f;
 		}
 		else if(ms == 1)
 		{
-			data->a2c0 = float4(0.5f);
+			data->a2c0 = 0.5f;
 		}
 		else
 			ASSERT(false);
@@ -343,19 +344,25 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 		float Z = F - N;
 		constexpr float subPixF = vk::SUBPIXEL_PRECISION_FACTOR;
 
-		data->WxF = float4(W * subPixF);
-		data->HxF = float4(H * subPixF);
-		data->X0xF = float4(X0 * subPixF - subPixF / 2);
-		data->Y0xF = float4(Y0 * subPixF - subPixF / 2);
-		data->halfPixelX = float4(0.5f / W);
-		data->halfPixelY = float4(0.5f / H);
+		data->WxF = W * subPixF;
+		data->HxF = H * subPixF;
+		data->X0xF = X0 * subPixF - subPixF / 2;
+		data->Y0xF = Y0 * subPixF - subPixF / 2;
+		data->halfPixelX = 0.5f / W;
+		data->halfPixelY = 0.5f / H;
 		data->viewportHeight = abs(viewport.height);
 		data->depthRange = Z;
 		data->depthNear = N;
 		data->constantDepthBias = pipelineState.getConstantDepthBias();
 		data->slopeDepthBias = pipelineState.getSlopeDepthBias();
 		data->depthBiasClamp = pipelineState.getDepthBiasClamp();
-		data->depthClipEnable = pipelineState.getDepthClipEnable();
+
+		// Adjust viewport transform based on the negativeOneToOne state.
+		if(pipelineState.getDepthClipNegativeOneToOne())
+		{
+			data->depthRange = Z * 0.5f;
+			data->depthNear = (F + N) * 0.5f;
+		}
 
 		const vk::Attachments attachments = pipeline->getAttachments();
 		if(attachments.depthBuffer)
@@ -363,7 +370,8 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 			switch(attachments.depthBuffer->getFormat(VK_IMAGE_ASPECT_DEPTH_BIT))
 			{
 			case VK_FORMAT_D16_UNORM:
-				data->minimumResolvableDepthDifference = 1.0f / 0xFFFF;
+				// Minimum is 1 unit, but account for potential floating-point rounding errors
+				data->minimumResolvableDepthDifference = 1.01f / 0xFFFF;
 				break;
 			case VK_FORMAT_D32_SFLOAT:
 				// The minimum resolvable depth difference is determined per-polygon for floating-point depth
@@ -848,12 +856,8 @@ int DrawCall::setupPoints(vk::Device *device, Triangle *triangles, Primitive *pr
 
 bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &triangle, const DrawCall &draw)
 {
-	const DrawData &data = *draw.data;
-
-	float lineWidth = data.lineWidth;
-
-	Vertex &v0 = triangle.v0;
-	Vertex &v1 = triangle.v1;
+	const Vertex &v0 = triangle.v0;
+	const Vertex &v1 = triangle.v1;
 
 	if((v0.cullMask | v1.cullMask) == 0)
 	{
@@ -868,10 +872,13 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 		return false;
 	}
 
+	const DrawData &data = *draw.data;
+	const float lineWidth = data.lineWidth;
+	const int clipFlags = draw.depthClipEnable ? Clipper::CLIP_FRUSTUM : Clipper::CLIP_SIDES;
 	constexpr float subPixF = vk::SUBPIXEL_PRECISION_FACTOR;
 
-	const float W = data.WxF[0] * (1.0f / subPixF);
-	const float H = data.HxF[0] * (1.0f / subPixF);
+	const float W = data.WxF * (1.0f / subPixF);
+	const float H = data.HxF * (1.0f / subPixF);
 
 	float dx = W * (P1.x / P1.w - P0.x / P0.w);
 	float dy = H * (P1.y / P1.w - P0.y / P0.w);
@@ -886,7 +893,6 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 		// Rectangle centered on the line segment
 
 		float4 P[4];
-		int C[4];
 
 		P[0] = P0;
 		P[1] = P1;
@@ -906,36 +912,24 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 
 		P[0].x += -dy0w;
 		P[0].y += +dx0h;
-		C[0] = Clipper::ComputeClipFlags(P[0], draw.depthClipEnable);
 
 		P[1].x += -dy1w;
 		P[1].y += +dx1h;
-		C[1] = Clipper::ComputeClipFlags(P[1], draw.depthClipEnable);
 
 		P[2].x += +dy1w;
 		P[2].y += -dx1h;
-		C[2] = Clipper::ComputeClipFlags(P[2], draw.depthClipEnable);
 
 		P[3].x += +dy0w;
 		P[3].y += -dx0h;
-		C[3] = Clipper::ComputeClipFlags(P[3], draw.depthClipEnable);
 
-		if((C[0] & C[1] & C[2] & C[3]) == Clipper::CLIP_FINITE)
+		Polygon polygon(P, 4);
+
+		if(!Clipper::Clip(polygon, clipFlags, draw))
 		{
-			Polygon polygon(P, 4);
-
-			int clipFlagsOr = C[0] | C[1] | C[2] | C[3];
-
-			if(clipFlagsOr != Clipper::CLIP_FINITE)
-			{
-				if(!Clipper::Clip(polygon, clipFlagsOr, draw))
-				{
-					return false;
-				}
-			}
-
-			return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
+			return false;
 		}
+
+		return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
 	}
 	else if(false)  // TODO(b/80135519): Deprecate
 	{
@@ -945,7 +939,6 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 		// The ideal algorithm requires half-open line rasterization (b/80135519).
 
 		float4 P[8];
-		int C[8];
 
 		P[0] = P0;
 		P[1] = P0;
@@ -963,90 +956,67 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 		float dy1 = lineWidth * 0.5f * P1.w / H;
 
 		P[0].x += -dx0;
-		C[0] = Clipper::ComputeClipFlags(P[0], draw.depthClipEnable);
-
 		P[1].y += +dy0;
-		C[1] = Clipper::ComputeClipFlags(P[1], draw.depthClipEnable);
-
 		P[2].x += +dx0;
-		C[2] = Clipper::ComputeClipFlags(P[2], draw.depthClipEnable);
-
 		P[3].y += -dy0;
-		C[3] = Clipper::ComputeClipFlags(P[3], draw.depthClipEnable);
-
 		P[4].x += -dx1;
-		C[4] = Clipper::ComputeClipFlags(P[4], draw.depthClipEnable);
-
 		P[5].y += +dy1;
-		C[5] = Clipper::ComputeClipFlags(P[5], draw.depthClipEnable);
-
 		P[6].x += +dx1;
-		C[6] = Clipper::ComputeClipFlags(P[6], draw.depthClipEnable);
-
 		P[7].y += -dy1;
-		C[7] = Clipper::ComputeClipFlags(P[7], draw.depthClipEnable);
 
-		if((C[0] & C[1] & C[2] & C[3] & C[4] & C[5] & C[6] & C[7]) == Clipper::CLIP_FINITE)
+		float4 L[6];
+
+		if(dx > -dy)
 		{
-			float4 L[6];
-
-			if(dx > -dy)
+			if(dx > dy)  // Right
 			{
-				if(dx > dy)  // Right
-				{
-					L[0] = P[0];
-					L[1] = P[1];
-					L[2] = P[5];
-					L[3] = P[6];
-					L[4] = P[7];
-					L[5] = P[3];
-				}
-				else  // Down
-				{
-					L[0] = P[0];
-					L[1] = P[4];
-					L[2] = P[5];
-					L[3] = P[6];
-					L[4] = P[2];
-					L[5] = P[3];
-				}
+				L[0] = P[0];
+				L[1] = P[1];
+				L[2] = P[5];
+				L[3] = P[6];
+				L[4] = P[7];
+				L[5] = P[3];
 			}
-			else
+			else  // Down
 			{
-				if(dx > dy)  // Up
-				{
-					L[0] = P[0];
-					L[1] = P[1];
-					L[2] = P[2];
-					L[3] = P[6];
-					L[4] = P[7];
-					L[5] = P[4];
-				}
-				else  // Left
-				{
-					L[0] = P[1];
-					L[1] = P[2];
-					L[2] = P[3];
-					L[3] = P[7];
-					L[4] = P[4];
-					L[5] = P[5];
-				}
+				L[0] = P[0];
+				L[1] = P[4];
+				L[2] = P[5];
+				L[3] = P[6];
+				L[4] = P[2];
+				L[5] = P[3];
 			}
-
-			Polygon polygon(L, 6);
-
-			int clipFlagsOr = C[0] | C[1] | C[2] | C[3] | C[4] | C[5] | C[6] | C[7];
-
-			if(clipFlagsOr != Clipper::CLIP_FINITE)
-			{
-				if(!Clipper::Clip(polygon, clipFlagsOr, draw))
-				{
-					return false;
-				}
-			}
-
-			return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
 		}
+		else
+		{
+			if(dx > dy)  // Up
+			{
+				L[0] = P[0];
+				L[1] = P[1];
+				L[2] = P[2];
+				L[3] = P[6];
+				L[4] = P[7];
+				L[5] = P[4];
+			}
+			else  // Left
+			{
+				L[0] = P[1];
+				L[1] = P[2];
+				L[2] = P[3];
+				L[3] = P[7];
+				L[4] = P[4];
+				L[5] = P[5];
+			}
+		}
+
+		Polygon polygon(L, 6);
+
+		if(!Clipper::Clip(polygon, clipFlags, draw))
+		{
+			return false;
+		}
+
+		return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
 	}
 	else
 	{
@@ -1117,27 +1087,14 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 			}
 		}
 
-		int C0 = Clipper::ComputeClipFlags(L[0], draw.depthClipEnable);
-		int C1 = Clipper::ComputeClipFlags(L[1], draw.depthClipEnable);
-		int C2 = Clipper::ComputeClipFlags(L[2], draw.depthClipEnable);
-		int C3 = Clipper::ComputeClipFlags(L[3], draw.depthClipEnable);
+		Polygon polygon(L, 4);
 
-		if((C0 & C1 & C2 & C3) == Clipper::CLIP_FINITE)
+		if(!Clipper::Clip(polygon, clipFlags, draw))
 		{
-			Polygon polygon(L, 4);
-
-			int clipFlagsOr = C0 | C1 | C2 | C3;
-
-			if(clipFlagsOr != Clipper::CLIP_FINITE)
-			{
-				if(!Clipper::Clip(polygon, clipFlagsOr, draw))
-				{
-					return false;
-				}
-			}
-
-			return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
+			return false;
 		}
+
+		return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
 	}
 
 	return false;
@@ -1145,66 +1102,48 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 
 bool DrawCall::setupPoint(vk::Device *device, Primitive &primitive, Triangle &triangle, const DrawCall &draw)
 {
-	const DrawData &data = *draw.data;
-
-	Vertex &v = triangle.v0;
+	const Vertex &v = triangle.v0;
 
 	if(v.cullMask == 0)
 	{
 		return false;
 	}
 
-	float pSize = v.pointSize;
+	const DrawData &data = *draw.data;
+	const int clipFlags = draw.depthClipEnable ? Clipper::CLIP_FRUSTUM : Clipper::CLIP_SIDES;
 
-	pSize = clamp(pSize, 1.0f, static_cast<float>(vk::MAX_POINT_SIZE));
+	const float pSize = clamp(v.pointSize, 1.0f, static_cast<float>(vk::MAX_POINT_SIZE));
+	const float X = pSize * v.position.w * data.halfPixelX;
+	const float Y = pSize * v.position.w * data.halfPixelY;
 
 	float4 P[4];
-	int C[4];
 
 	P[0] = v.position;
-	P[1] = v.position;
-	P[2] = v.position;
-	P[3] = v.position;
-
-	const float X = pSize * P[0].w * data.halfPixelX[0];
-	const float Y = pSize * P[0].w * data.halfPixelY[0];
-
 	P[0].x -= X;
 	P[0].y += Y;
-	C[0] = Clipper::ComputeClipFlags(P[0], draw.depthClipEnable);
 
+	P[1] = v.position;
 	P[1].x += X;
 	P[1].y += Y;
-	C[1] = Clipper::ComputeClipFlags(P[1], draw.depthClipEnable);
 
+	P[2] = v.position;
 	P[2].x += X;
 	P[2].y -= Y;
-	C[2] = Clipper::ComputeClipFlags(P[2], draw.depthClipEnable);
 
+	P[3] = v.position;
 	P[3].x -= X;
 	P[3].y -= Y;
-	C[3] = Clipper::ComputeClipFlags(P[3], draw.depthClipEnable);
 
 	Polygon polygon(P, 4);
 
-	if((C[0] & C[1] & C[2] & C[3]) == Clipper::CLIP_FINITE)
+	if(!Clipper::Clip(polygon, clipFlags, draw))
 	{
-		int clipFlagsOr = C[0] | C[1] | C[2] | C[3];
-
-		if(clipFlagsOr != Clipper::CLIP_FINITE)
-		{
-			if(!Clipper::Clip(polygon, clipFlagsOr, draw))
-			{
-				return false;
-			}
-		}
-
-		primitive.pointSizeInv = 1.0f / pSize;
-
-		return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
+		return false;
 	}
 
-	return false;
+	primitive.pointSizeInv = 1.0f / pSize;
+
+	return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
 }
 
 void Renderer::addQuery(vk::Query *query)
