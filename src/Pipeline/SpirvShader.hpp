@@ -654,6 +654,7 @@ public:
 		bool DepthGreater : 1;
 		bool DepthLess : 1;
 		bool DepthUnchanged : 1;
+		bool StencilRefReplacing : 1;
 
 		// Compute workgroup dimensions
 		Object::ID WorkgroupSizeX = 1;
@@ -1469,12 +1470,6 @@ private:
 	static SIMD::Int SUDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum);
 	static SIMD::Int AddSat(RValue<SIMD::Int> a, RValue<SIMD::Int> b);
 	static SIMD::UInt AddSat(RValue<SIMD::UInt> a, RValue<SIMD::UInt> b);
-
-	// Splits x into a floating-point significand in the range [0.5, 1.0)
-	// and an integral exponent of two, such that:
-	//   x = significand * 2^exponent
-	// Returns the pair <significand, exponent>
-	std::pair<SIMD::Float, SIMD::Int> Frexp(RValue<SIMD::Float> val) const;
 
 	static ImageSampler *getImageSampler(const vk::Device *device, uint32_t signature, uint32_t samplerId, uint32_t imageViewId);
 	static std::shared_ptr<rr::Routine> emitSamplerRoutine(ImageInstructionSignature instruction, const Sampler &samplerState);
