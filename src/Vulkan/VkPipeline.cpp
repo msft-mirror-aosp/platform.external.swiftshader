@@ -154,7 +154,7 @@ public:
 
 	void stageCreationBegins(uint32_t stage)
 	{
-		if(pipelineCreationFeedback)
+		if(pipelineCreationFeedback && (stage < pipelineCreationFeedback->pipelineStageCreationFeedbackCount))
 		{
 			// Record stage creation begin time
 			pipelineCreationFeedback->pPipelineStageCreationFeedbacks[stage].duration = now();
@@ -167,14 +167,17 @@ public:
 		{
 			pipelineCreationFeedback->pPipelineCreationFeedback->flags |=
 			    VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
-			pipelineCreationFeedback->pPipelineStageCreationFeedbacks[stage].flags |=
-			    VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
+			if(stage < pipelineCreationFeedback->pipelineStageCreationFeedbackCount)
+			{
+				pipelineCreationFeedback->pPipelineStageCreationFeedbacks[stage].flags |=
+				    VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
+			}
 		}
 	}
 
 	void stageCreationEnds(uint32_t stage)
 	{
-		if(pipelineCreationFeedback)
+		if(pipelineCreationFeedback && (stage < pipelineCreationFeedback->pipelineStageCreationFeedbackCount))
 		{
 			pipelineCreationFeedback->pPipelineStageCreationFeedbacks[stage].flags |=
 			    VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT;
@@ -267,7 +270,7 @@ bool getRobustBufferAccess(VkPipelineRobustnessBufferBehaviorEXT behavior, bool 
 	}
 }
 
-bool getRobustBufferAccess(const VkPipelineRobustnessCreateInfoEXT *overrideRobustness, bool deviceRobustBufferAccess, bool inheritRobustBufferAccess)
+bool getRobustBufferAccess(const VkPipelineRobustnessCreateInfoEXT *overrideRobustness, bool inheritRobustBufferAccess)
 {
 	VkPipelineRobustnessBufferBehaviorEXT storageBehavior = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DEVICE_DEFAULT_EXT;
 	VkPipelineRobustnessBufferBehaviorEXT uniformBehavior = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DEVICE_DEFAULT_EXT;
@@ -278,10 +281,6 @@ bool getRobustBufferAccess(const VkPipelineRobustnessCreateInfoEXT *overrideRobu
 		storageBehavior = overrideRobustness->storageBuffers;
 		uniformBehavior = overrideRobustness->uniformBuffers;
 		vertexBehavior = overrideRobustness->vertexInputs;
-	}
-	else
-	{
-		inheritRobustBufferAccess = deviceRobustBufferAccess;
 	}
 
 	bool storageRobustBufferAccess = getRobustBufferAccess(storageBehavior, inheritRobustBufferAccess);
@@ -301,15 +300,14 @@ bool getPipelineRobustBufferAccess(const void *pNext, vk::Device *device)
 
 	// For pipelines, there's no robustBufferAccess to inherit from.  Default and no-override
 	// both lead to using the device's robustBufferAccess.
-	return getRobustBufferAccess(overrideRobustness, deviceRobustBufferAccess, deviceRobustBufferAccess);
+	return getRobustBufferAccess(overrideRobustness, deviceRobustBufferAccess);
 }
 
-bool getPipelineStageRobustBufferAccess(const void *pNext, vk::Device *device, bool pipelineRobustBufferAccess)
+bool getPipelineStageRobustBufferAccess(const void *pNext, bool pipelineRobustBufferAccess)
 {
 	const VkPipelineRobustnessCreateInfoEXT *overrideRobustness = vk::GetExtendedStruct<VkPipelineRobustnessCreateInfoEXT>(pNext, VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO_EXT);
-	const bool deviceRobustBufferAccess = device->getEnabledFeatures().robustBufferAccess;
 
-	return getRobustBufferAccess(overrideRobustness, deviceRobustBufferAccess, pipelineRobustBufferAccess);
+	return getRobustBufferAccess(overrideRobustness, pipelineRobustBufferAccess);
 }
 
 }  // anonymous namespace
@@ -454,7 +452,7 @@ VkResult GraphicsPipeline::compileShaders(const VkAllocationCallbacks *pAllocato
 			}
 		}
 
-		const bool stageRobustBufferAccess = getPipelineStageRobustBufferAccess(stageInfo.pNext, device, robustBufferAccess);
+		const bool stageRobustBufferAccess = getPipelineStageRobustBufferAccess(stageInfo.pNext, robustBufferAccess);
 
 		// TODO(b/201798871): use allocator.
 		auto shader = std::make_shared<sw::SpirvShader>(stageInfo.stage, stageInfo.pName, spirv,
@@ -530,7 +528,7 @@ VkResult ComputePipeline::compileShaders(const VkAllocationCallbacks *pAllocator
 		}
 	}
 
-	const bool stageRobustBufferAccess = getPipelineStageRobustBufferAccess(stage.pNext, device, robustBufferAccess);
+	const bool stageRobustBufferAccess = getPipelineStageRobustBufferAccess(stage.pNext, robustBufferAccess);
 
 	// TODO(b/201798871): use allocator.
 	shader = std::make_shared<sw::SpirvShader>(stage.stage, stage.pName, spirv,
