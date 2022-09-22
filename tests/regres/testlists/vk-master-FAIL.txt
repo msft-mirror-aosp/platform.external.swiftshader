@@ -1,2 +1,1 @@
-dEQP-VK.robustness.robustness1_vertex_access.out_of_bounds_stride_0
-dEQP-VK.robustness.robustness1_vertex_access.out_of_bounds_stride_16_single_buffer
+dEQP-VK.api.driver_properties.conformance_version
