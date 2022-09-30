@@ -43,20 +43,32 @@ class CmdBeginRenderPass : public vk::CommandBuffer::Command
 {
 public:
 	CmdBeginRenderPass(vk::RenderPass *renderPass, vk::Framebuffer *framebuffer, VkRect2D renderArea,
-	                   uint32_t clearValueCount, const VkClearValue *pClearValues)
+	                   uint32_t clearValueCount, const VkClearValue *pClearValues,
+	                   const VkRenderPassAttachmentBeginInfo *attachmentInfo)
 	    : renderPass(renderPass)
 	    , framebuffer(framebuffer)
 	    , renderArea(renderArea)
 	    , clearValueCount(clearValueCount)
+	    , attachmentCount(attachmentInfo ? attachmentInfo->attachmentCount : 0)
+	    , attachments(nullptr)
 	{
 		// FIXME(b/119409619): use an allocator here so we can control all memory allocations
 		clearValues = new VkClearValue[clearValueCount];
 		memcpy(clearValues, pClearValues, clearValueCount * sizeof(VkClearValue));
+		if(attachmentCount > 0)
+		{
+			attachments = new vk::ImageView *[attachmentCount];
+			for(uint32_t i = 0; i < attachmentCount; i++)
+			{
+				attachments[i] = vk::Cast(attachmentInfo->pAttachments[i]);
+			}
+		}
 	}
 
 	~CmdBeginRenderPass() override
 	{
 		delete[] clearValues;
+		delete[] attachments;
 	}
 
 	void execute(vk::CommandBuffer::ExecutionState &executionState) override
@@ -64,6 +76,11 @@ public:
 		executionState.renderPass = renderPass;
 		executionState.renderPassFramebuffer = framebuffer;
 		executionState.subpassIndex = 0;
+
+		for(uint32_t i = 0; i < attachmentCount; i++)
+		{
+			framebuffer->setAttachment(attachments[i], i);
+		}
 
 		// Vulkan specifies that the attachments' `loadOp` gets executed "at the beginning of the subpass where it is first used."
 		// Since we don't discard any contents between subpasses, this is equivalent to executing it at the start of the renderpass.
@@ -78,6 +95,8 @@ private:
 	const VkRect2D renderArea;
 	const uint32_t clearValueCount;
 	VkClearValue *clearValues;
+	uint32_t attachmentCount;
+	vk::ImageView **attachments;
 };
 
 class CmdNextSubpass : public vk::CommandBuffer::Command
@@ -320,11 +339,11 @@ public:
 
 	void execute(vk::CommandBuffer::ExecutionState &executionState) override
 	{
-		auto cmd = reinterpret_cast<VkDispatchIndirectCommand const *>(buffer->getOffsetPointer(offset));
+		const auto *cmd = reinterpret_cast<VkDispatchIndirectCommand const *>(buffer->getOffsetPointer(offset));
 
 		auto const &pipelineState = executionState.pipelineState[VK_PIPELINE_BIND_POINT_COMPUTE];
 
-		auto pipeline = static_cast<vk::ComputePipeline *>(pipelineState.pipeline);
+		auto *pipeline = static_cast<vk::ComputePipeline *>(pipelineState.pipeline);
 		pipeline->run(0, 0, 0, cmd->x, cmd->y, cmd->z,
 		              pipelineState.descriptorSetObjects,
 		              pipelineState.descriptorSets,
@@ -1010,7 +1029,7 @@ public:
 	{
 		for(auto drawId = 0u; drawId < drawCount; drawId++)
 		{
-			auto cmd = reinterpret_cast<VkDrawIndirectCommand const *>(buffer->getOffsetPointer(offset + drawId * stride));
+			const auto *cmd = reinterpret_cast<VkDrawIndirectCommand const *>(buffer->getOffsetPointer(offset + drawId * stride));
 			draw(executionState, false, cmd->vertexCount, cmd->instanceCount, 0, cmd->firstVertex, cmd->firstInstance);
 		}
 	}
@@ -1039,7 +1058,7 @@ public:
 	{
 		for(auto drawId = 0u; drawId < drawCount; drawId++)
 		{
-			auto cmd = reinterpret_cast<VkDrawIndexedIndirectCommand const *>(buffer->getOffsetPointer(offset + drawId * stride));
+			const auto *cmd = reinterpret_cast<VkDrawIndexedIndirectCommand const *>(buffer->getOffsetPointer(offset + drawId * stride));
 			draw(executionState, true, cmd->indexCount, cmd->instanceCount, cmd->firstIndex, cmd->vertexOffset, cmd->firstInstance);
 		}
 	}
@@ -1820,14 +1839,7 @@ void CommandBuffer::beginRenderPass(RenderPass *renderPass, Framebuffer *framebu
 {
 	ASSERT(state == RECORDING);
 
-	if(attachmentInfo)
-	{
-		for(uint32_t i = 0; i < attachmentInfo->attachmentCount; i++)
-		{
-			framebuffer->setAttachment(vk::Cast(attachmentInfo->pAttachments[i]), i);
-		}
-	}
-	addCommand<::CmdBeginRenderPass>(renderPass, framebuffer, renderArea, clearValueCount, clearValues);
+	addCommand<::CmdBeginRenderPass>(renderPass, framebuffer, renderArea, clearValueCount, clearValues, attachmentInfo);
 }
 
 void CommandBuffer::nextSubpass(VkSubpassContents contents)
@@ -2321,7 +2333,7 @@ void CommandBuffer::submit(CommandBuffer::ExecutionState &executionState)
 
 #ifdef ENABLE_VK_DEBUGGER
 	std::shared_ptr<vk::dbg::Thread> debuggerThread;
-	auto debuggerContext = device->getDebuggerContext();
+	auto *debuggerContext = device->getDebuggerContext();
 	if(debuggerContext)
 	{
 		debuggerThread = debuggerContext->lock().currentThread();
@@ -2381,7 +2393,7 @@ void CommandBuffer::ExecutionState::bindAttachments(Attachments *attachments)
 		auto attachmentReference = subpass.pDepthStencilAttachment;
 		if(attachmentReference && attachmentReference->attachment != VK_ATTACHMENT_UNUSED)
 		{
-			auto attachment = renderPassFramebuffer->getAttachment(attachmentReference->attachment);
+			auto *attachment = renderPassFramebuffer->getAttachment(attachmentReference->attachment);
 			if(attachment->hasDepthAspect())
 			{
 				attachments->depthBuffer = attachment;
