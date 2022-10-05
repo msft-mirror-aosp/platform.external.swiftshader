@@ -236,7 +236,7 @@ void SpirvShader::EmitBlocks(Block::ID id, EmitState *state, Block::ID ignore /*
 	{
 		auto id = pending.front();
 
-		auto const &block = function.getBlock(id);
+		const auto &block = function.getBlock(id);
 		if(id == ignore)
 		{
 			pending.pop_front();
@@ -692,7 +692,7 @@ void SpirvShader::LoadPhi(InsnIterator insn, EmitState *state) const
 	}
 }
 
-void SpirvShader::StorePhi(Block::ID currentBlock, InsnIterator insn, EmitState *state, std::unordered_set<SpirvShader::Block::ID> const &filter) const
+void SpirvShader::StorePhi(Block::ID currentBlock, InsnIterator insn, EmitState *state, const std::unordered_set<SpirvShader::Block::ID> &filter) const
 {
 	auto typeId = Type::ID(insn.word(1));
 	auto type = getType(typeId);

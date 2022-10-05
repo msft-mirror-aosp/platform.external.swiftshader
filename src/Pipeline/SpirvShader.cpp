@@ -30,7 +30,7 @@ namespace sw {
 SpirvShader::SpirvShader(
     VkShaderStageFlagBits pipelineStage,
     const char *entryPointName,
-    SpirvBinary const &insns,
+    const SpirvBinary &insns,
     const vk::RenderPass *renderPass,
     uint32_t subpassIndex,
     bool robustBufferAccess,
@@ -196,8 +196,8 @@ SpirvShader::SpirvShader(
 		case spv::OpGroupDecorate:
 			{
 				uint32_t group = insn.word(1);
-				auto const &groupDecorations = decorations[group];
-				auto const &descriptorGroupDecorations = descriptorDecorations[group];
+				const auto &groupDecorations = decorations[group];
+				const auto &descriptorGroupDecorations = descriptorDecorations[group];
 				for(auto i = 2u; i < insn.wordCount(); i++)
 				{
 					// Remaining operands are targets to apply the group to.
@@ -210,7 +210,7 @@ SpirvShader::SpirvShader(
 
 		case spv::OpGroupMemberDecorate:
 			{
-				auto const &srcDecorations = decorations[insn.word(1)];
+				const auto &srcDecorations = decorations[insn.word(1)];
 				for(auto i = 2u; i < insn.wordCount(); i += 2)
 				{
 					// remaining operands are pairs of <id>, literal for members to apply to.
@@ -460,6 +460,7 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityStorageTexelBufferArrayDynamicIndexing: capabilities.StorageTexelBufferArrayDynamicIndexing = true; break;
 				case spv::CapabilityUniformBufferArrayNonUniformIndexing: capabilities.UniformBufferArrayNonUniformIndex = true; break;
 				case spv::CapabilitySampledImageArrayNonUniformIndexing: capabilities.SampledImageArrayNonUniformIndexing = true; break;
+				case spv::CapabilityStorageImageArrayNonUniformIndexing: capabilities.StorageImageArrayNonUniformIndexing = true; break;
 				case spv::CapabilityPhysicalStorageBufferAddresses: capabilities.PhysicalStorageBufferAddresses = true; break;
 				default:
 					UNSUPPORTED("Unsupported capability %u", insn.word(1));
@@ -973,7 +974,7 @@ void SpirvShader::ProcessInterfaceVariable(Object &object)
 	{
 		object.kind = Object::Kind::InterfaceVariable;
 		VisitInterface(resultId,
-		               [&userDefinedInterface](Decorations const &d, AttribType type) {
+		               [&userDefinedInterface](const Decorations &d, AttribType type) {
 			               // Populate a single scalar slot in the interface from a collection of decorations and the intended component type.
 			               int32_t scalarSlot = (d.Location << 2) | d.Component;
 			               ASSERT(scalarSlot >= 0 &&
@@ -1165,7 +1166,7 @@ int SpirvShader::VisitInterfaceInner(Type::ID id, Decorations d, const Interface
 
 	ApplyDecorationsForId(&d, id);
 
-	auto const &obj = getType(id);
+	const auto &obj = getType(id);
 	switch(obj.opcode())
 	{
 	case spv::OpTypePointer:
@@ -1383,7 +1384,7 @@ SIMD::Pointer SpirvShader::WalkExplicitLayoutAccessChain(Object::ID baseId, Obje
 	return ptr;
 }
 
-SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, Object::ID elementId, const Span &indexIds, bool nonUniform, EmitState const *state) const
+SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, Object::ID elementId, const Span &indexIds, bool nonUniform, const EmitState *state) const
 {
 	// TODO: avoid doing per-lane work in some cases if we can?
 	auto routine = state->routine;
@@ -1729,7 +1730,7 @@ void SpirvShader::DefineResult(const InsnIterator &insn)
 	dbgDeclareResult(insn, resultId);
 }
 
-OutOfBoundsBehavior SpirvShader::getOutOfBoundsBehavior(Object::ID pointerId, EmitState const *state) const
+OutOfBoundsBehavior SpirvShader::getOutOfBoundsBehavior(Object::ID pointerId, const EmitState *state) const
 {
 	auto it = descriptorDecorations.find(pointerId);
 	if(it != descriptorDecorations.end())
@@ -1840,7 +1841,7 @@ void SpirvShader::emitProlog(SpirvRoutine *routine) const
 	}
 }
 
-void SpirvShader::emit(SpirvRoutine *routine, RValue<SIMD::Int> const &activeLaneMask, RValue<SIMD::Int> const &storesAndAtomicsMask, const vk::DescriptorSet::Bindings &descriptorSets, unsigned int multiSampleCount) const
+void SpirvShader::emit(SpirvRoutine *routine, const RValue<SIMD::Int> &activeLaneMask, const RValue<SIMD::Int> &storesAndAtomicsMask, const vk::DescriptorSet::Bindings &descriptorSets, unsigned int multiSampleCount) const
 {
 	EmitState state(routine, entryPoint, activeLaneMask, storesAndAtomicsMask, descriptorSets, multiSampleCount);
 
@@ -2558,7 +2559,7 @@ SpirvShader::EmitResult SpirvShader::EmitAtomicOp(InsnIterator insn, EmitState *
 
 	SIMD::Int mask = state->activeLaneMask() & state->storesAndAtomicsMask();
 
-	if(getObject(pointerId).opcode() == spv::OpImageTexelPointer)
+	if((getObject(pointerId).opcode() == spv::OpImageTexelPointer) && ptr.isBasePlusOffset)
 	{
 		mask &= ptr.isInBounds(sizeof(int32_t), OutOfBoundsBehavior::Nullify);
 	}
@@ -2654,11 +2655,11 @@ SpirvShader::EmitResult SpirvShader::EmitCopyObject(InsnIterator insn, EmitState
 	auto src = Operand(this, state, insn.word(3));
 	if(src.isPointer())
 	{
-		state->createPointer(insn.resultId(), src.Pointer(0));
+		state->createPointer(insn.resultId(), src.Pointer());
 	}
 	else if(src.isSampledImage())
 	{
-		state->createSampledImage(insn.resultId(), src.SampledImage(0));
+		state->createSampledImage(insn.resultId(), src.SampledImage());
 	}
 	else
 	{
@@ -2747,7 +2748,7 @@ void SpirvShader::emitEpilog(SpirvRoutine *routine) const
 					auto &dst = routine->getVariable(insn.resultId());
 					int offset = 0;
 					VisitInterface(insn.resultId(),
-					               [&](Decorations const &d, AttribType type) {
+					               [&](const Decorations &d, AttribType type) {
 						               auto scalarSlot = d.Location << 2 | d.Component;
 						               routine->outputs[scalarSlot] = dst[offset++];
 					               });
@@ -2840,12 +2841,12 @@ bool SpirvShader::Object::isConstantZero() const
 	return true;
 }
 
-SpirvRoutine::SpirvRoutine(vk::PipelineLayout const *pipelineLayout)
+SpirvRoutine::SpirvRoutine(const vk::PipelineLayout *pipelineLayout)
     : pipelineLayout(pipelineLayout)
 {
 }
 
-void SpirvRoutine::setImmutableInputBuiltins(SpirvShader const *shader)
+void SpirvRoutine::setImmutableInputBuiltins(const SpirvShader *shader)
 {
 	setInputBuiltin(shader, spv::BuiltInSubgroupLocalInvocationId, [&](const SpirvShader::BuiltinMapping &builtin, Array<SIMD::Float> &value) {
 		ASSERT(builtin.SizeInComponents == 1);

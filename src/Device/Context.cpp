@@ -284,7 +284,7 @@ void Inputs::initialize(const VkPipelineVertexInputStateCreateInfo *vertexInputS
 	VkVertexInputRate inputRates[MAX_VERTEX_INPUT_BINDINGS];
 	for(uint32_t i = 0; i < vertexInputState->vertexBindingDescriptionCount; i++)
 	{
-		auto const &desc = vertexInputState->pVertexBindingDescriptions[i];
+		const auto &desc = vertexInputState->pVertexBindingDescriptions[i];
 		inputRates[desc.binding] = desc.inputRate;
 		vertexStrides[desc.binding] = desc.inputRate == VK_VERTEX_INPUT_RATE_VERTEX ? desc.stride : 0;
 		instanceStrides[desc.binding] = desc.inputRate == VK_VERTEX_INPUT_RATE_INSTANCE ? desc.stride : 0;
@@ -292,7 +292,7 @@ void Inputs::initialize(const VkPipelineVertexInputStateCreateInfo *vertexInputS
 
 	for(uint32_t i = 0; i < vertexInputState->vertexAttributeDescriptionCount; i++)
 	{
-		auto const &desc = vertexInputState->pVertexAttributeDescriptions[i];
+		const auto &desc = vertexInputState->pVertexAttributeDescriptions[i];
 		sw::Stream &input = stream[desc.location];
 		input.format = desc.format;
 		input.offset = desc.offset;
@@ -349,7 +349,7 @@ void Inputs::advanceInstanceAttributes(bool dynamicInstanceStride)
 		if((attrib.format != VK_FORMAT_UNDEFINED) && instanceStride && (instanceStride < attrib.robustnessSize))
 		{
 			// Under the casts: attrib.buffer += instanceStride
-			attrib.buffer = (void const *)((uintptr_t)attrib.buffer + instanceStride);
+			attrib.buffer = (const void *)((uintptr_t)attrib.buffer + instanceStride);
 			attrib.robustnessSize -= instanceStride;
 		}
 	}
@@ -1288,7 +1288,7 @@ GraphicsState::GraphicsState(const Device *device, const VkGraphicsPipelineCreat
 			if((librarySubset & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT) != 0)
 			{
 				preRasterizationState = libraryState.preRasterizationState;
-				if (layout)
+				if(layout)
 				{
 					preRasterizationState.overridePipelineLayout(layout);
 				}
@@ -1296,7 +1296,7 @@ GraphicsState::GraphicsState(const Device *device, const VkGraphicsPipelineCreat
 			if((librarySubset & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) != 0)
 			{
 				fragmentState = libraryState.fragmentState;
-				if (layout)
+				if(layout)
 				{
 					fragmentState.overridePipelineLayout(layout);
 				}

@@ -153,7 +153,7 @@ SpirvShader::EmitResult SpirvShader::EmitPointerBitCast(Object::ID resultID, Ope
 		if(sizeof(void *) == 4)  // 32-bit pointers
 		{
 			SIMD::UInt bits;
-			src.Pointer(0).castTo(bits);
+			src.Pointer().castTo(bits);
 
 			auto &dst = state->createIntermediate(resultID, 1);
 			dst.move(0, bits);
@@ -162,7 +162,7 @@ SpirvShader::EmitResult SpirvShader::EmitPointerBitCast(Object::ID resultID, Ope
 		{
 			ASSERT(sizeof(void *) == 8);
 			// Casting a 64 bit pointer into 2 32bit integers
-			auto &ptr = src.Pointer(0);
+			auto &ptr = src.Pointer();
 			SIMD::UInt lowerBits, upperBits;
 			ptr.castTo(lowerBits, upperBits);
 
@@ -628,7 +628,7 @@ SpirvShader::EmitResult SpirvShader::EmitDot(InsnIterator insn, EmitState *state
 	return EmitResult::Continue;
 }
 
-SIMD::Float SpirvShader::FDot(unsigned numComponents, Operand const &x, Operand const &y)
+SIMD::Float SpirvShader::FDot(unsigned numComponents, const Operand &x, const Operand &y)
 {
 	SIMD::Float d = x.Float(0) * y.Float(0);
 
@@ -640,7 +640,7 @@ SIMD::Float SpirvShader::FDot(unsigned numComponents, Operand const &x, Operand 
 	return d;
 }
 
-SIMD::Int SpirvShader::SDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum)
+SIMD::Int SpirvShader::SDot(unsigned numComponents, const Operand &x, const Operand &y, const Operand *accum)
 {
 	SIMD::Int d(0);
 
@@ -676,7 +676,7 @@ SIMD::Int SpirvShader::SDot(unsigned numComponents, Operand const &x, Operand co
 	return d;
 }
 
-SIMD::UInt SpirvShader::UDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum)
+SIMD::UInt SpirvShader::UDot(unsigned numComponents, const Operand &x, const Operand &y, const Operand *accum)
 {
 	SIMD::UInt d(0);
 
@@ -712,7 +712,7 @@ SIMD::UInt SpirvShader::UDot(unsigned numComponents, Operand const &x, Operand c
 	return d;
 }
 
-SIMD::Int SpirvShader::SUDot(unsigned numComponents, Operand const &x, Operand const &y, Operand const *accum)
+SIMD::Int SpirvShader::SUDot(unsigned numComponents, const Operand &x, const Operand &y, const Operand *accum)
 {
 	SIMD::Int d(0);
 

@@ -27,8 +27,8 @@ namespace sw {
 
 VertexRoutine::VertexRoutine(
     const VertexProcessor::State &state,
-    vk::PipelineLayout const *pipelineLayout,
-    SpirvShader const *spirvShader)
+    const vk::PipelineLayout *pipelineLayout,
+    const SpirvShader *spirvShader)
     : routine(pipelineLayout)
     , state(state)
     , spirvShader(spirvShader)
@@ -163,7 +163,7 @@ void VertexRoutine::computeCullMask()
 		auto count = spirvShader->getNumOutputCullDistances();
 		for(uint32_t i = 0; i < count; i++)
 		{
-			auto const &distance = routine.getVariable(it->second.Id)[it->second.FirstComponent + i];
+			const auto &distance = routine.getVariable(it->second.Id)[it->second.FirstComponent + i];
 			auto mask = SignMask(CmpGE(distance, SIMD::Float(0)));
 			cullMask &= mask;
 		}
