@@ -174,7 +174,7 @@ SpirvShader::EmitResult SpirvShader::EmitVariable(InsnIterator insn, EmitState *
 				auto &dst = routine->getVariable(resultId);
 				int offset = 0;
 				VisitInterface(resultId,
-				               [&](Decorations const &d, AttribType type) {
+				               [&](const Decorations &d, AttribType type) {
 					               auto scalarSlot = d.Location << 2 | d.Component;
 					               dst[offset++] = routine->inputs[scalarSlot];
 				               });
@@ -406,7 +406,7 @@ void SpirvShader::VisitMemoryObject(Object::ID id, bool resultIsPointer, const M
 	}
 }
 
-SIMD::Pointer SpirvShader::GetPointerToData(Object::ID id, SIMD::Int arrayIndices, bool nonUniform, EmitState const *state) const
+SIMD::Pointer SpirvShader::GetPointerToData(Object::ID id, SIMD::Int arrayIndices, bool nonUniform, const EmitState *state) const
 {
 	auto routine = state->routine;
 	auto &object = getObject(id);
@@ -493,7 +493,7 @@ SIMD::Pointer SpirvShader::GetPointerToData(Object::ID id, SIMD::Int arrayIndice
 	}
 }
 
-void SpirvShader::OffsetToElement(SIMD::Pointer &ptr, Object::ID elementId, int32_t arrayStride, EmitState const *state) const
+void SpirvShader::OffsetToElement(SIMD::Pointer &ptr, Object::ID elementId, int32_t arrayStride, const EmitState *state) const
 {
 	if(elementId != 0 && arrayStride != 0)
 	{

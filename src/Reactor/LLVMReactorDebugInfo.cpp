@@ -150,7 +150,7 @@ void DebugInfo::Flush()
 	}
 }
 
-void DebugInfo::syncScope(Backtrace const &backtrace)
+void DebugInfo::syncScope(const Backtrace &backtrace)
 {
 	using namespace ::llvm;
 
@@ -486,7 +486,7 @@ llvm::DIFile *DebugInfo::getOrCreateFile(const char *path)
 	return file;
 }
 
-DebugInfo::LineTokens const *DebugInfo::getOrParseFileTokens(const char *path)
+const DebugInfo::LineTokens *DebugInfo::getOrParseFileTokens(const char *path)
 {
 	static std::regex reLocalDecl(
 	    "^"                                              // line start
