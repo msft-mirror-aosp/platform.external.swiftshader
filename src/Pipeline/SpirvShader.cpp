@@ -460,6 +460,7 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityStorageTexelBufferArrayDynamicIndexing: capabilities.StorageTexelBufferArrayDynamicIndexing = true; break;
 				case spv::CapabilityUniformBufferArrayNonUniformIndexing: capabilities.UniformBufferArrayNonUniformIndex = true; break;
 				case spv::CapabilitySampledImageArrayNonUniformIndexing: capabilities.SampledImageArrayNonUniformIndexing = true; break;
+				case spv::CapabilityStorageImageArrayNonUniformIndexing: capabilities.StorageImageArrayNonUniformIndexing = true; break;
 				case spv::CapabilityPhysicalStorageBufferAddresses: capabilities.PhysicalStorageBufferAddresses = true; break;
 				default:
 					UNSUPPORTED("Unsupported capability %u", insn.word(1));
@@ -2558,7 +2559,7 @@ SpirvShader::EmitResult SpirvShader::EmitAtomicOp(InsnIterator insn, EmitState *
 
 	SIMD::Int mask = state->activeLaneMask() & state->storesAndAtomicsMask();
 
-	if(getObject(pointerId).opcode() == spv::OpImageTexelPointer)
+	if((getObject(pointerId).opcode() == spv::OpImageTexelPointer) && ptr.isBasePlusOffset)
 	{
 		mask &= ptr.isInBounds(sizeof(int32_t), OutOfBoundsBehavior::Nullify);
 	}
@@ -2654,11 +2655,11 @@ SpirvShader::EmitResult SpirvShader::EmitCopyObject(InsnIterator insn, EmitState
 	auto src = Operand(this, state, insn.word(3));
 	if(src.isPointer())
 	{
-		state->createPointer(insn.resultId(), src.Pointer(0));
+		state->createPointer(insn.resultId(), src.Pointer());
 	}
 	else if(src.isSampledImage())
 	{
-		state->createSampledImage(insn.resultId(), src.SampledImage(0));
+		state->createSampledImage(insn.resultId(), src.SampledImage());
 	}
 	else
 	{
