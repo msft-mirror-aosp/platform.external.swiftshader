@@ -33,21 +33,13 @@ SpirvShader::SpirvShader(
     const SpirvBinary &insns,
     const vk::RenderPass *renderPass,
     uint32_t subpassIndex,
-    bool robustBufferAccess,
-    const std::shared_ptr<vk::dbg::Context> &dbgctx,
-    std::shared_ptr<SpirvProfiler> profiler)
+    bool robustBufferAccess)
     : insns{ insns }
     , inputs{ MAX_INTERFACE_COMPONENTS }
     , outputs{ MAX_INTERFACE_COMPONENTS }
     , robustBufferAccess(robustBufferAccess)
-    , profiler(profiler)
 {
 	ASSERT(insns.size() > 0);
-
-	if(dbgctx)
-	{
-		dbgInit(dbgctx);
-	}
 
 	if(renderPass)
 	{
@@ -506,7 +498,6 @@ SpirvShader::SpirvShader(
 			{
 				static constexpr std::pair<const char *, Extension::Name> extensionsByName[] = {
 					{ "GLSL.std.450", Extension::GLSLstd450 },
-					{ "OpenCL.DebugInfo.100", Extension::OpenCLDebugInfo100 },
 					{ "NonSemantic.", Extension::NonSemanticInfo },
 				};
 				static constexpr auto extensionCount = sizeof(extensionsByName) / sizeof(extensionsByName[0]);
@@ -781,9 +772,6 @@ SpirvShader::SpirvShader(
 			case Extension::GLSLstd450:
 				DefineResult(insn);
 				break;
-			case Extension::OpenCLDebugInfo100:
-				DefineOpenCLDebugInfo100(insn);
-				break;
 			case Extension::NonSemanticInfo:
 				// An extended set name which is prefixed with "NonSemantic." is
 				// guaranteed to contain only non-semantic instructions and all
@@ -852,13 +840,10 @@ SpirvShader::SpirvShader(
 		WriteCFGGraphVizDotFile(path);
 	}
 #endif
-
-	dbgCreateFile();
 }
 
 SpirvShader::~SpirvShader()
 {
-	dbgTerm();
 }
 
 void SpirvShader::DeclareType(InsnIterator insn)
@@ -1727,7 +1712,6 @@ void SpirvShader::DefineResult(const InsnIterator &insn)
 	}
 
 	object.definition = insn;
-	dbgDeclareResult(insn, resultId);
 }
 
 OutOfBoundsBehavior SpirvShader::getOutOfBoundsBehavior(Object::ID pointerId, const EmitState *state) const
@@ -1786,11 +1770,6 @@ OutOfBoundsBehavior SpirvShader::getOutOfBoundsBehavior(Object::ID pointerId, co
 
 void SpirvShader::emitProlog(SpirvRoutine *routine) const
 {
-	if(IsProfilingEnabled())
-	{
-		routine->profData = std::make_unique<SpirvProfileData>();
-	}
-
 	for(auto insn : *this)
 	{
 		switch(insn.opcode())
@@ -1845,9 +1824,6 @@ void SpirvShader::emit(SpirvRoutine *routine, const RValue<SIMD::Int> &activeLan
 {
 	EmitState state(routine, entryPoint, activeLaneMask, storesAndAtomicsMask, descriptorSets, multiSampleCount);
 
-	dbgBeginEmit(&state);
-	defer(dbgEndEmit(&state));
-
 	// Emit everything up to the first label
 	// TODO: Separate out dispatch of block from non-block instructions?
 	for(auto insn : *this)
@@ -1883,16 +1859,7 @@ void SpirvShader::EmitInstructions(InsnIterator begin, InsnIterator end, EmitSta
 
 SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitState *state) const
 {
-	dbgBeginEmitInstruction(insn, state);
-	defer(dbgEndEmitInstruction(insn, state));
-
 	auto opcode = insn.opcode();
-
-	if(IsProfilingEnabled() && IsStatement(opcode))
-	{
-		int64_t *counter = &state->routine->profData->spvOpExecutionCount[opcode];
-		AddAtomic(Pointer<Long>(ConstantPointer(counter)), 1);
-	}
 
 #if SPIRV_SHADER_ENABLE_DBG
 	{
@@ -1965,7 +1932,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 		return EmitResult::Continue;
 
 	case spv::OpLine:
-		return EmitLine(insn, state);
+		return EmitResult::Continue;  // TODO(b/251802301)
 
 	case spv::OpLabel:
 		return EmitResult::Continue;
@@ -2712,8 +2679,6 @@ SpirvShader::EmitResult SpirvShader::EmitExtendedInstruction(InsnIterator insn, 
 	{
 	case Extension::GLSLstd450:
 		return EmitExtGLSLstd450(insn, state);
-	case Extension::OpenCLDebugInfo100:
-		return EmitOpenCLDebugInfo100(insn, state);
 	case Extension::NonSemanticInfo:
 		// An extended set name which is prefixed with "NonSemantic." is
 		// guaranteed to contain only non-semantic instructions and all
@@ -2758,11 +2723,6 @@ void SpirvShader::emitEpilog(SpirvRoutine *routine) const
 		default:
 			break;
 		}
-	}
-
-	if(IsProfilingEnabled())
-	{
-		profiler->RegisterShaderForProfiling(std::to_string(insns.getIdentifier()) + "_" + std::to_string((uintptr_t)routine), std::move(routine->profData));
 	}
 }
 
