@@ -32,13 +32,6 @@
 
 namespace {
 
-std::shared_ptr<sw::SpirvProfiler> getOrCreateSpirvProfiler()
-{
-	const sw::Configuration &config = sw::getConfiguration();
-	static std::shared_ptr<sw::SpirvProfiler> profiler = sw::getConfiguration().enableSpirvProfiling ? std::make_shared<sw::SpirvProfiler>(config) : nullptr;
-	return profiler;
-}
-
 // optimizeSpirv() applies and freezes specializations into constants, and runs spirv-opt.
 sw::SpirvBinary optimizeSpirv(const vk::PipelineCache::SpirvBinaryKey &key)
 {
@@ -498,11 +491,7 @@ VkResult GraphicsPipeline::compileShaders(const VkAllocationCallbacks *pAllocato
 			UNSUPPORTED("pStage->flags 0x%08X", int(stageInfo.flags));
 		}
 
-		auto dbgctx = device->getDebuggerContext();
-		// Do not optimize the shader if we have a debugger context.
-		// Optimization passes are likely to damage debug information, and reorder
-		// instructions.
-		const bool optimize = !dbgctx;
+		const bool optimize = true;  // TODO(b/251802301): Don't optimize when debugging shaders.
 
 		const ShaderModule *module = vk::Cast(stageInfo.module);
 
@@ -524,7 +513,7 @@ VkResult GraphicsPipeline::compileShaders(const VkAllocationCallbacks *pAllocato
 			module = vk::Cast(tempModule);
 		}
 
-		const PipelineCache::SpirvBinaryKey key(module->getBinary(), stageInfo.pSpecializationInfo, optimize);
+		const PipelineCache::SpirvBinaryKey key(module->getBinary(), stageInfo.pSpecializationInfo, robustBufferAccess, optimize);
 
 		if((pCreateInfo->flags & VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT_EXT) &&
 		   (!pPipelineCache || !pPipelineCache->contains(key)))
@@ -557,7 +546,7 @@ VkResult GraphicsPipeline::compileShaders(const VkAllocationCallbacks *pAllocato
 
 		// TODO(b/201798871): use allocator.
 		auto shader = std::make_shared<sw::SpirvShader>(stageInfo.stage, stageInfo.pName, spirv,
-		                                                vk::Cast(pCreateInfo->renderPass), pCreateInfo->subpass, stageRobustBufferAccess, dbgctx, getOrCreateSpirvProfiler());
+		                                                vk::Cast(pCreateInfo->renderPass), pCreateInfo->subpass, stageRobustBufferAccess);
 
 		setShader(stageInfo.stage, shader);
 
@@ -599,13 +588,9 @@ VkResult ComputePipeline::compileShaders(const VkAllocationCallbacks *pAllocator
 	ASSERT(shader.get() == nullptr);
 	ASSERT(program.get() == nullptr);
 
-	auto dbgctx = device->getDebuggerContext();
-	// Do not optimize the shader if we have a debugger context.
-	// Optimization passes are likely to damage debug information, and reorder
-	// instructions.
-	const bool optimize = !dbgctx;
+	const bool optimize = true;  // TODO(b/251802301): Don't optimize when debugging shaders.
 
-	const PipelineCache::SpirvBinaryKey shaderKey(module->getBinary(), stage.pSpecializationInfo, optimize);
+	const PipelineCache::SpirvBinaryKey shaderKey(module->getBinary(), stage.pSpecializationInfo, robustBufferAccess, optimize);
 
 	if((pCreateInfo->flags & VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT_EXT) &&
 	   (!pPipelineCache || !pPipelineCache->contains(shaderKey)))
@@ -638,7 +623,7 @@ VkResult ComputePipeline::compileShaders(const VkAllocationCallbacks *pAllocator
 
 	// TODO(b/201798871): use allocator.
 	shader = std::make_shared<sw::SpirvShader>(stage.stage, stage.pName, spirv,
-	                                           nullptr, 0, stageRobustBufferAccess, dbgctx, getOrCreateSpirvProfiler());
+	                                           nullptr, 0, stageRobustBufferAccess);
 
 	const PipelineCache::ComputeProgramKey programKey(shader->getIdentifier(), layout->identifier);
 
