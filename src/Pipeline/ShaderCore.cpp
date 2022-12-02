@@ -672,10 +672,11 @@ UInt4 floatToHalfBits(RValue<UInt4> floatBits, bool storeInUpperBits)
 
 SIMD::Float linearToSRGB(const SIMD::Float &c)
 {
-	SIMD::Float lc = Min(c, 0.0031308f) * 12.92f;
+	SIMD::Float lc = c * 12.92f;
 	SIMD::Float ec = MulAdd(1.055f, Pow<Mediump>(c, (1.0f / 2.4f)), -0.055f);  // TODO(b/149574741): Use a custom approximation.
 
-	return Max(lc, ec);
+	SIMD::Int linear = CmpLT(c, 0.0031308f);
+	return As<SIMD::Float>((linear & As<SIMD::Int>(lc)) | (~linear & As<SIMD::Int>(ec)));  // TODO: IfThenElse()
 }
 
 SIMD::Float sRGBtoLinear(const SIMD::Float &c)
@@ -773,6 +774,19 @@ void transpose4x4(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3)
 	row0 = Float4(tmp0.xy, tmp1.xy);
 	row1 = Float4(tmp0.zw, tmp1.zw);
 	row2 = Float4(tmp2.xy, tmp3.xy);
+	row3 = Float4(tmp2.zw, tmp3.zw);
+}
+
+void transpose4x4zyxw(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3)
+{
+	Float4 tmp0 = UnpackLow(row0, row1);
+	Float4 tmp1 = UnpackLow(row2, row3);
+	Float4 tmp2 = UnpackHigh(row0, row1);
+	Float4 tmp3 = UnpackHigh(row2, row3);
+
+	row2 = Float4(tmp0.xy, tmp1.xy);
+	row1 = Float4(tmp0.zw, tmp1.zw);
+	row0 = Float4(tmp2.xy, tmp3.xy);
 	row3 = Float4(tmp2.zw, tmp3.zw);
 }
 
@@ -899,10 +913,11 @@ UInt r11g11b10Pack(const Float4 &value)
 
 Float4 linearToSRGB(const Float4 &c)
 {
-	Float4 lc = Min(c, 0.0031308f) * 12.92f;
+	Float4 lc = c * 12.92f;
 	Float4 ec = MulAdd(1.055f, Pow<Mediump>(c, (1.0f / 2.4f)), -0.055f);  // TODO(b/149574741): Use a custom approximation.
 
-	return Max(lc, ec);
+	Int4 linear = CmpLT(c, 0.0031308f);
+	return As<Float4>((linear & As<Int4>(lc)) | (~linear & As<Int4>(ec)));  // TODO: IfThenElse()
 }
 
 Float4 sRGBtoLinear(const Float4 &c)
@@ -914,7 +929,7 @@ Float4 sRGBtoLinear(const Float4 &c)
 	return As<Float4>((linear & As<Int4>(lc)) | (~linear & As<Int4>(ec)));  // TODO: IfThenElse()
 }
 
-rr::RValue<SIMD::Float> Sign(rr::RValue<SIMD::Float> const &val)
+rr::RValue<SIMD::Float> Sign(const rr::RValue<SIMD::Float> &val)
 {
 	return rr::As<SIMD::Float>((rr::As<SIMD::UInt>(val) & SIMD::UInt(0x80000000)) | SIMD::UInt(0x3f800000));
 }
@@ -922,7 +937,7 @@ rr::RValue<SIMD::Float> Sign(rr::RValue<SIMD::Float> const &val)
 // Returns the <whole, frac> of val.
 // Both whole and frac will have the same sign as val.
 std::pair<rr::RValue<SIMD::Float>, rr::RValue<SIMD::Float>>
-Modf(rr::RValue<SIMD::Float> const &val)
+Modf(const rr::RValue<SIMD::Float> &val)
 {
 	auto abs = Abs(val);
 	auto sign = Sign(val);
@@ -932,7 +947,7 @@ Modf(rr::RValue<SIMD::Float> const &val)
 }
 
 // Returns the number of 1s in bits, per lane.
-SIMD::UInt CountBits(rr::RValue<SIMD::UInt> const &bits)
+SIMD::UInt CountBits(const rr::RValue<SIMD::UInt> &bits)
 {
 	// TODO: Add an intrinsic to reactor. Even if there isn't a
 	// single vector instruction, there may be target-dependent
@@ -948,13 +963,13 @@ SIMD::UInt CountBits(rr::RValue<SIMD::UInt> const &bits)
 
 // Returns 1 << bits.
 // If the resulting bit overflows a 32 bit integer, 0 is returned.
-rr::RValue<SIMD::UInt> NthBit32(rr::RValue<SIMD::UInt> const &bits)
+rr::RValue<SIMD::UInt> NthBit32(const rr::RValue<SIMD::UInt> &bits)
 {
 	return ((SIMD::UInt(1) << bits) & CmpLT(bits, SIMD::UInt(32)));
 }
 
 // Returns bitCount number of of 1's starting from the LSB.
-rr::RValue<SIMD::UInt> Bitmask32(rr::RValue<SIMD::UInt> const &bitCount)
+rr::RValue<SIMD::UInt> Bitmask32(const rr::RValue<SIMD::UInt> &bitCount)
 {
 	return NthBit32(bitCount) - SIMD::UInt(1);
 }
@@ -962,7 +977,7 @@ rr::RValue<SIMD::UInt> Bitmask32(rr::RValue<SIMD::UInt> const &bitCount)
 // Returns y if y < x; otherwise result is x.
 // If one operand is a NaN, the other operand is the result.
 // If both operands are NaN, the result is a NaN.
-rr::RValue<SIMD::Float> NMin(rr::RValue<SIMD::Float> const &x, rr::RValue<SIMD::Float> const &y)
+rr::RValue<SIMD::Float> NMin(const rr::RValue<SIMD::Float> &x, const rr::RValue<SIMD::Float> &y)
 {
 	auto xIsNan = IsNan(x);
 	auto yIsNan = IsNan(y);
@@ -978,7 +993,7 @@ rr::RValue<SIMD::Float> NMin(rr::RValue<SIMD::Float> const &x, rr::RValue<SIMD::
 // Returns y if y > x; otherwise result is x.
 // If one operand is a NaN, the other operand is the result.
 // If both operands are NaN, the result is a NaN.
-rr::RValue<SIMD::Float> NMax(rr::RValue<SIMD::Float> const &x, rr::RValue<SIMD::Float> const &y)
+rr::RValue<SIMD::Float> NMax(const rr::RValue<SIMD::Float> &x, const rr::RValue<SIMD::Float> &y)
 {
 	auto xIsNan = IsNan(x);
 	auto yIsNan = IsNan(y);
@@ -993,27 +1008,27 @@ rr::RValue<SIMD::Float> NMax(rr::RValue<SIMD::Float> const &x, rr::RValue<SIMD::
 
 // Returns the determinant of a 2x2 matrix.
 rr::RValue<SIMD::Float> Determinant(
-    rr::RValue<SIMD::Float> const &a, rr::RValue<SIMD::Float> const &b,
-    rr::RValue<SIMD::Float> const &c, rr::RValue<SIMD::Float> const &d)
+    const rr::RValue<SIMD::Float> &a, const rr::RValue<SIMD::Float> &b,
+    const rr::RValue<SIMD::Float> &c, const rr::RValue<SIMD::Float> &d)
 {
 	return a * d - b * c;
 }
 
 // Returns the determinant of a 3x3 matrix.
 rr::RValue<SIMD::Float> Determinant(
-    rr::RValue<SIMD::Float> const &a, rr::RValue<SIMD::Float> const &b, rr::RValue<SIMD::Float> const &c,
-    rr::RValue<SIMD::Float> const &d, rr::RValue<SIMD::Float> const &e, rr::RValue<SIMD::Float> const &f,
-    rr::RValue<SIMD::Float> const &g, rr::RValue<SIMD::Float> const &h, rr::RValue<SIMD::Float> const &i)
+    const rr::RValue<SIMD::Float> &a, const rr::RValue<SIMD::Float> &b, const rr::RValue<SIMD::Float> &c,
+    const rr::RValue<SIMD::Float> &d, const rr::RValue<SIMD::Float> &e, const rr::RValue<SIMD::Float> &f,
+    const rr::RValue<SIMD::Float> &g, const rr::RValue<SIMD::Float> &h, const rr::RValue<SIMD::Float> &i)
 {
 	return a * e * i + b * f * g + c * d * h - c * e * g - b * d * i - a * f * h;
 }
 
 // Returns the determinant of a 4x4 matrix.
 rr::RValue<SIMD::Float> Determinant(
-    rr::RValue<SIMD::Float> const &a, rr::RValue<SIMD::Float> const &b, rr::RValue<SIMD::Float> const &c, rr::RValue<SIMD::Float> const &d,
-    rr::RValue<SIMD::Float> const &e, rr::RValue<SIMD::Float> const &f, rr::RValue<SIMD::Float> const &g, rr::RValue<SIMD::Float> const &h,
-    rr::RValue<SIMD::Float> const &i, rr::RValue<SIMD::Float> const &j, rr::RValue<SIMD::Float> const &k, rr::RValue<SIMD::Float> const &l,
-    rr::RValue<SIMD::Float> const &m, rr::RValue<SIMD::Float> const &n, rr::RValue<SIMD::Float> const &o, rr::RValue<SIMD::Float> const &p)
+    const rr::RValue<SIMD::Float> &a, const rr::RValue<SIMD::Float> &b, const rr::RValue<SIMD::Float> &c, const rr::RValue<SIMD::Float> &d,
+    const rr::RValue<SIMD::Float> &e, const rr::RValue<SIMD::Float> &f, const rr::RValue<SIMD::Float> &g, const rr::RValue<SIMD::Float> &h,
+    const rr::RValue<SIMD::Float> &i, const rr::RValue<SIMD::Float> &j, const rr::RValue<SIMD::Float> &k, const rr::RValue<SIMD::Float> &l,
+    const rr::RValue<SIMD::Float> &m, const rr::RValue<SIMD::Float> &n, const rr::RValue<SIMD::Float> &o, const rr::RValue<SIMD::Float> &p)
 {
 	return a * Determinant(f, g, h,
 	                       j, k, l,
@@ -1031,8 +1046,8 @@ rr::RValue<SIMD::Float> Determinant(
 
 // Returns the inverse of a 2x2 matrix.
 std::array<rr::RValue<SIMD::Float>, 4> MatrixInverse(
-    rr::RValue<SIMD::Float> const &a, rr::RValue<SIMD::Float> const &b,
-    rr::RValue<SIMD::Float> const &c, rr::RValue<SIMD::Float> const &d)
+    const rr::RValue<SIMD::Float> &a, const rr::RValue<SIMD::Float> &b,
+    const rr::RValue<SIMD::Float> &c, const rr::RValue<SIMD::Float> &d)
 {
 	auto s = SIMD::Float(1.0f) / Determinant(a, b, c, d);
 	return { { s * d, -s * b, -s * c, s * a } };
@@ -1040,9 +1055,9 @@ std::array<rr::RValue<SIMD::Float>, 4> MatrixInverse(
 
 // Returns the inverse of a 3x3 matrix.
 std::array<rr::RValue<SIMD::Float>, 9> MatrixInverse(
-    rr::RValue<SIMD::Float> const &a, rr::RValue<SIMD::Float> const &b, rr::RValue<SIMD::Float> const &c,
-    rr::RValue<SIMD::Float> const &d, rr::RValue<SIMD::Float> const &e, rr::RValue<SIMD::Float> const &f,
-    rr::RValue<SIMD::Float> const &g, rr::RValue<SIMD::Float> const &h, rr::RValue<SIMD::Float> const &i)
+    const rr::RValue<SIMD::Float> &a, const rr::RValue<SIMD::Float> &b, const rr::RValue<SIMD::Float> &c,
+    const rr::RValue<SIMD::Float> &d, const rr::RValue<SIMD::Float> &e, const rr::RValue<SIMD::Float> &f,
+    const rr::RValue<SIMD::Float> &g, const rr::RValue<SIMD::Float> &h, const rr::RValue<SIMD::Float> &i)
 {
 	auto s = SIMD::Float(1.0f) / Determinant(
 	                                 a, b, c,
@@ -1064,10 +1079,10 @@ std::array<rr::RValue<SIMD::Float>, 9> MatrixInverse(
 
 // Returns the inverse of a 4x4 matrix.
 std::array<rr::RValue<SIMD::Float>, 16> MatrixInverse(
-    rr::RValue<SIMD::Float> const &a, rr::RValue<SIMD::Float> const &b, rr::RValue<SIMD::Float> const &c, rr::RValue<SIMD::Float> const &d,
-    rr::RValue<SIMD::Float> const &e, rr::RValue<SIMD::Float> const &f, rr::RValue<SIMD::Float> const &g, rr::RValue<SIMD::Float> const &h,
-    rr::RValue<SIMD::Float> const &i, rr::RValue<SIMD::Float> const &j, rr::RValue<SIMD::Float> const &k, rr::RValue<SIMD::Float> const &l,
-    rr::RValue<SIMD::Float> const &m, rr::RValue<SIMD::Float> const &n, rr::RValue<SIMD::Float> const &o, rr::RValue<SIMD::Float> const &p)
+    const rr::RValue<SIMD::Float> &a, const rr::RValue<SIMD::Float> &b, const rr::RValue<SIMD::Float> &c, const rr::RValue<SIMD::Float> &d,
+    const rr::RValue<SIMD::Float> &e, const rr::RValue<SIMD::Float> &f, const rr::RValue<SIMD::Float> &g, const rr::RValue<SIMD::Float> &h,
+    const rr::RValue<SIMD::Float> &i, const rr::RValue<SIMD::Float> &j, const rr::RValue<SIMD::Float> &k, const rr::RValue<SIMD::Float> &l,
+    const rr::RValue<SIMD::Float> &m, const rr::RValue<SIMD::Float> &n, const rr::RValue<SIMD::Float> &o, const rr::RValue<SIMD::Float> &p)
 {
 	auto s = SIMD::Float(1.0f) / Determinant(
 	                                 a, b, c, d,

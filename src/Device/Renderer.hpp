@@ -80,7 +80,6 @@ struct DrawData
 	float Y0xF;
 	float halfPixelX;
 	float halfPixelY;
-	float viewportHeight;
 	float depthRange;
 	float depthNear;
 	float minimumResolvableDepthDifference;
@@ -109,6 +108,8 @@ struct DrawData
 	float a2c3;
 
 	vk::Pipeline::PushConstantStorage pushConstants;
+
+	bool rasterizerDiscard;
 };
 
 struct DrawCall
@@ -158,7 +159,8 @@ struct DrawCall
 	VertexProcessor::RoutineType vertexRoutine;
 	SetupProcessor::RoutineType setupRoutine;
 	PixelProcessor::RoutineType pixelRoutine;
-	bool containsImageWrite;
+	bool preRasterizationContainsImageWrite;
+	bool fragmentContainsImageWrite;
 
 	SetupFunction setupPrimitives;
 	SetupProcessor::State setupState;
@@ -167,7 +169,8 @@ struct DrawCall
 	vk::ImageView *depthBuffer;
 	vk::ImageView *stencilBuffer;
 	vk::DescriptorSet::Array descriptorSetObjects;
-	const vk::PipelineLayout *pipelineLayout;
+	const vk::PipelineLayout *preRasterizationPipelineLayout;
+	const vk::PipelineLayout *fragmentPipelineLayout;
 	sw::CountedEvent *events;
 
 	vk::Query *occlusionQuery;
@@ -207,7 +210,7 @@ public:
 
 	void draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState &dynamicState, unsigned int count, int baseVertex,
 	          CountedEvent *events, int instanceID, int layer, void *indexBuffer, const VkRect2D &renderArea,
-	          vk::Pipeline::PushConstantStorage const &pushConstants, bool update = true);
+	          const vk::Pipeline::PushConstantStorage &pushConstants, bool update = true);
 
 	void addQuery(vk::Query *query);
 	void removeQuery(vk::Query *query);
