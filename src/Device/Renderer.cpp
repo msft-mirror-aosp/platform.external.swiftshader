@@ -262,6 +262,7 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 	draw->numBatches = (count + draw->numPrimitivesPerBatch - 1) / draw->numPrimitivesPerBatch;
 	draw->topology = vertexInputInterfaceState.getTopology();
 	draw->provokingVertexMode = preRasterizationState.getProvokingVertexMode();
+	draw->indexType = pipeline->getIndexBuffer().getIndexType();
 	draw->lineRasterizationMode = preRasterizationState.getLineRasterizationMode();
 	draw->descriptorSetObjects = inputs.getDescriptorSetObjects();
 	draw->preRasterizationPipelineLayout = preRasterizationState.getPipelineLayout();
@@ -285,11 +286,6 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 	data->layer = layer;
 	data->instanceID = instanceID;
 	data->baseVertex = baseVertex;
-
-	if(indexBuffer)
-	{
-		draw->indexType = pipeline->getIndexBuffer().getIndexType();
-	}
 
 	draw->vertexRoutine = vertexRoutine;
 
