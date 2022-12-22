@@ -932,11 +932,8 @@ public:
 		inputs.setVertexInputBinding(executionState.vertexInputBindings);
 		inputs.bindVertexInputs(firstInstance, hasDynamicVertexStride);
 
-		if(indexed)
-		{
-			vk::IndexBuffer &indexBuffer = pipeline->getIndexBuffer();
-			indexBuffer.setIndexBufferBinding(executionState.indexBufferBinding, executionState.indexType);
-		}
+		vk::IndexBuffer &indexBuffer = pipeline->getIndexBuffer();
+		indexBuffer.setIndexBufferBinding(executionState.indexBufferBinding, executionState.indexType);
 
 		std::vector<std::pair<uint32_t, void *>> indexBuffers;
 		pipeline->getIndexBuffers(executionState.dynamicState, count, first, indexed, &indexBuffers);
