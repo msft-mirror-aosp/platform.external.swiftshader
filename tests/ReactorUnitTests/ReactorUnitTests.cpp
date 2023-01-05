@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "Assert.hpp"
 #include "Coroutine.hpp"
 #include "Print.hpp"
 #include "Reactor.hpp"
@@ -26,6 +27,9 @@
 #include <tuple>
 
 using namespace rr;
+
+using float4 = float[4];
+using int4 = int[4];
 
 static std::string testName()
 {
@@ -675,6 +679,57 @@ TEST(ReactorUnitTests, StoreBeforeIndirectStore)
 	EXPECT_EQ(result, 4);
 }
 
+TEST(ReactorUnitTests, AssertTrue)
+{
+	FunctionT<int()> function;
+	{
+		Int a = 3;
+		Int b = 5;
+
+		Assert(a < b);
+
+		Return(a + b);
+	}
+
+	auto routine = function(testName().c_str());
+
+	int result = routine();
+	EXPECT_EQ(result, 8);
+}
+
+TEST(ReactorUnitTests, AssertFalse)
+{
+	FunctionT<int()> function;
+	{
+		Int a = 3;
+		Int b = 5;
+
+		Assert(a == b);
+
+		Return(a + b);
+	}
+
+	auto routine = function(testName().c_str());
+
+#ifndef NDEBUG
+#	if !defined(__APPLE__)
+	const char *stderrRegex = "AssertFalse";  // stderr should contain the assert's expression, file:line, and function
+#	else
+	const char *stderrRegex = "";  // TODO(b/156389924): On macOS an stderr redirect can cause googletest to fail the capture
+#	endif
+
+	EXPECT_DEATH(
+	    {
+		    int result = routine();
+		    EXPECT_NE(result, result);  // We should never reach this
+	    },
+	    stderrRegex);
+#else
+	int result = routine();
+	EXPECT_EQ(result, 8);
+#endif
+}
+
 TEST(ReactorUnitTests, SubVectorLoadStore)
 {
 	FunctionT<int(void *, void *)> function;
@@ -1077,6 +1132,24 @@ TEST(ReactorUnitTests, Shuffle)
 	}
 }
 
+TEST(ReactorUnitTests, Broadcast)
+{
+	FunctionT<int()> function;
+	{
+		Int4 i = 2;
+		Int j = 3 + i.x;
+		Int4 k = i * 7;
+
+		Return(k.z - j);
+	}
+
+	auto routine = function(testName().c_str());
+
+	int result = routine();
+
+	EXPECT_EQ(result, 9);
+}
+
 TEST(ReactorUnitTests, Branching)
 {
 	FunctionT<int()> function;
@@ -1129,6 +1202,138 @@ TEST(ReactorUnitTests, Branching)
 	int result = routine();
 
 	EXPECT_EQ(result, 1000402222);
+}
+
+TEST(ReactorUnitTests, FMulAdd)
+{
+	Function<Void(Pointer<Float4>, Pointer<Float4>, Pointer<Float4>, Pointer<Float4>)> function;
+	{
+		Pointer<Float4> r = function.Arg<0>();
+		Pointer<Float4> x = function.Arg<1>();
+		Pointer<Float4> y = function.Arg<2>();
+		Pointer<Float4> z = function.Arg<3>();
+
+		*r = MulAdd(*x, *y, *z);
+	}
+
+	auto routine = function(testName().c_str());
+	auto callable = (void (*)(float4 *, float4 *, float4 *, float4 *))routine->getEntry();
+
+	float x[] = { 0.0f, 2.0f, 4.0f, 1.00000011920929f };
+	float y[] = { 0.0f, 3.0f, 0.0f, 53400708.0f };
+	float z[] = { 0.0f, 0.0f, 7.0f, -53400708.0f };
+
+	for(size_t i = 0; i < std::size(x); i++)
+	{
+		float4 x_in = { x[i], x[i], x[i], x[i] };
+		float4 y_in = { y[i], y[i], y[i], y[i] };
+		float4 z_in = { z[i], z[i], z[i], z[i] };
+		float4 r_out;
+
+		callable(&r_out, &x_in, &y_in, &z_in);
+
+		// Possible results
+		float fma = fmaf(x[i], y[i], z[i]);
+		float mul_add = x[i] * y[i] + z[i];
+
+		// If the backend and the CPU support FMA instructions, we assume MulAdd to use
+		// them. Otherwise it may behave as a multiplication followed by an addition.
+		if(rr::Caps::fmaIsFast())
+		{
+			EXPECT_FLOAT_EQ(r_out[0], fma);
+		}
+		else if(r_out[0] != fma)
+		{
+			EXPECT_FLOAT_EQ(r_out[0], mul_add);
+		}
+	}
+}
+
+TEST(ReactorUnitTests, FMA)
+{
+	Function<Void(Pointer<Float4>, Pointer<Float4>, Pointer<Float4>, Pointer<Float4>)> function;
+	{
+		Pointer<Float4> r = function.Arg<0>();
+		Pointer<Float4> x = function.Arg<1>();
+		Pointer<Float4> y = function.Arg<2>();
+		Pointer<Float4> z = function.Arg<3>();
+
+		*r = FMA(*x, *y, *z);
+	}
+
+	auto routine = function(testName().c_str());
+	auto callable = (void (*)(float4 *, float4 *, float4 *, float4 *))routine->getEntry();
+
+	float x[] = { 0.0f, 2.0f, 4.0f, 1.00000011920929f };
+	float y[] = { 0.0f, 3.0f, 0.0f, 53400708.0f };
+	float z[] = { 0.0f, 0.0f, 7.0f, -53400708.0f };
+
+	for(size_t i = 0; i < std::size(x); i++)
+	{
+		float4 x_in = { x[i], x[i], x[i], x[i] };
+		float4 y_in = { y[i], y[i], y[i], y[i] };
+		float4 z_in = { z[i], z[i], z[i], z[i] };
+		float4 r_out;
+
+		callable(&r_out, &x_in, &y_in, &z_in);
+
+		float expected = fmaf(x[i], y[i], z[i]);
+		EXPECT_FLOAT_EQ(r_out[0], expected);
+	}
+}
+
+TEST(ReactorUnitTests, FAbs)
+{
+	Function<Void(Pointer<Float4>, Pointer<Float4>)> function;
+	{
+		Pointer<Float4> x = function.Arg<0>();
+		Pointer<Float4> y = function.Arg<1>();
+
+		*y = Abs(*x);
+	}
+
+	auto routine = function(testName().c_str());
+	auto callable = (void (*)(float4 *, float4 *))routine->getEntry();
+
+	float input[] = { 1.0f, -1.0f, -0.0f, 0.0f };
+
+	for(float x : input)
+	{
+		float4 v_in = { x, x, x, x };
+		float4 v_out;
+
+		callable(&v_in, &v_out);
+
+		float expected = fabs(x);
+		EXPECT_FLOAT_EQ(v_out[0], expected);
+	}
+}
+
+TEST(ReactorUnitTests, Abs)
+{
+	Function<Void(Pointer<Int4>, Pointer<Int4>)> function;
+	{
+		Pointer<Int4> x = function.Arg<0>();
+		Pointer<Int4> y = function.Arg<1>();
+
+		*y = Abs(*x);
+	}
+
+	auto routine = function(testName().c_str());
+	auto callable = (void (*)(int4 *, int4 *))routine->getEntry();
+
+	int input[] = { 1, -1, 0, (int)0x80000000 };
+
+	for(int x : input)
+	{
+		int4 v_in = { x, x, x, x };
+		int4 v_out;
+
+		callable(&v_in, &v_out);
+
+		float expected = abs(x);
+		EXPECT_EQ(v_out[0], expected);
+	}
 }
 
 TEST(ReactorUnitTests, MinMax)
@@ -1836,14 +2041,11 @@ TEST(ReactorUnitTests, LargeStack)
 		}
 	}
 
-	// LLVM takes very long to generate this routine when InstructionCombining
-	// and O2 optimizations are enabled. Disable for now.
-	// TODO(b/174031014): Remove this once we fix LLVM taking so long
-	auto cfg = Config::Edit{}
-	               .remove(Optimization::Pass::InstructionCombining)
-	               .set(Optimization::Level::None);
+	// LLVM takes very long to generate this routine when O2 optimizations are enabled. Disable for now.
+	// TODO(b/174031014): Remove this once we fix LLVM taking so long.
+	ScopedPragma O0(OptimizationLevel, 0);
 
-	auto routine = function(cfg, testName().c_str());
+	auto routine = function(testName().c_str());
 
 	std::array<int32_t, ArraySize> v;
 
@@ -2438,7 +2640,7 @@ TEST(ReactorUnitTests, Fibonacci)
 
 TEST(ReactorUnitTests, Coroutines_Fibonacci)
 {
-	if(!rr::Caps.CoroutinesSupported)
+	if(!rr::Caps::coroutinesSupported())
 	{
 		SUCCEED() << "Coroutines not supported";
 		return;
@@ -2472,7 +2674,7 @@ TEST(ReactorUnitTests, Coroutines_Fibonacci)
 
 TEST(ReactorUnitTests, Coroutines_Parameters)
 {
-	if(!rr::Caps.CoroutinesSupported)
+	if(!rr::Caps::coroutinesSupported())
 	{
 		SUCCEED() << "Coroutines not supported";
 		return;
@@ -2514,7 +2716,7 @@ TEST(ReactorUnitTests, Coroutines_Parameters)
 // with coroutines.
 TEST(ReactorUnitTests, Coroutines_Vectors)
 {
-	if(!rr::Caps.CoroutinesSupported)
+	if(!rr::Caps::coroutinesSupported())
 	{
 		SUCCEED() << "Coroutines not supported";
 		return;
@@ -2549,7 +2751,7 @@ TEST(ReactorUnitTests, Coroutines_Vectors)
 // is properly cleaned up in between.
 TEST(ReactorUnitTests, Coroutines_NoYield)
 {
-	if(!rr::Caps.CoroutinesSupported)
+	if(!rr::Caps::coroutinesSupported())
 	{
 		SUCCEED() << "Coroutines not supported";
 		return;
@@ -2574,7 +2776,7 @@ TEST(ReactorUnitTests, Coroutines_NoYield)
 // sure the implementation manages per-call instance data correctly.
 TEST(ReactorUnitTests, Coroutines_Parallel)
 {
-	if(!rr::Caps.CoroutinesSupported)
+	if(!rr::Caps::coroutinesSupported())
 	{
 		SUCCEED() << "Coroutines not supported";
 		return;
@@ -2656,9 +2858,6 @@ struct IntrinsicTest_Float : public testing::TestWithParam<IntrinsicTestParams_F
 		}
 	}
 };
-
-using float4 = float[4];
-using int4 = int[4];
 
 // TODO: Move to Reactor.hpp
 template<>
@@ -2789,23 +2988,23 @@ float vulkan_coshf(float a)
 // clang-format off
 constexpr float PI = 3.141592653589793f;
 INSTANTIATE_TEST_SUITE_P(IntrinsicTestParams_Float4, IntrinsicTest_Float4, testing::Values(
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Sin(v); },                    sinf,          {0.f, 1.f, PI, 123.f}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Cos(v); },                    cosf,          {0.f, 1.f, PI, 123.f}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Tan(v); },                    tanf,          {0.f, 1.f, PI, 123.f}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Asin(v, Precision::Full); },  asinf,         {0.f, 1.f, -1.f}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Acos(v, Precision::Full); },  acosf,         {0.f, 1.f, -1.f}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Atan(v); },                   atanf,         {0.f, 1.f, PI, 123.f}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Sinh(v); },                   vulkan_sinhf,  {0.f, 1.f, PI}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Cosh(v); },                   vulkan_coshf,  {0.f, 1.f, PI} },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Tanh(v); },                   tanhf,         {0.f, 1.f, PI}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Asinh(v); },                  asinhf,        {0.f, 1.f, PI, 123.f}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Acosh(v); },                  acoshf,        {     1.f, PI, 123.f}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Atanh(v); },                  atanhf,        {0.f, 0.9999f, -0.9999f}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Exp(v); },                    expf,          {0.f, 1.f, PI}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Log(v); },                    logf,          {1.f, PI, 123.f}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Exp2(v); },                   exp2f,         {0.f, 1.f, PI, 123.f}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Log2(v); },                   log2f,         {1.f, PI, 123.f}  },
-	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Sqrt(v); },                   sqrtf,         {0.f, 1.f, PI, 123.f}  }
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Sin(v); },   sinf,         {0.f, 1.f, PI, 123.f}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Cos(v); },   cosf,         {0.f, 1.f, PI, 123.f}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Tan(v); },   tanf,         {0.f, 1.f, PI, 123.f}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Asin(v); },  asinf,        {0.f, 1.f, -1.f}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Acos(v); },  acosf,        {0.f, 1.f, -1.f}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Atan(v); },  atanf,        {0.f, 1.f, PI, 123.f}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Sinh(v); },  vulkan_sinhf, {0.f, 1.f, PI}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Cosh(v); },  vulkan_coshf, {0.f, 1.f, PI} },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Tanh(v); },  tanhf,        {0.f, 1.f, PI}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Asinh(v); }, asinhf,       {0.f, 1.f, PI, 123.f}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Acosh(v); }, acoshf,       {     1.f, PI, 123.f}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Atanh(v); }, atanhf,       {0.f, 0.9999f, -0.9999f}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Exp(v); },   expf,         {0.f, 1.f, PI}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Log(v); },   logf,         {1.f, PI, 123.f}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Exp2(v); },  exp2f,        {0.f, 1.f, PI, 123.f}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Log2(v); },  log2f,        {1.f, PI, 123.f}  },
+	IntrinsicTestParams_Float4{ [](RValue<Float4> v) { return rr::Sqrt(v); },  sqrtf,        {0.f, 1.f, PI, 123.f}  }
 ));
 // clang-format on
 
@@ -2943,85 +3142,6 @@ TEST(ReactorUnitTests, Intrinsics_Cttz)
 			EXPECT_EQ(x[3], 32u);
 		}
 	}
-}
-
-TEST(ReactorUnitTests, Intrinsics_Scatter)
-{
-	Function<Void(Pointer<Float> base, Pointer<Float4> val, Pointer<Int4> offsets)> function;
-	{
-		Pointer<Float> base = function.Arg<0>();
-		Pointer<Float4> val = function.Arg<1>();
-		Pointer<Int4> offsets = function.Arg<2>();
-
-		auto mask = Int4(~0, ~0, ~0, ~0);
-		unsigned int alignment = 1;
-		Scatter(base, *val, *offsets, mask, alignment);
-	}
-
-	float buffer[16] = { 0 };
-
-	constexpr auto elemSize = sizeof(buffer[0]);
-
-	int offsets[] = {
-		1 * elemSize,
-		6 * elemSize,
-		11 * elemSize,
-		13 * elemSize
-	};
-
-	float val[4] = { 10, 60, 110, 130 };
-
-	auto routine = function(testName().c_str());
-	auto entry = (void (*)(float *, float *, int *))routine->getEntry();
-
-	entry(buffer, val, offsets);
-
-	EXPECT_EQ(buffer[offsets[0] / sizeof(buffer[0])], 10);
-	EXPECT_EQ(buffer[offsets[1] / sizeof(buffer[0])], 60);
-	EXPECT_EQ(buffer[offsets[2] / sizeof(buffer[0])], 110);
-	EXPECT_EQ(buffer[offsets[3] / sizeof(buffer[0])], 130);
-}
-
-TEST(ReactorUnitTests, Intrinsics_Gather)
-{
-	Function<Void(Pointer<Float> base, Pointer<Int4> offsets, Pointer<Float4> result)> function;
-	{
-		Pointer<Float> base = function.Arg<0>();
-		Pointer<Int4> offsets = function.Arg<1>();
-		Pointer<Float4> result = function.Arg<2>();
-
-		auto mask = Int4(~0, ~0, ~0, ~0);
-		unsigned int alignment = 1;
-		bool zeroMaskedLanes = true;
-		*result = Gather(base, *offsets, mask, alignment, zeroMaskedLanes);
-	}
-
-	float buffer[] = {
-		0, 10, 20, 30,
-		40, 50, 60, 70,
-		80, 90, 100, 110,
-		120, 130, 140, 150
-	};
-
-	constexpr auto elemSize = sizeof(buffer[0]);
-
-	int offsets[] = {
-		1 * elemSize,
-		6 * elemSize,
-		11 * elemSize,
-		13 * elemSize
-	};
-
-	auto routine = function(testName().c_str());
-	auto entry = (void (*)(float *, int *, float *))routine->getEntry();
-
-	float result[4] = {};
-	entry(buffer, offsets, result);
-
-	EXPECT_EQ(result[0], 10);
-	EXPECT_EQ(result[1], 60);
-	EXPECT_EQ(result[2], 110);
-	EXPECT_EQ(result[3], 130);
 }
 
 TEST(ReactorUnitTests, ExtractFromRValue)
@@ -3372,7 +3492,7 @@ TEST(ReactorUnitTests, Multithreaded_Function)
 
 TEST(ReactorUnitTests, Multithreaded_Coroutine)
 {
-	if(!rr::Caps.CoroutinesSupported)
+	if(!rr::Caps::coroutinesSupported())
 	{
 		SUCCEED() << "Coroutines not supported";
 		return;
@@ -3425,7 +3545,7 @@ TEST(ReactorUnitTests, Multithreaded_Coroutine)
 	{
 		for(int l = 0; l < numLoops; l++)
 		{
-			auto const &result = results[t * numLoops + l];
+			const auto &result = results[t * numLoops + l];
 			EXPECT_EQ(result.yieldReturns[0], true);
 			EXPECT_EQ(result.yieldValues[0], t);
 			EXPECT_EQ(result.yieldReturns[1], true);
@@ -3804,7 +3924,7 @@ TEST(ReactorUnitTests, SpillLocalCopiesOfArgs)
 TEST(ReactorUnitTests, EmitAsm)
 {
 	// Only supported by LLVM for now
-	if(BackendName().find("LLVM") == std::string::npos) return;
+	if(Caps::backendName().find("LLVM") == std::string::npos) return;
 
 	namespace fs = std::filesystem;
 

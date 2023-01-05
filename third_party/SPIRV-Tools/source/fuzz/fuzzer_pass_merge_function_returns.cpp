@@ -26,11 +26,10 @@ namespace fuzz {
 FuzzerPassMergeFunctionReturns::FuzzerPassMergeFunctionReturns(
     opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
-    protobufs::TransformationSequence* transformations)
+    protobufs::TransformationSequence* transformations,
+    bool ignore_inapplicable_transformations)
     : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations) {}
-
-FuzzerPassMergeFunctionReturns::~FuzzerPassMergeFunctionReturns() = default;
+                 transformations, ignore_inapplicable_transformations) {}
 
 void FuzzerPassMergeFunctionReturns::Apply() {
   // The pass might add new functions to the module (due to wrapping early
@@ -65,11 +64,11 @@ void FuzzerPassMergeFunctionReturns::Apply() {
         [this, function](
             opt::BasicBlock* /*unused*/, opt::BasicBlock::iterator inst_it,
             const protobufs::InstructionDescriptor& instruction_descriptor) {
-          const SpvOp opcode = inst_it->opcode();
+          const spv::Op opcode = inst_it->opcode();
           switch (opcode) {
-            case SpvOpKill:
-            case SpvOpUnreachable:
-            case SpvOpTerminateInvocation: {
+            case spv::Op::OpKill:
+            case spv::Op::OpUnreachable:
+            case spv::Op::OpTerminateInvocation: {
               // This is an early termination instruction - we need to wrap it
               // so that it becomes a return.
               if (TransformationWrapEarlyTerminatorInFunction::
@@ -86,7 +85,7 @@ void FuzzerPassMergeFunctionReturns::Apply() {
                   GetIRContext()->get_def_use_mgr()->GetDef(
                       function->type_id());
               uint32_t returned_value_id;
-              if (function_return_type->opcode() == SpvOpTypeVoid) {
+              if (function_return_type->opcode() == spv::Op::OpTypeVoid) {
                 // No value is needed.
                 returned_value_id = 0;
               } else if (fuzzerutil::CanCreateConstant(
@@ -131,7 +130,7 @@ void FuzzerPassMergeFunctionReturns::Apply() {
 
     // If the entry block does not branch unconditionally to another block,
     // split it.
-    if (function->entry()->terminator()->opcode() != SpvOpBranch) {
+    if (function->entry()->terminator()->opcode() != spv::Op::OpBranch) {
       SplitBlockAfterOpPhiOrOpVariable(function->entry()->id());
     }
 
@@ -150,9 +149,9 @@ void FuzzerPassMergeFunctionReturns::Apply() {
       if (GetIRContext()
               ->get_instr_block(merge_block)
               ->WhileEachInst([](opt::Instruction* inst) {
-                return inst->opcode() == SpvOpLabel ||
-                       inst->opcode() == SpvOpPhi ||
-                       inst->opcode() == SpvOpBranch;
+                return inst->opcode() == spv::Op::OpLabel ||
+                       inst->opcode() == spv::Op::OpPhi ||
+                       inst->opcode() == spv::Op::OpBranch;
               })) {
         actual_merge_blocks.emplace_back(merge_block);
         continue;
@@ -174,8 +173,9 @@ void FuzzerPassMergeFunctionReturns::Apply() {
     }
 
     // Get the ids needed by the transformation.
-    uint32_t outer_header_id = GetFuzzerContext()->GetFreshId();
-    uint32_t outer_return_id = GetFuzzerContext()->GetFreshId();
+    const uint32_t outer_header_id = GetFuzzerContext()->GetFreshId();
+    const uint32_t unreachable_continue_id = GetFuzzerContext()->GetFreshId();
+    const uint32_t outer_return_id = GetFuzzerContext()->GetFreshId();
 
     bool function_is_void =
         GetIRContext()->get_type_mgr()->GetType(function->type_id())->AsVoid();
@@ -211,8 +211,8 @@ void FuzzerPassMergeFunctionReturns::Apply() {
     // Apply the transformation if it is applicable (it could be inapplicable if
     // adding new predecessors to merge blocks breaks dominance rules).
     MaybeApplyTransformation(TransformationMergeFunctionReturns(
-        function->result_id(), outer_header_id, outer_return_id, return_val_id,
-        returnable_val_id, merge_blocks_info));
+        function->result_id(), outer_header_id, unreachable_continue_id,
+        outer_return_id, return_val_id, returnable_val_id, merge_blocks_info));
   }
 }
 
@@ -324,7 +324,8 @@ FuzzerPassMergeFunctionReturns::GetInfoNeededForMergeBlocks(
 
 bool FuzzerPassMergeFunctionReturns::IsEarlyTerminatorWrapper(
     const opt::Function& function) const {
-  for (SpvOp opcode : {SpvOpKill, SpvOpUnreachable, SpvOpTerminateInvocation}) {
+  for (spv::Op opcode : {spv::Op::OpKill, spv::Op::OpUnreachable,
+                         spv::Op::OpTerminateInvocation}) {
     if (TransformationWrapEarlyTerminatorInFunction::MaybeGetWrapperFunction(
             GetIRContext(), opcode) == &function) {
       return true;

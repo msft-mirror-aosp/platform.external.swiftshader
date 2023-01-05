@@ -18,13 +18,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"../cause"
-	"../llvm"
+	"swiftshader.googlesource.com/SwiftShader/tests/regres/llvm"
 )
 
 // File describes the coverage spans in a single source file.
@@ -59,12 +59,7 @@ func AppendRuntimeEnv(env []string, coverageFile string) []string {
 // didn't get compiled.
 func (e Env) AllSourceFiles() *Coverage {
 	var ignorePaths = map[string]bool{
-		"src/Common":   true,
-		"src/Main":     true,
-		"src/OpenGL":   true,
-		"src/Renderer": true,
-		"src/Shader":   true,
-		"src/System":   true,
+		"src/System": true,
 	}
 
 	// Gather all the source files to include them even if there is no coverage
@@ -99,7 +94,7 @@ func (e Env) Import(profrawPath string) (*Coverage, error) {
 	profdata := profrawPath + ".profdata"
 
 	if err := exec.Command(e.LLVM.Profdata(), "merge", "-sparse", profrawPath, "-output", profdata).Run(); err != nil {
-		return nil, cause.Wrap(err, "llvm-profdata errored")
+		return nil, fmt.Errorf("llvm-profdata errored: %w", err)
 	}
 	defer os.Remove(profdata)
 
@@ -120,22 +115,22 @@ func (e Env) Import(profrawPath string) (*Coverage, error) {
 
 		data, err := exec.Command(e.LLVM.Cov(), args...).Output()
 		if err != nil {
-			return nil, cause.Wrap(err, "llvm-cov errored: %v", string(err.(*exec.ExitError).Stderr))
+			return nil, fmt.Errorf("llvm-cov errored: %v\n%v", string(err.(*exec.ExitError).Stderr), err)
 		}
 		cov, err := e.parseCov(data)
 		if err != nil {
-			return nil, cause.Wrap(err, "Couldn't parse coverage json data")
+			return nil, fmt.Errorf("failed to parse coverage json data: %w", err)
 		}
 		return cov, nil
 	}
 
 	data, err := exec.Command(e.TurboCov, e.ExePath, profdata).Output()
 	if err != nil {
-		return nil, cause.Wrap(err, "turbo-cov errored: %v", string(err.(*exec.ExitError).Stderr))
+		return nil, fmt.Errorf("turbo-cov errored: %v\n%v", string(err.(*exec.ExitError).Stderr), err)
 	}
 	cov, err := e.parseTurboCov(data)
 	if err != nil {
-		return nil, cause.Wrap(err, "Couldn't process turbo-cov output")
+		return nil, fmt.Errorf("failed to process turbo-cov output: %w", err)
 	}
 
 	return cov, nil

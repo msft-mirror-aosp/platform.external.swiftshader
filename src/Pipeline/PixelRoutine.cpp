@@ -20,20 +20,22 @@
 #include "Device/QuadRasterizer.hpp"
 #include "Device/Renderer.hpp"
 #include "System/Debug.hpp"
+#include "System/Math.hpp"
 #include "Vulkan/VkPipelineLayout.hpp"
+#include "Vulkan/VkStringify.hpp"
 
 namespace sw {
 
 PixelRoutine::PixelRoutine(
     const PixelProcessor::State &state,
-    vk::PipelineLayout const *pipelineLayout,
-    SpirvShader const *spirvShader,
+    const vk::PipelineLayout *pipelineLayout,
+    const SpirvShader *spirvShader,
     const vk::DescriptorSet::Bindings &descriptorSets)
     : QuadRasterizer(state, spirvShader)
     , routine(pipelineLayout)
     , descriptorSets(descriptorSets)
     , shaderContainsInterpolation(spirvShader && spirvShader->getUsedCapabilities().InterpolationFunction)
-    , shaderContainsSampleQualifier(spirvShader && spirvShader->getModes().ContainsSampleQualifier)
+    , shaderContainsSampleQualifier(spirvShader && spirvShader->getAnalysis().ContainsSampleQualifier)
     , perSampleShading((state.sampleShadingEnabled && (state.minSampleShading * state.multiSampleCount > 1.0f)) ||
                        shaderContainsSampleQualifier || shaderContainsInterpolation)  // TODO(b/194714095)
     , invocationCount(perSampleShading ? state.multiSampleCount : 1)
@@ -41,19 +43,6 @@ PixelRoutine::PixelRoutine(
 	if(spirvShader)
 	{
 		spirvShader->emitProlog(&routine);
-
-		// Clearing inputs to 0 is not demanded by the spec,
-		// but it makes the undefined behavior deterministic.
-		// TODO(b/155148722): Remove to detect UB.
-		for(int i = 0; i < MAX_INTERFACE_COMPONENTS; i++)
-		{
-			routine.inputs[i] = Float4(0.0f);
-		}
-	}
-
-	for(int i = 0; i < RENDERTARGETS; i++)
-	{
-		outputMasks[i] = 0xF;
 	}
 }
 
@@ -79,13 +68,13 @@ PixelRoutine::SampleSet PixelRoutine::getSampleSet(int invocation) const
 	return samples;
 }
 
-void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBuffer, Pointer<Byte> &sBuffer, Int cMask[4], Int &x, Int &y)
+void PixelRoutine::quad(Pointer<Byte> cBuffer[MAX_COLOR_BUFFERS], Pointer<Byte> &zBuffer, Pointer<Byte> &sBuffer, Int cMask[4], Int &x, Int &y)
 {
-	const bool earlyFragmentTests = !spirvShader || spirvShader->getModes().EarlyFragmentTests;
+	const bool earlyFragmentTests = !spirvShader || spirvShader->getExecutionModes().EarlyFragmentTests;
 
 	Int zMask[4];  // Depth mask
 	Int sMask[4];  // Stencil mask
-	Float4 unclampedZ[4];
+	SIMD::Float unclampedZ[4];
 
 	for(int invocation = 0; invocation < invocationCount; invocation++)
 	{
@@ -104,34 +93,31 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 
 		stencilTest(sBuffer, x, sMask, samples);
 
-		Float4 f;
-		Float4 rhwCentroid;
+		SIMD::Float rhwCentroid;
 
-		Float4 xxxx = Float4(Float(x)) + *Pointer<Float4>(primitive + OFFSET(Primitive, xQuad), 16);
+		// Compute the x coordinate of each fragment in the SIMD group.
+		const auto xMorton = SIMD::Float([](int i) { return float(compactEvenBits(i)); });  // 0, 1, 0, 1, 2, 3, 2, 3, 0, 1, 0, 1, 2, 3, 2, 3, ...
+		xFragment = SIMD::Float(Float(x)) + xMorton - SIMD::Float(*Pointer<Float>(primitive + OFFSET(Primitive, x0)));
 
 		if(interpolateZ())
 		{
 			for(unsigned int q : samples)
 			{
-				Float4 x = xxxx;
+				SIMD::Float x = xFragment;
 
 				if(state.enableMultiSampling)
 				{
-					x -= *Pointer<Float4>(constants + OFFSET(Constants, X) + q * sizeof(float4));
+					x -= SIMD::Float(*Pointer<Float>(constants + OFFSET(Constants, SampleLocationsX) + q * sizeof(float)));
 				}
 
 				z[q] = interpolate(x, Dz[q], z[q], primitive + OFFSET(Primitive, z), false, false);
 
 				if(state.depthBias)
 				{
-					z[q] += *Pointer<Float4>(primitive + OFFSET(Primitive, zBias), 16);
+					z[q] += SIMD::Float(*Pointer<Float>(primitive + OFFSET(Primitive, zBias)));
 				}
 
 				unclampedZ[q] = z[q];
-				if(state.depthClamp)
-				{
-					z[q] = Min(Max(z[q], Float4(state.minDepthClamp)), Float4(state.maxDepthClamp));
-				}
 			}
 		}
 
@@ -141,9 +127,12 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 		{
 			for(unsigned int q : samples)
 			{
+				z[q] = clampDepth(z[q]);
 				depthPass = depthPass || depthTest(zBuffer, q, x, z[q], sMask[q], zMask[q], cMask[q]);
 				depthBoundsTest(zBuffer, q, x, zMask[q], cMask[q]);
 			}
+
+			writeStencil(sBuffer, x, sMask, zMask, cMask, samples);
 		}
 
 		If(depthPass || !earlyFragmentTests)
@@ -151,41 +140,41 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 			if(earlyFragmentTests)
 			{
 				writeDepth(zBuffer, x, zMask, samples);
+				occlusionSampleCount(zMask, sMask, samples);
 			}
 
-			Float4 yyyy = Float4(Float(y)) + *Pointer<Float4>(primitive + OFFSET(Primitive, yQuad), 16);
-
-			// Centroid locations
-			Float4 XXXX = Float4(0.0f);
-			Float4 YYYY = Float4(0.0f);
+			// TODO(b/236162233): Use SIMD::Float2
+			SIMD::Float xCentroid = 0.0f;
+			SIMD::Float yCentroid = 0.0f;
 
 			if(state.centroid || shaderContainsInterpolation)  // TODO(b/194714095)
 			{
-				Float4 WWWW(1.0e-9f);
+				SIMD::Float weight = 1.0e-9f;
 
 				for(unsigned int q : samples)
 				{
-					XXXX += *Pointer<Float4>(constants + OFFSET(Constants, sampleX[q]) + 16 * cMask[q]);
-					YYYY += *Pointer<Float4>(constants + OFFSET(Constants, sampleY[q]) + 16 * cMask[q]);
-					WWWW += *Pointer<Float4>(constants + OFFSET(Constants, weight) + 16 * cMask[q]);
+					ASSERT(SIMD::Width == 4);
+					xCentroid += SIMD::Float(*Pointer<Float4>(constants + OFFSET(Constants, sampleX[q]) + 16 * cMask[q]));
+					yCentroid += SIMD::Float(*Pointer<Float4>(constants + OFFSET(Constants, sampleY[q]) + 16 * cMask[q]));
+					weight += SIMD::Float(*Pointer<Float4>(constants + OFFSET(Constants, weight) + 16 * cMask[q]));
 				}
 
-				WWWW = Rcp(WWWW, Precision::Relaxed);
-				XXXX *= WWWW;
-				YYYY *= WWWW;
+				weight = Rcp(weight, true /* relaxedPrecision */);
+				xCentroid *= weight;
+				yCentroid *= weight;
 
-				XXXX += xxxx;
-				YYYY += yyyy;
+				xCentroid += xFragment;
+				yCentroid += yFragment;
 			}
 
 			if(interpolateW())
 			{
-				w = interpolate(xxxx, Dw, rhw, primitive + OFFSET(Primitive, w), false, false);
-				rhw = reciprocal(w, false, false, true);
+				w = interpolate(xFragment, Dw, rhw, primitive + OFFSET(Primitive, w), false, false);
+				rhw = reciprocal(w, false, true);
 
 				if(state.centroid || shaderContainsInterpolation)  // TODO(b/194714095)
 				{
-					rhwCentroid = reciprocal(SpirvRoutine::interpolateAtXY(XXXX, YYYY, rhwCentroid, primitive + OFFSET(Primitive, w), false, false));
+					rhwCentroid = reciprocal(SpirvRoutine::interpolateAtXY(xCentroid, yCentroid, rhwCentroid, primitive + OFFSET(Primitive, w), SpirvRoutine::Linear));
 				}
 			}
 
@@ -195,47 +184,53 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 				{
 					routine.interpolationData.primitive = primitive;
 
-					routine.interpolationData.x = xxxx;
-					routine.interpolationData.y = yyyy;
+					routine.interpolationData.x = xFragment;
+					routine.interpolationData.y = yFragment;
 					routine.interpolationData.rhw = rhw;
 
-					routine.interpolationData.xCentroid = XXXX;
-					routine.interpolationData.yCentroid = YYYY;
+					routine.interpolationData.xCentroid = xCentroid;
+					routine.interpolationData.yCentroid = yCentroid;
 					routine.interpolationData.rhwCentroid = rhwCentroid;
 				}
 
+				SIMD::Float xSample = xFragment;
+				SIMD::Float ySample = yFragment;
+
 				if(perSampleShading && (state.multiSampleCount > 1))
 				{
-					xxxx += Float4(Constants::SampleLocationsX[samples[0]]);
-					yyyy += Float4(Constants::SampleLocationsY[samples[0]]);
+					xSample += SampleLocationsX[samples[0]];
+					ySample += SampleLocationsY[samples[0]];
 				}
 
-				for(int interpolant = 0; interpolant < MAX_INTERFACE_COMPONENTS; interpolant++)
+				int packedInterpolant = 0;
+				for(int interfaceInterpolant = 0; interfaceInterpolant < MAX_INTERFACE_COMPONENTS; interfaceInterpolant++)
 				{
-					auto const &input = spirvShader->inputs[interpolant];
-					if(input.Type != SpirvShader::ATTRIBTYPE_UNUSED)
+					const auto &input = spirvShader->inputs[interfaceInterpolant];
+					if(input.Type != Spirv::ATTRIBTYPE_UNUSED)
 					{
+						routine.inputsInterpolation[packedInterpolant] = input.Flat ? SpirvRoutine::Flat : (input.NoPerspective ? SpirvRoutine::Linear : SpirvRoutine::Perspective);
 						if(input.Centroid && state.enableMultiSampling)
 						{
-							routine.inputs[interpolant] =
-							    SpirvRoutine::interpolateAtXY(XXXX, YYYY, rhwCentroid,
-							                                  primitive + OFFSET(Primitive, V[interpolant]),
-							                                  input.Flat, !input.NoPerspective);
+							routine.inputs[interfaceInterpolant] =
+							    SpirvRoutine::interpolateAtXY(xCentroid, yCentroid, rhwCentroid,
+							                                  primitive + OFFSET(Primitive, V[packedInterpolant]),
+							                                  routine.inputsInterpolation[packedInterpolant]);
 						}
 						else if(perSampleShading)
 						{
-							routine.inputs[interpolant] =
-							    SpirvRoutine::interpolateAtXY(xxxx, yyyy, rhw,
-							                                  primitive + OFFSET(Primitive, V[interpolant]),
-							                                  input.Flat, !input.NoPerspective);
+							routine.inputs[interfaceInterpolant] =
+							    SpirvRoutine::interpolateAtXY(xSample, ySample, rhw,
+							                                  primitive + OFFSET(Primitive, V[packedInterpolant]),
+							                                  routine.inputsInterpolation[packedInterpolant]);
 						}
 						else
 						{
-							routine.inputs[interpolant] =
-							    interpolate(xxxx, Dv[interpolant], rhw,
-							                primitive + OFFSET(Primitive, V[interpolant]),
+							routine.inputs[interfaceInterpolant] =
+							    interpolate(xFragment, Dv[interfaceInterpolant], rhw,
+							                primitive + OFFSET(Primitive, V[packedInterpolant]),
 							                input.Flat, !input.NoPerspective);
 						}
+						packedInterpolant++;
 					}
 				}
 
@@ -243,7 +238,7 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 
 				for(uint32_t i = 0; i < state.numClipDistances; i++)
 				{
-					auto distance = interpolate(xxxx, DclipDistance[i], rhw,
+					auto distance = interpolate(xFragment, DclipDistance[i], rhw,
 					                            primitive + OFFSET(Primitive, clipDistance[i]),
 					                            false, true);
 
@@ -279,7 +274,7 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 							if(i < it->second.SizeInComponents)
 							{
 								routine.getVariable(it->second.Id)[it->second.FirstComponent + i] =
-								    interpolate(xxxx, DcullDistance[i], rhw,
+								    interpolate(xFragment, DcullDistance[i], rhw,
 								                primitive + OFFSET(Primitive, cullDistance[i]),
 								                false, true);
 							}
@@ -295,7 +290,7 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 
 			Bool alphaPass = alphaTest(cMask, samples);
 
-			if((spirvShader && spirvShader->getModes().ContainsKill) || state.alphaToCoverage)
+			if((spirvShader && spirvShader->coverageModified()) || state.alphaToCoverage)
 			{
 				for(unsigned int q : samples)
 				{
@@ -310,6 +305,7 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 				{
 					for(unsigned int q : samples)
 					{
+						z[q] = clampDepth(z[q]);
 						depthPass = depthPass || depthTest(zBuffer, q, x, z[q], sMask[q], zMask[q], cMask[q]);
 						depthBoundsTest(zBuffer, q, x, zMask[q], cMask[q]);
 					}
@@ -320,16 +316,18 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBu
 					if(!earlyFragmentTests)
 					{
 						writeDepth(zBuffer, x, zMask, samples);
+						occlusionSampleCount(zMask, sMask, samples);
 					}
 
-					rasterOperation(cBuffer, x, sMask, zMask, cMask, samples);
-
-					occlusionSampleCount(zMask, sMask, samples);
+					blendColor(cBuffer, x, sMask, zMask, cMask, samples);
 				}
 			}
 		}
 
-		writeStencil(sBuffer, x, sMask, zMask, cMask, samples);
+		if(!earlyFragmentTests)
+		{
+			writeStencil(sBuffer, x, sMask, zMask, cMask, samples);
+		}
 	}
 }
 
@@ -356,14 +354,14 @@ void PixelRoutine::stencilTest(const Pointer<Byte> &sBuffer, const Int &x, Int s
 		value = value | (*Pointer<Byte8>(buffer + pitch - 2) & Byte8(0, 0, -1, -1, 0, 0, 0, 0));
 		Byte8 valueBack = value;
 
-		if(state.frontStencil.compareMask != 0xff)
+		if(state.frontStencil.useCompareMask)
 		{
 			value &= *Pointer<Byte8>(data + OFFSET(DrawData, stencil[0].testMaskQ));
 		}
 
 		stencilTest(value, state.frontStencil.compareOp, false);
 
-		if(state.backStencil.compareMask != 0xff)
+		if(state.backStencil.useCompareMask)
 		{
 			valueBack &= *Pointer<Byte8>(data + OFFSET(DrawData, stencil[1].testMaskQ));
 		}
@@ -424,10 +422,9 @@ void PixelRoutine::stencilTest(Byte8 &value, VkCompareOp stencilCompareMode, boo
 	}
 }
 
-Bool PixelRoutine::depthTest32F(const Pointer<Byte> &zBuffer, int q, const Int &x, const Float4 &z, const Int &sMask, Int &zMask, const Int &cMask)
+SIMD::Float PixelRoutine::readDepth32F(const Pointer<Byte> &zBuffer, int q, const Int &x) const
 {
-	Float4 Z = z;
-
+	ASSERT(SIMD::Width == 4);
 	Pointer<Byte> buffer = zBuffer + 4 * x;
 	Int pitch = *Pointer<Int>(data + OFFSET(DrawData, depthPitchB));
 
@@ -436,14 +433,68 @@ Bool PixelRoutine::depthTest32F(const Pointer<Byte> &zBuffer, int q, const Int &
 		buffer += q * *Pointer<Int>(data + OFFSET(DrawData, depthSliceB));
 	}
 
-	Float4 zValue;
+	Float4 zValue = Float4(*Pointer<Float2>(buffer), *Pointer<Float2>(buffer + pitch));
+	return SIMD::Float(zValue);
+}
+
+SIMD::Float PixelRoutine::readDepth16(const Pointer<Byte> &zBuffer, int q, const Int &x) const
+{
+	ASSERT(SIMD::Width == 4);
+	Pointer<Byte> buffer = zBuffer + 2 * x;
+	Int pitch = *Pointer<Int>(data + OFFSET(DrawData, depthPitchB));
+
+	if(q > 0)
+	{
+		buffer += q * *Pointer<Int>(data + OFFSET(DrawData, depthSliceB));
+	}
+
+	UShort4 zValue16;
+	zValue16 = As<UShort4>(Insert(As<Int2>(zValue16), *Pointer<Int>(buffer), 0));
+	zValue16 = As<UShort4>(Insert(As<Int2>(zValue16), *Pointer<Int>(buffer + pitch), 1));
+	Float4 zValue = Float4(zValue16);
+	return SIMD::Float(zValue);
+}
+
+SIMD::Float PixelRoutine::clampDepth(const SIMD::Float &z)
+{
+	if(!state.depthClamp)
+	{
+		return z;
+	}
+
+	return Min(Max(z, state.minDepthClamp), state.maxDepthClamp);
+}
+
+Bool PixelRoutine::depthTest(const Pointer<Byte> &zBuffer, int q, const Int &x, const SIMD::Float &z, const Int &sMask, Int &zMask, const Int &cMask)
+{
+	if(!state.depthTestActive)
+	{
+		return true;
+	}
+
+	SIMD::Float Z;
+	SIMD::Float zValue;
 
 	if(state.depthCompareMode != VK_COMPARE_OP_NEVER || (state.depthCompareMode != VK_COMPARE_OP_ALWAYS && !state.depthWriteEnable))
 	{
-		zValue = Float4(*Pointer<Float2>(buffer), *Pointer<Float2>(buffer + pitch));
+		switch(state.depthFormat)
+		{
+		case VK_FORMAT_D16_UNORM:
+			Z = Min(Max(Round(z * 0xFFFF), 0.0f), 0xFFFF);
+			zValue = readDepth16(zBuffer, q, x);
+			break;
+		case VK_FORMAT_D32_SFLOAT:
+		case VK_FORMAT_D32_SFLOAT_S8_UINT:
+			Z = z;
+			zValue = readDepth32F(zBuffer, q, x);
+			break;
+		default:
+			UNSUPPORTED("Depth format: %d", int(state.depthFormat));
+			return false;
+		}
 	}
 
-	Int4 zTest;
+	SIMD::Int zTest;
 
 	switch(state.depthCompareMode)
 	{
@@ -496,100 +547,6 @@ Bool PixelRoutine::depthTest32F(const Pointer<Byte> &zBuffer, int q, const Int &
 	return zMask != 0;
 }
 
-Bool PixelRoutine::depthTest16(const Pointer<Byte> &zBuffer, int q, const Int &x, const Float4 &z, const Int &sMask, Int &zMask, const Int &cMask)
-{
-	Short4 Z = convertFixed16(z, true);
-
-	Pointer<Byte> buffer = zBuffer + 2 * x;
-	Int pitch = *Pointer<Int>(data + OFFSET(DrawData, depthPitchB));
-
-	if(q > 0)
-	{
-		buffer += q * *Pointer<Int>(data + OFFSET(DrawData, depthSliceB));
-	}
-
-	Short4 zValue;
-
-	if(state.depthCompareMode != VK_COMPARE_OP_NEVER || (state.depthCompareMode != VK_COMPARE_OP_ALWAYS && !state.depthWriteEnable))
-	{
-		zValue = As<Short4>(Insert(As<Int2>(zValue), *Pointer<Int>(buffer), 0));
-		zValue = As<Short4>(Insert(As<Int2>(zValue), *Pointer<Int>(buffer + pitch), 1));
-	}
-
-	Int4 zTest;
-
-	// Bias values to make unsigned compares out of Reactor's (due SSE's) signed compares only
-	zValue = zValue - Short4(0x8000u);
-	Z = Z - Short4(0x8000u);
-
-	switch(state.depthCompareMode)
-	{
-	case VK_COMPARE_OP_ALWAYS:
-		// Optimized
-		break;
-	case VK_COMPARE_OP_NEVER:
-		// Optimized
-		break;
-	case VK_COMPARE_OP_EQUAL:
-		zTest = Int4(CmpEQ(zValue, Z));
-		break;
-	case VK_COMPARE_OP_NOT_EQUAL:
-		zTest = ~Int4(CmpEQ(zValue, Z));
-		break;
-	case VK_COMPARE_OP_LESS:
-		zTest = Int4(CmpGT(zValue, Z));
-		break;
-	case VK_COMPARE_OP_GREATER_OR_EQUAL:
-		zTest = ~Int4(CmpGT(zValue, Z));
-		break;
-	case VK_COMPARE_OP_LESS_OR_EQUAL:
-		zTest = ~Int4(CmpGT(Z, zValue));
-		break;
-	case VK_COMPARE_OP_GREATER:
-		zTest = Int4(CmpGT(Z, zValue));
-		break;
-	default:
-		UNSUPPORTED("VkCompareOp: %d", int(state.depthCompareMode));
-	}
-
-	switch(state.depthCompareMode)
-	{
-	case VK_COMPARE_OP_ALWAYS:
-		zMask = cMask;
-		break;
-	case VK_COMPARE_OP_NEVER:
-		zMask = 0x0;
-		break;
-	default:
-		zMask = SignMask(zTest) & cMask;
-		break;
-	}
-
-	if(state.stencilActive)
-	{
-		zMask &= sMask;
-	}
-
-	return zMask != 0;
-}
-
-Bool PixelRoutine::depthTest(const Pointer<Byte> &zBuffer, int q, const Int &x, const Float4 &z, const Int &sMask, Int &zMask, const Int &cMask)
-{
-	if(!state.depthTestActive)
-	{
-		return true;
-	}
-
-	if(state.depthFormat == VK_FORMAT_D16_UNORM)
-	{
-		return depthTest16(zBuffer, q, x, z, sMask, zMask, cMask);
-	}
-	else
-	{
-		return depthTest32F(zBuffer, q, x, z, sMask, zMask, cMask);
-	}
-}
-
 Int4 PixelRoutine::depthBoundsTest16(const Pointer<Byte> &zBuffer, int q, const Int &x)
 {
 	Pointer<Byte> buffer = zBuffer + 2 * x;
@@ -607,7 +564,7 @@ Int4 PixelRoutine::depthBoundsTest16(const Pointer<Byte> &zBuffer, int q, const 
 	z = Insert(z, *Pointer<Int>(buffer), 0);
 	z = Insert(z, *Pointer<Int>(buffer + pitch), 1);
 
-	Float4 zValue = convertFloat32(As<UShort4>(z));
+	Float4 zValue = Float4(As<UShort4>(z)) * (1.0f / 0xFFFF);
 	return Int4(CmpLE(minDepthBound, zValue) & CmpLE(zValue, maxDepthBound));
 }
 
@@ -622,27 +579,42 @@ Int4 PixelRoutine::depthBoundsTest32F(const Pointer<Byte> &zBuffer, int q, const
 	}
 
 	Float4 zValue = Float4(*Pointer<Float2>(buffer), *Pointer<Float2>(buffer + pitch));
-	return Int4(CmpLE(Float4(state.minDepthBounds), zValue) & CmpLE(zValue, Float4(state.maxDepthBounds)));
+	return Int4(CmpLE(state.minDepthBounds, zValue) & CmpLE(zValue, state.maxDepthBounds));
 }
 
 void PixelRoutine::depthBoundsTest(const Pointer<Byte> &zBuffer, int q, const Int &x, Int &zMask, Int &cMask)
 {
-	if(state.depthBoundsTestActive)
+	if(!state.depthBoundsTestActive)
 	{
-		Int4 zTest = (state.depthFormat == VK_FORMAT_D16_UNORM) ? depthBoundsTest16(zBuffer, q, x) : depthBoundsTest32F(zBuffer, q, x);
+		return;
+	}
 
-		if(!state.depthTestActive)
-		{
-			cMask &= zMask & SignMask(zTest);
-		}
-		else
-		{
-			zMask &= cMask & SignMask(zTest);
-		}
+	Int4 zTest;
+	switch(state.depthFormat)
+	{
+	case VK_FORMAT_D16_UNORM:
+		zTest = depthBoundsTest16(zBuffer, q, x);
+		break;
+	case VK_FORMAT_D32_SFLOAT:
+	case VK_FORMAT_D32_SFLOAT_S8_UINT:
+		zTest = depthBoundsTest32F(zBuffer, q, x);
+		break;
+	default:
+		UNSUPPORTED("Depth format: %d", int(state.depthFormat));
+		break;
+	}
+
+	if(!state.depthTestActive)
+	{
+		cMask &= zMask & SignMask(zTest);
+	}
+	else
+	{
+		zMask &= cMask & SignMask(zTest);
 	}
 }
 
-void PixelRoutine::alphaToCoverage(Int cMask[4], const Float4 &alpha, const SampleSet &samples)
+void PixelRoutine::alphaToCoverage(Int cMask[4], const SIMD::Float &alpha, const SampleSet &samples)
 {
 	static const int a2c[4] = {
 		OFFSET(DrawData, a2c0),
@@ -653,7 +625,7 @@ void PixelRoutine::alphaToCoverage(Int cMask[4], const Float4 &alpha, const Samp
 
 	for(unsigned int q : samples)
 	{
-		Int4 coverage = CmpNLT(alpha, *Pointer<Float4>(data + a2c[q]));
+		SIMD::Int coverage = CmpNLT(alpha, SIMD::Float(*Pointer<Float>(data + a2c[q])));
 		Int aMask = SignMask(coverage);
 		cMask[q] &= aMask;
 	}
@@ -688,7 +660,7 @@ void PixelRoutine::writeDepth32F(Pointer<Byte> &zBuffer, int q, const Int &x, co
 
 void PixelRoutine::writeDepth16(Pointer<Byte> &zBuffer, int q, const Int &x, const Float4 &z, const Int &zMask)
 {
-	Short4 Z = As<Short4>(convertFixed16(z, true));
+	Short4 Z = UShort4(Round(z * 0xFFFF), true);
 
 	Pointer<Byte> buffer = zBuffer + 2 * x;
 	Int pitch = *Pointer<Int>(data + OFFSET(DrawData, depthPitchB));
@@ -723,17 +695,20 @@ void PixelRoutine::writeDepth(Pointer<Byte> &zBuffer, const Int &x, const Int zM
 
 	for(unsigned int q : samples)
 	{
-		if(state.depthFormat == VK_FORMAT_D16_UNORM)
+		ASSERT(SIMD::Width == 4);
+		switch(state.depthFormat)
 		{
-			writeDepth16(zBuffer, q, x, z[q], zMask[q]);
-		}
-		else if(state.depthFormat == VK_FORMAT_D32_SFLOAT ||
-		        state.depthFormat == VK_FORMAT_D32_SFLOAT_S8_UINT)
-		{
-			writeDepth32F(zBuffer, q, x, z[q], zMask[q]);
-		}
-		else
+		case VK_FORMAT_D16_UNORM:
+			writeDepth16(zBuffer, q, x, Extract128(z[q], 0), zMask[q]);
+			break;
+		case VK_FORMAT_D32_SFLOAT:
+		case VK_FORMAT_D32_SFLOAT_S8_UINT:
+			writeDepth32F(zBuffer, q, x, Extract128(z[q], 0), zMask[q]);
+			break;
+		default:
 			UNSUPPORTED("Depth format: %d", int(state.depthFormat));
+			break;
+		}
 	}
 }
 
@@ -765,7 +740,7 @@ void PixelRoutine::writeStencil(Pointer<Byte> &sBuffer, const Int &x, const Int 
 		}
 	}
 
-	if((state.frontStencil.writeMask == 0) && (state.backStencil.writeMask == 0))
+	if(!state.frontStencil.writeEnabled && !state.backStencil.writeEnabled)
 	{
 		return;
 	}
@@ -782,10 +757,9 @@ void PixelRoutine::writeStencil(Pointer<Byte> &sBuffer, const Int &x, const Int 
 		Int pitch = *Pointer<Int>(data + OFFSET(DrawData, stencilPitchB));
 		Byte8 bufferValue = *Pointer<Byte8>(buffer) & Byte8(-1, -1, 0, 0, 0, 0, 0, 0);
 		bufferValue = bufferValue | (*Pointer<Byte8>(buffer + pitch - 2) & Byte8(0, 0, -1, -1, 0, 0, 0, 0));
-		Byte8 newValue;
-		stencilOperation(newValue, bufferValue, state.frontStencil, false, zMask[q], sMask[q]);
+		Byte8 newValue = stencilOperation(bufferValue, state.frontStencil, false, zMask[q], sMask[q]);
 
-		if((state.frontStencil.writeMask & 0xFF) != 0xFF)  // Assume 8-bit stencil buffer
+		if(state.frontStencil.useWriteMask)  // Assume 8-bit stencil buffer
 		{
 			Byte8 maskedValue = bufferValue;
 			newValue &= *Pointer<Byte8>(data + OFFSET(DrawData, stencil[0].writeMaskQ));
@@ -793,11 +767,9 @@ void PixelRoutine::writeStencil(Pointer<Byte> &sBuffer, const Int &x, const Int 
 			newValue |= maskedValue;
 		}
 
-		Byte8 newValueBack;
+		Byte8 newValueBack = stencilOperation(bufferValue, state.backStencil, true, zMask[q], sMask[q]);
 
-		stencilOperation(newValueBack, bufferValue, state.backStencil, true, zMask[q], sMask[q]);
-
-		if((state.backStencil.writeMask & 0xFF) != 0xFF)  // Assume 8-bit stencil buffer
+		if(state.backStencil.useWriteMask)  // Assume 8-bit stencil buffer
 		{
 			Byte8 maskedValue = bufferValue;
 			newValueBack &= *Pointer<Byte8>(data + OFFSET(DrawData, stencil[1].writeMaskQ));
@@ -818,229 +790,94 @@ void PixelRoutine::writeStencil(Pointer<Byte> &sBuffer, const Int &x, const Int 
 	}
 }
 
-void PixelRoutine::stencilOperation(Byte8 &newValue, const Byte8 &bufferValue, const PixelProcessor::States::StencilOpState &ops, bool isBack, const Int &zMask, const Int &sMask)
+Byte8 PixelRoutine::stencilOperation(const Byte8 &bufferValue, const PixelProcessor::States::StencilOpState &ops, bool isBack, const Int &zMask, const Int &sMask)
 {
-	Byte8 &pass = newValue;
-	Byte8 fail;
-	Byte8 zFail;
+	Byte8 pass = stencilOperation(bufferValue, ops.passOp, isBack);
 
-	stencilOperation(pass, bufferValue, ops.passOp, isBack);
-
-	if(ops.depthFailOp != ops.passOp)
+	if(state.depthTestActive && ops.depthFailOp != ops.passOp)  // zMask valid and values not the same
 	{
-		stencilOperation(zFail, bufferValue, ops.depthFailOp, isBack);
+		Byte8 zFail = stencilOperation(bufferValue, ops.depthFailOp, isBack);
+
+		pass &= *Pointer<Byte8>(constants + OFFSET(Constants, maskB4Q) + 8 * zMask);
+		zFail &= *Pointer<Byte8>(constants + OFFSET(Constants, invMaskB4Q) + 8 * zMask);
+		pass |= zFail;
 	}
 
-	if(ops.failOp != ops.passOp || ops.failOp != ops.depthFailOp)
+	if(ops.failOp != ops.passOp || (state.depthTestActive && ops.failOp != ops.depthFailOp))
 	{
-		stencilOperation(fail, bufferValue, ops.failOp, isBack);
-	}
-
-	if(ops.failOp != ops.passOp || ops.failOp != ops.depthFailOp)
-	{
-		if(state.depthTestActive && ops.depthFailOp != ops.passOp)  // zMask valid and values not the same
-		{
-			pass &= *Pointer<Byte8>(constants + OFFSET(Constants, maskB4Q) + 8 * zMask);
-			zFail &= *Pointer<Byte8>(constants + OFFSET(Constants, invMaskB4Q) + 8 * zMask);
-			pass |= zFail;
-		}
+		Byte8 fail = stencilOperation(bufferValue, ops.failOp, isBack);
 
 		pass &= *Pointer<Byte8>(constants + OFFSET(Constants, maskB4Q) + 8 * sMask);
 		fail &= *Pointer<Byte8>(constants + OFFSET(Constants, invMaskB4Q) + 8 * sMask);
 		pass |= fail;
 	}
+
+	return pass;
 }
 
-Byte8 PixelRoutine::stencilReplaceRef(bool isBack)
+bool PixelRoutine::hasStencilReplaceRef() const
 {
-	if(spirvShader)
-	{
-		auto it = spirvShader->outputBuiltins.find(spv::BuiltInFragStencilRefEXT);
-		if(it != spirvShader->outputBuiltins.end())
-		{
-			UInt4 sRef = As<UInt4>(routine.getVariable(it->second.Id)[it->second.FirstComponent]) & UInt4(0xff);
-			// TODO (b/148295813): Could be done with a single pshufb instruction. Optimize the
-			//                     following line by either adding a rr::Shuffle() variant to do
-			//                     it explicitly or adding a Byte4(Int4) constructor would work.
-			sRef.x = rr::UInt(sRef.x) | (rr::UInt(sRef.y) << 8) | (rr::UInt(sRef.z) << 16) | (rr::UInt(sRef.w) << 24);
+	return spirvShader &&
+	       (spirvShader->outputBuiltins.find(spv::BuiltInFragStencilRefEXT) !=
+	        spirvShader->outputBuiltins.end());
+}
 
-			UInt2 sRefDuplicated;
-			sRefDuplicated = Insert(sRefDuplicated, sRef.x, 0);
-			sRefDuplicated = Insert(sRefDuplicated, sRef.x, 1);
-			return As<Byte8>(sRefDuplicated);
+Byte8 PixelRoutine::stencilReplaceRef()
+{
+	ASSERT(spirvShader);
+
+	auto it = spirvShader->outputBuiltins.find(spv::BuiltInFragStencilRefEXT);
+	ASSERT(it != spirvShader->outputBuiltins.end());
+
+	UInt4 sRef = As<UInt4>(routine.getVariable(it->second.Id)[it->second.FirstComponent]) & UInt4(0xff);
+	// TODO (b/148295813): Could be done with a single pshufb instruction. Optimize the
+	//                     following line by either adding a rr::Shuffle() variant to do
+	//                     it explicitly or adding a Byte4(Int4) constructor would work.
+	sRef.x = rr::UInt(sRef.x) | (rr::UInt(sRef.y) << 8) | (rr::UInt(sRef.z) << 16) | (rr::UInt(sRef.w) << 24);
+
+	UInt2 sRefDuplicated;
+	sRefDuplicated = Insert(sRefDuplicated, sRef.x, 0);
+	sRefDuplicated = Insert(sRefDuplicated, sRef.x, 1);
+	return As<Byte8>(sRefDuplicated);
+}
+
+Byte8 PixelRoutine::stencilOperation(const Byte8 &bufferValue, VkStencilOp operation, bool isBack)
+{
+	if(hasStencilReplaceRef())
+	{
+		return stencilReplaceRef();
+	}
+	else
+	{
+		switch(operation)
+		{
+		case VK_STENCIL_OP_KEEP:
+			return bufferValue;
+		case VK_STENCIL_OP_ZERO:
+			return Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+		case VK_STENCIL_OP_REPLACE:
+			return *Pointer<Byte8>(data + OFFSET(DrawData, stencil[isBack].referenceQ));
+		case VK_STENCIL_OP_INCREMENT_AND_CLAMP:
+			return AddSat(bufferValue, Byte8(1, 1, 1, 1, 1, 1, 1, 1));
+		case VK_STENCIL_OP_DECREMENT_AND_CLAMP:
+			return SubSat(bufferValue, Byte8(1, 1, 1, 1, 1, 1, 1, 1));
+		case VK_STENCIL_OP_INVERT:
+			return bufferValue ^ Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
+		case VK_STENCIL_OP_INCREMENT_AND_WRAP:
+			return bufferValue + Byte8(1, 1, 1, 1, 1, 1, 1, 1);
+		case VK_STENCIL_OP_DECREMENT_AND_WRAP:
+			return bufferValue - Byte8(1, 1, 1, 1, 1, 1, 1, 1);
+		default:
+			UNSUPPORTED("VkStencilOp: %d", int(operation));
 		}
 	}
 
-	return *Pointer<Byte8>(data + OFFSET(DrawData, stencil[isBack].referenceQ));
-}
-
-void PixelRoutine::stencilOperation(Byte8 &output, const Byte8 &bufferValue, VkStencilOp operation, bool isBack)
-{
-	switch(operation)
-	{
-	case VK_STENCIL_OP_KEEP:
-		output = bufferValue;
-		break;
-	case VK_STENCIL_OP_ZERO:
-		output = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-		break;
-	case VK_STENCIL_OP_REPLACE:
-		output = stencilReplaceRef(isBack);
-		break;
-	case VK_STENCIL_OP_INCREMENT_AND_CLAMP:
-		output = AddSat(bufferValue, Byte8(1, 1, 1, 1, 1, 1, 1, 1));
-		break;
-	case VK_STENCIL_OP_DECREMENT_AND_CLAMP:
-		output = SubSat(bufferValue, Byte8(1, 1, 1, 1, 1, 1, 1, 1));
-		break;
-	case VK_STENCIL_OP_INVERT:
-		output = bufferValue ^ Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
-		break;
-	case VK_STENCIL_OP_INCREMENT_AND_WRAP:
-		output = bufferValue + Byte8(1, 1, 1, 1, 1, 1, 1, 1);
-		break;
-	case VK_STENCIL_OP_DECREMENT_AND_WRAP:
-		output = bufferValue - Byte8(1, 1, 1, 1, 1, 1, 1, 1);
-		break;
-	default:
-		UNSUPPORTED("VkStencilOp: %d", int(operation));
-	}
-}
-
-void PixelRoutine::blendFactor(Vector4s &blendFactor, const Vector4s &current, const Vector4s &pixel, VkBlendFactor blendFactorActive)
-{
-	switch(blendFactorActive)
-	{
-	case VK_BLEND_FACTOR_ZERO:
-		// Optimized
-		break;
-	case VK_BLEND_FACTOR_ONE:
-		// Optimized
-		break;
-	case VK_BLEND_FACTOR_SRC_COLOR:
-		blendFactor.x = current.x;
-		blendFactor.y = current.y;
-		blendFactor.z = current.z;
-		break;
-	case VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
-		blendFactor.x = Short4(0xFFFFu) - current.x;
-		blendFactor.y = Short4(0xFFFFu) - current.y;
-		blendFactor.z = Short4(0xFFFFu) - current.z;
-		break;
-	case VK_BLEND_FACTOR_DST_COLOR:
-		blendFactor.x = pixel.x;
-		blendFactor.y = pixel.y;
-		blendFactor.z = pixel.z;
-		break;
-	case VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR:
-		blendFactor.x = Short4(0xFFFFu) - pixel.x;
-		blendFactor.y = Short4(0xFFFFu) - pixel.y;
-		blendFactor.z = Short4(0xFFFFu) - pixel.z;
-		break;
-	case VK_BLEND_FACTOR_SRC_ALPHA:
-		blendFactor.x = current.w;
-		blendFactor.y = current.w;
-		blendFactor.z = current.w;
-		break;
-	case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
-		blendFactor.x = Short4(0xFFFFu) - current.w;
-		blendFactor.y = Short4(0xFFFFu) - current.w;
-		blendFactor.z = Short4(0xFFFFu) - current.w;
-		break;
-	case VK_BLEND_FACTOR_DST_ALPHA:
-		blendFactor.x = pixel.w;
-		blendFactor.y = pixel.w;
-		blendFactor.z = pixel.w;
-		break;
-	case VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
-		blendFactor.x = Short4(0xFFFFu) - pixel.w;
-		blendFactor.y = Short4(0xFFFFu) - pixel.w;
-		blendFactor.z = Short4(0xFFFFu) - pixel.w;
-		break;
-	case VK_BLEND_FACTOR_SRC_ALPHA_SATURATE:
-		blendFactor.x = Short4(0xFFFFu) - pixel.w;
-		blendFactor.x = Min(As<UShort4>(blendFactor.x), As<UShort4>(current.w));
-		blendFactor.y = blendFactor.x;
-		blendFactor.z = blendFactor.x;
-		break;
-	case VK_BLEND_FACTOR_CONSTANT_COLOR:
-		blendFactor.x = *Pointer<Short4>(data + OFFSET(DrawData, factor.blendConstant4W[0]));
-		blendFactor.y = *Pointer<Short4>(data + OFFSET(DrawData, factor.blendConstant4W[1]));
-		blendFactor.z = *Pointer<Short4>(data + OFFSET(DrawData, factor.blendConstant4W[2]));
-		break;
-	case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
-		blendFactor.x = *Pointer<Short4>(data + OFFSET(DrawData, factor.invBlendConstant4W[0]));
-		blendFactor.y = *Pointer<Short4>(data + OFFSET(DrawData, factor.invBlendConstant4W[1]));
-		blendFactor.z = *Pointer<Short4>(data + OFFSET(DrawData, factor.invBlendConstant4W[2]));
-		break;
-	case VK_BLEND_FACTOR_CONSTANT_ALPHA:
-		blendFactor.x = *Pointer<Short4>(data + OFFSET(DrawData, factor.blendConstant4W[3]));
-		blendFactor.y = *Pointer<Short4>(data + OFFSET(DrawData, factor.blendConstant4W[3]));
-		blendFactor.z = *Pointer<Short4>(data + OFFSET(DrawData, factor.blendConstant4W[3]));
-		break;
-	case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
-		blendFactor.x = *Pointer<Short4>(data + OFFSET(DrawData, factor.invBlendConstant4W[3]));
-		blendFactor.y = *Pointer<Short4>(data + OFFSET(DrawData, factor.invBlendConstant4W[3]));
-		blendFactor.z = *Pointer<Short4>(data + OFFSET(DrawData, factor.invBlendConstant4W[3]));
-		break;
-	default:
-		UNSUPPORTED("VkBlendFactor: %d", int(blendFactorActive));
-	}
-}
-
-void PixelRoutine::blendFactorAlpha(Vector4s &blendFactor, const Vector4s &current, const Vector4s &pixel, VkBlendFactor blendFactorAlphaActive)
-{
-	switch(blendFactorAlphaActive)
-	{
-	case VK_BLEND_FACTOR_ZERO:
-		// Optimized
-		break;
-	case VK_BLEND_FACTOR_ONE:
-		// Optimized
-		break;
-	case VK_BLEND_FACTOR_SRC_COLOR:
-		blendFactor.w = current.w;
-		break;
-	case VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
-		blendFactor.w = Short4(0xFFFFu) - current.w;
-		break;
-	case VK_BLEND_FACTOR_DST_COLOR:
-		blendFactor.w = pixel.w;
-		break;
-	case VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR:
-		blendFactor.w = Short4(0xFFFFu) - pixel.w;
-		break;
-	case VK_BLEND_FACTOR_SRC_ALPHA:
-		blendFactor.w = current.w;
-		break;
-	case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
-		blendFactor.w = Short4(0xFFFFu) - current.w;
-		break;
-	case VK_BLEND_FACTOR_DST_ALPHA:
-		blendFactor.w = pixel.w;
-		break;
-	case VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
-		blendFactor.w = Short4(0xFFFFu) - pixel.w;
-		break;
-	case VK_BLEND_FACTOR_SRC_ALPHA_SATURATE:
-		blendFactor.w = Short4(0xFFFFu);
-		break;
-	case VK_BLEND_FACTOR_CONSTANT_COLOR:
-	case VK_BLEND_FACTOR_CONSTANT_ALPHA:
-		blendFactor.w = *Pointer<Short4>(data + OFFSET(DrawData, factor.blendConstant4W[3]));
-		break;
-	case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
-	case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
-		blendFactor.w = *Pointer<Short4>(data + OFFSET(DrawData, factor.invBlendConstant4W[3]));
-		break;
-	default:
-		UNSUPPORTED("VkBlendFactor: %d", int(blendFactorAlphaActive));
-	}
+	return Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
 bool PixelRoutine::isSRGB(int index) const
 {
-	return vk::Format(state.targetFormat[index]).isSRGBformat();
+	return vk::Format(state.colorFormat[index]).isSRGBformat();
 }
 
 void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int &x, Vector4s &pixel)
@@ -1052,8 +889,125 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 
 	Int pitchB = *Pointer<Int>(data + OFFSET(DrawData, colorPitchB[index]));
 
-	switch(state.targetFormat[index])
+	vk::Format format = state.colorFormat[index];
+	switch(format)
 	{
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+		buffer += 2 * x;
+		buffer2 = buffer + pitchB;
+		c01 = As<Short4>(Int2(*Pointer<Int>(buffer), *Pointer<Int>(buffer2)));
+
+		pixel.x = (c01 & Short4(0xF000u));
+		pixel.y = (c01 & Short4(0x0F00u)) << 4;
+		pixel.z = (c01 & Short4(0x00F0u)) << 8;
+		pixel.w = (c01 & Short4(0x000Fu)) << 12;
+
+		// Expand to 16 bit range
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 4);
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 8);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 4);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 8);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 4);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 8);
+		pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 4);
+		pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 8);
+		break;
+	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+		buffer += 2 * x;
+		buffer2 = buffer + pitchB;
+		c01 = As<Short4>(Int2(*Pointer<Int>(buffer), *Pointer<Int>(buffer2)));
+
+		pixel.z = (c01 & Short4(0xF000u));
+		pixel.y = (c01 & Short4(0x0F00u)) << 4;
+		pixel.x = (c01 & Short4(0x00F0u)) << 8;
+		pixel.w = (c01 & Short4(0x000Fu)) << 12;
+
+		// Expand to 16 bit range
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 4);
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 8);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 4);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 8);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 4);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 8);
+		pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 4);
+		pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 8);
+		break;
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
+		buffer += 2 * x;
+		buffer2 = buffer + pitchB;
+		c01 = As<Short4>(Int2(*Pointer<Int>(buffer), *Pointer<Int>(buffer2)));
+
+		pixel.w = (c01 & Short4(0xF000u));
+		pixel.z = (c01 & Short4(0x0F00u)) << 4;
+		pixel.y = (c01 & Short4(0x00F0u)) << 8;
+		pixel.x = (c01 & Short4(0x000Fu)) << 12;
+
+		// Expand to 16 bit range
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 4);
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 8);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 4);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 8);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 4);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 8);
+		pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 4);
+		pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 8);
+		break;
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+		buffer += 2 * x;
+		buffer2 = buffer + pitchB;
+		c01 = As<Short4>(Int2(*Pointer<Int>(buffer), *Pointer<Int>(buffer2)));
+
+		pixel.w = (c01 & Short4(0xF000u));
+		pixel.x = (c01 & Short4(0x0F00u)) << 4;
+		pixel.y = (c01 & Short4(0x00F0u)) << 8;
+		pixel.z = (c01 & Short4(0x000Fu)) << 12;
+
+		// Expand to 16 bit range
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 4);
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 8);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 4);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 8);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 4);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 8);
+		pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 4);
+		pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 8);
+		break;
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+		buffer += 2 * x;
+		buffer2 = buffer + pitchB;
+		c01 = As<Short4>(Int2(*Pointer<Int>(buffer), *Pointer<Int>(buffer2)));
+
+		pixel.x = (c01 & Short4(0xF800u));
+		pixel.y = (c01 & Short4(0x07C0u)) << 5;
+		pixel.z = (c01 & Short4(0x003Eu)) << 10;
+		pixel.w = ((c01 & Short4(0x0001u)) << 15) >> 15;
+
+		// Expand to 16 bit range
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 5);
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 10);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 5);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 10);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 5);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 10);
+		break;
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
+		buffer += 2 * x;
+		buffer2 = buffer + pitchB;
+		c01 = As<Short4>(Int2(*Pointer<Int>(buffer), *Pointer<Int>(buffer2)));
+
+		pixel.z = (c01 & Short4(0xF800u));
+		pixel.y = (c01 & Short4(0x07C0u)) << 5;
+		pixel.x = (c01 & Short4(0x003Eu)) << 10;
+		pixel.w = ((c01 & Short4(0x0001u)) << 15) >> 15;
+
+		// Expand to 16 bit range
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 5);
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 10);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 5);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 10);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 5);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 10);
+		break;
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 		buffer += 2 * x;
 		buffer2 = buffer + pitchB;
@@ -1080,6 +1034,24 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 		pixel.x = c01 & Short4(0xF800u);
 		pixel.y = (c01 & Short4(0x07E0u)) << 5;
 		pixel.z = (c01 & Short4(0x001Fu)) << 11;
+		pixel.w = Short4(0xFFFFu);
+
+		// Expand to 16 bit range
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 5);
+		pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 10);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 6);
+		pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 12);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 5);
+		pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 10);
+		break;
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+		buffer += 2 * x;
+		buffer2 = buffer + pitchB;
+		c01 = As<Short4>(Int2(*Pointer<Int>(buffer), *Pointer<Int>(buffer2)));
+
+		pixel.z = c01 & Short4(0xF800u);
+		pixel.y = (c01 & Short4(0x07E0u)) << 5;
+		pixel.x = (c01 & Short4(0x001Fu)) << 11;
 		pixel.w = Short4(0xFFFFu);
 
 		// Expand to 16 bit range
@@ -1150,29 +1122,6 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 		pixel.z = Short4(0x0000u);
 		pixel.w = Short4(0xFFFFu);
 		break;
-	case VK_FORMAT_R16G16B16A16_UNORM:
-		buffer += 8 * x;
-		pixel.x = *Pointer<Short4>(buffer + 0);
-		pixel.y = *Pointer<Short4>(buffer + 8);
-		buffer += pitchB;
-		pixel.z = *Pointer<Short4>(buffer + 0);
-		pixel.w = *Pointer<Short4>(buffer + 8);
-		transpose4x4(pixel.x, pixel.y, pixel.z, pixel.w);
-		break;
-	case VK_FORMAT_R16G16_UNORM:
-		buffer += 4 * x;
-		pixel.x = *Pointer<Short4>(buffer);
-		buffer += pitchB;
-		pixel.y = *Pointer<Short4>(buffer);
-		pixel.z = pixel.x;
-		pixel.x = As<Short4>(UnpackLow(pixel.x, pixel.y));
-		pixel.z = As<Short4>(UnpackHigh(pixel.z, pixel.y));
-		pixel.y = pixel.z;
-		pixel.x = As<Short4>(UnpackLow(pixel.x, pixel.z));
-		pixel.y = As<Short4>(UnpackHigh(pixel.y, pixel.z));
-		pixel.z = Short4(0xFFFFu);
-		pixel.w = Short4(0xFFFFu);
-		break;
 	case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
 		{
 			Int4 v = Int4(0);
@@ -1183,7 +1132,18 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 			v = Insert(v, *Pointer<Int>(buffer + 0), 2);
 			v = Insert(v, *Pointer<Int>(buffer + 4), 3);
 
-			pixel = a2b10g10r10Unpack(v);
+			pixel.x = Short4(v << 6) & Short4(0xFFC0u);
+			pixel.y = Short4(v >> 4) & Short4(0xFFC0u);
+			pixel.z = Short4(v >> 14) & Short4(0xFFC0u);
+			pixel.w = Short4(v >> 16) & Short4(0xC000u);
+
+			// Expand to 16 bit range
+			pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 10);
+			pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 10);
+			pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 10);
+			pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 2);
+			pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 4);
+			pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 8);
 		}
 		break;
 	case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
@@ -1195,137 +1155,27 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 			v = Insert(v, *Pointer<Int>(buffer + 4 * x), 2);
 			v = Insert(v, *Pointer<Int>(buffer + 4 * x + 4), 3);
 
-			pixel = a2r10g10b10Unpack(v);
+			pixel.x = Short4(v >> 14) & Short4(0xFFC0u);
+			pixel.y = Short4(v >> 4) & Short4(0xFFC0u);
+			pixel.z = Short4(v << 6) & Short4(0xFFC0u);
+			pixel.w = Short4(v >> 16) & Short4(0xC000u);
+
+			// Expand to 16 bit range
+			pixel.x |= As<Short4>(As<UShort4>(pixel.x) >> 10);
+			pixel.y |= As<Short4>(As<UShort4>(pixel.y) >> 10);
+			pixel.z |= As<Short4>(As<UShort4>(pixel.z) >> 10);
+			pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 2);
+			pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 4);
+			pixel.w |= As<Short4>(As<UShort4>(pixel.w) >> 8);
 		}
 		break;
 	default:
-		UNSUPPORTED("VkFormat %d", int(state.targetFormat[index]));
+		UNSUPPORTED("VkFormat %d", int(format));
 	}
 
 	if(isSRGB(index))
 	{
 		sRGBtoLinear16_12_16(pixel);
-	}
-}
-
-void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4s &current, const Int &x)
-{
-	if(!state.blendState[index].alphaBlendEnable)
-	{
-		return;
-	}
-
-	ASSERT(state.targetFormat[index].supportsColorAttachmentBlend());
-
-	Vector4s pixel;
-	readPixel(index, cBuffer, x, pixel);
-
-	// Final Color = ObjectColor * SourceBlendFactor + PixelColor * DestinationBlendFactor
-	Vector4s sourceFactor;
-	Vector4s destFactor;
-
-	blendFactor(sourceFactor, current, pixel, state.blendState[index].sourceBlendFactor);
-	blendFactor(destFactor, current, pixel, state.blendState[index].destBlendFactor);
-
-	if(state.blendState[index].sourceBlendFactor != VK_BLEND_FACTOR_ONE && state.blendState[index].sourceBlendFactor != VK_BLEND_FACTOR_ZERO)
-	{
-		current.x = MulHigh(As<UShort4>(current.x), As<UShort4>(sourceFactor.x));
-		current.y = MulHigh(As<UShort4>(current.y), As<UShort4>(sourceFactor.y));
-		current.z = MulHigh(As<UShort4>(current.z), As<UShort4>(sourceFactor.z));
-	}
-
-	if(state.blendState[index].destBlendFactor != VK_BLEND_FACTOR_ONE && state.blendState[index].destBlendFactor != VK_BLEND_FACTOR_ZERO)
-	{
-		pixel.x = MulHigh(As<UShort4>(pixel.x), As<UShort4>(destFactor.x));
-		pixel.y = MulHigh(As<UShort4>(pixel.y), As<UShort4>(destFactor.y));
-		pixel.z = MulHigh(As<UShort4>(pixel.z), As<UShort4>(destFactor.z));
-	}
-
-	switch(state.blendState[index].blendOperation)
-	{
-	case VK_BLEND_OP_ADD:
-		current.x = AddSat(As<UShort4>(current.x), As<UShort4>(pixel.x));
-		current.y = AddSat(As<UShort4>(current.y), As<UShort4>(pixel.y));
-		current.z = AddSat(As<UShort4>(current.z), As<UShort4>(pixel.z));
-		break;
-	case VK_BLEND_OP_SUBTRACT:
-		current.x = SubSat(As<UShort4>(current.x), As<UShort4>(pixel.x));
-		current.y = SubSat(As<UShort4>(current.y), As<UShort4>(pixel.y));
-		current.z = SubSat(As<UShort4>(current.z), As<UShort4>(pixel.z));
-		break;
-	case VK_BLEND_OP_REVERSE_SUBTRACT:
-		current.x = SubSat(As<UShort4>(pixel.x), As<UShort4>(current.x));
-		current.y = SubSat(As<UShort4>(pixel.y), As<UShort4>(current.y));
-		current.z = SubSat(As<UShort4>(pixel.z), As<UShort4>(current.z));
-		break;
-	case VK_BLEND_OP_MIN:
-		current.x = Min(As<UShort4>(current.x), As<UShort4>(pixel.x));
-		current.y = Min(As<UShort4>(current.y), As<UShort4>(pixel.y));
-		current.z = Min(As<UShort4>(current.z), As<UShort4>(pixel.z));
-		break;
-	case VK_BLEND_OP_MAX:
-		current.x = Max(As<UShort4>(current.x), As<UShort4>(pixel.x));
-		current.y = Max(As<UShort4>(current.y), As<UShort4>(pixel.y));
-		current.z = Max(As<UShort4>(current.z), As<UShort4>(pixel.z));
-		break;
-	case VK_BLEND_OP_SRC_EXT:
-		// No operation
-		break;
-	case VK_BLEND_OP_DST_EXT:
-		current.x = pixel.x;
-		current.y = pixel.y;
-		current.z = pixel.z;
-		break;
-	case VK_BLEND_OP_ZERO_EXT:
-		current.x = Short4(0x0000);
-		current.y = Short4(0x0000);
-		current.z = Short4(0x0000);
-		break;
-	default:
-		UNSUPPORTED("VkBlendOp: %d", int(state.blendState[index].blendOperation));
-	}
-
-	blendFactorAlpha(sourceFactor, current, pixel, state.blendState[index].sourceBlendFactorAlpha);
-	blendFactorAlpha(destFactor, current, pixel, state.blendState[index].destBlendFactorAlpha);
-
-	if(state.blendState[index].sourceBlendFactorAlpha != VK_BLEND_FACTOR_ONE && state.blendState[index].sourceBlendFactorAlpha != VK_BLEND_FACTOR_ZERO)
-	{
-		current.w = MulHigh(As<UShort4>(current.w), As<UShort4>(sourceFactor.w));
-	}
-
-	if(state.blendState[index].destBlendFactorAlpha != VK_BLEND_FACTOR_ONE && state.blendState[index].destBlendFactorAlpha != VK_BLEND_FACTOR_ZERO)
-	{
-		pixel.w = MulHigh(As<UShort4>(pixel.w), As<UShort4>(destFactor.w));
-	}
-
-	switch(state.blendState[index].blendOperationAlpha)
-	{
-	case VK_BLEND_OP_ADD:
-		current.w = AddSat(As<UShort4>(current.w), As<UShort4>(pixel.w));
-		break;
-	case VK_BLEND_OP_SUBTRACT:
-		current.w = SubSat(As<UShort4>(current.w), As<UShort4>(pixel.w));
-		break;
-	case VK_BLEND_OP_REVERSE_SUBTRACT:
-		current.w = SubSat(As<UShort4>(pixel.w), As<UShort4>(current.w));
-		break;
-	case VK_BLEND_OP_MIN:
-		current.w = Min(As<UShort4>(current.w), As<UShort4>(pixel.w));
-		break;
-	case VK_BLEND_OP_MAX:
-		current.w = Max(As<UShort4>(current.w), As<UShort4>(pixel.w));
-		break;
-	case VK_BLEND_OP_SRC_EXT:
-		// No operation
-		break;
-	case VK_BLEND_OP_DST_EXT:
-		current.w = pixel.w;
-		break;
-	case VK_BLEND_OP_ZERO_EXT:
-		current.w = Short4(0x0000);
-		break;
-	default:
-		UNSUPPORTED("VkBlendOp: %d", int(state.blendState[index].blendOperationAlpha));
 	}
 }
 
@@ -1336,7 +1186,8 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		linearToSRGB16_12_16(current);
 	}
 
-	switch(state.targetFormat[index])
+	vk::Format format = state.colorFormat[index];
+	switch(format)
 	{
 	case VK_FORMAT_B8G8R8A8_UNORM:
 	case VK_FORMAT_B8G8R8A8_SRGB:
@@ -1358,12 +1209,24 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		current.z = current.z - As<Short4>(As<UShort4>(current.z) >> 10) + Short4(0x0020);
 		current.w = current.w - As<Short4>(As<UShort4>(current.w) >> 2) + Short4(0x2000);
 		break;
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
+		current.x = current.x - As<Short4>(As<UShort4>(current.x) >> 4) + Short4(0x0800);
+		current.y = current.y - As<Short4>(As<UShort4>(current.y) >> 4) + Short4(0x0800);
+		current.z = current.z - As<Short4>(As<UShort4>(current.z) >> 4) + Short4(0x0800);
+		current.w = current.w - As<Short4>(As<UShort4>(current.w) >> 4) + Short4(0x0800);
+		break;
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 		current.x = current.x - As<Short4>(As<UShort4>(current.x) >> 5) + Short4(0x0400);
 		current.y = current.y - As<Short4>(As<UShort4>(current.y) >> 5) + Short4(0x0400);
 		current.z = current.z - As<Short4>(As<UShort4>(current.z) >> 5) + Short4(0x0400);
 		current.w = current.w - As<Short4>(As<UShort4>(current.w) >> 1) + Short4(0x4000);
 		break;
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
 	case VK_FORMAT_R5G6B5_UNORM_PACK16:
 		current.x = current.x - As<Short4>(As<UShort4>(current.x) >> 5) + Short4(0x0400);
 		current.y = current.y - As<Short4>(As<UShort4>(current.y) >> 6) + Short4(0x0200);
@@ -1373,11 +1236,75 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		break;
 	}
 
-	int rgbaWriteMask = state.colorWriteActive(index) & outputMasks[index];
-	int bgraWriteMask = (rgbaWriteMask & 0x0000000A) | (rgbaWriteMask & 0x00000001) << 2 | (rgbaWriteMask & 0x00000004) >> 2;
-
-	switch(state.targetFormat[index])
+	int writeMask = state.colorWriteActive(index);
+	if(format.isBGRformat())
 	{
+		// For BGR formats, flip R and B channels in the channels mask
+		writeMask = (writeMask & 0x0000000A) | (writeMask & 0x00000001) << 2 | (writeMask & 0x00000004) >> 2;
+	}
+
+	switch(format)
+	{
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+		{
+			current.x = As<UShort4>(current.x & Short4(0xF000));
+			current.y = As<UShort4>(current.y & Short4(0xF000)) >> 4;
+			current.z = As<UShort4>(current.z & Short4(0xF000)) >> 8;
+			current.w = As<UShort4>(current.w & Short4(0xF000u)) >> 12;
+
+			current.x = current.x | current.y | current.z | current.w;
+		}
+		break;
+	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+		{
+			current.z = As<UShort4>(current.z & Short4(0xF000));
+			current.y = As<UShort4>(current.y & Short4(0xF000)) >> 4;
+			current.x = As<UShort4>(current.x & Short4(0xF000)) >> 8;
+			current.w = As<UShort4>(current.w & Short4(0xF000u)) >> 12;
+
+			current.x = current.x | current.y | current.z | current.w;
+		}
+		break;
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+		{
+			current.w = As<UShort4>(current.w & Short4(0xF000));
+			current.x = As<UShort4>(current.x & Short4(0xF000)) >> 4;
+			current.y = As<UShort4>(current.y & Short4(0xF000)) >> 8;
+			current.z = As<UShort4>(current.z & Short4(0xF000u)) >> 12;
+
+			current.x = current.x | current.y | current.z | current.w;
+		}
+		break;
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
+		{
+			current.w = As<UShort4>(current.w & Short4(0xF000));
+			current.z = As<UShort4>(current.z & Short4(0xF000)) >> 4;
+			current.y = As<UShort4>(current.y & Short4(0xF000)) >> 8;
+			current.x = As<UShort4>(current.x & Short4(0xF000u)) >> 12;
+
+			current.x = current.x | current.y | current.z | current.w;
+		}
+		break;
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+		{
+			current.x = As<UShort4>(current.x & Short4(0xF800));
+			current.y = As<UShort4>(current.y & Short4(0xF800)) >> 5;
+			current.z = As<UShort4>(current.z & Short4(0xF800)) >> 10;
+			current.w = As<UShort4>(current.w & Short4(0x8000u)) >> 15;
+
+			current.x = current.x | current.y | current.z | current.w;
+		}
+		break;
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
+		{
+			current.z = As<UShort4>(current.z & Short4(0xF800));
+			current.y = As<UShort4>(current.y & Short4(0xF800)) >> 5;
+			current.x = As<UShort4>(current.x & Short4(0xF800)) >> 10;
+			current.w = As<UShort4>(current.w & Short4(0x8000u)) >> 15;
+
+			current.x = current.x | current.y | current.z | current.w;
+		}
+		break;
 	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
 		{
 			current.w = current.w & Short4(0x8000u);
@@ -1397,9 +1324,18 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			current.x = current.x | current.y | current.z;
 		}
 		break;
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+		{
+			current.z = current.z & Short4(0xF800u);
+			current.y = As<UShort4>(current.y & Short4(0xFC00u)) >> 5;
+			current.x = As<UShort4>(current.x) >> 11;
+
+			current.x = current.x | current.y | current.z;
+		}
+		break;
 	case VK_FORMAT_B8G8R8A8_UNORM:
 	case VK_FORMAT_B8G8R8A8_SRGB:
-		if(rgbaWriteMask == 0x7)
+		if(writeMask == 0x7)
 		{
 			current.x = As<Short4>(As<UShort4>(current.x) >> 8);
 			current.y = As<Short4>(As<UShort4>(current.y) >> 8);
@@ -1437,7 +1373,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 	case VK_FORMAT_R8G8B8A8_SRGB:
 	case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
 	case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
-		if(rgbaWriteMask == 0x7)
+		if(writeMask == 0x7)
 		{
 			current.x = As<Short4>(As<UShort4>(current.x) >> 8);
 			current.y = As<Short4>(As<UShort4>(current.y) >> 8);
@@ -1482,15 +1418,6 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		current.x = As<Short4>(As<UShort4>(current.x) >> 8);
 		current.x = As<Short4>(PackUnsigned(current.x, current.x));
 		break;
-	case VK_FORMAT_R16G16_UNORM:
-		current.z = current.x;
-		current.x = As<Short4>(UnpackLow(current.x, current.y));
-		current.z = As<Short4>(UnpackHigh(current.z, current.y));
-		current.y = current.z;
-		break;
-	case VK_FORMAT_R16G16B16A16_UNORM:
-		transpose4x4(current.x, current.y, current.z, current.w);
-		break;
 	case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
 		{
 			auto r = (Int4(current.x) >> 6) & Int4(0x3ff);
@@ -1518,7 +1445,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		}
 		break;
 	default:
-		UNSUPPORTED("VkFormat: %d", int(state.targetFormat[index]));
+		UNSUPPORTED("VkFormat: %d", int(format));
 	}
 
 	Short4 c01 = current.z;
@@ -1543,18 +1470,34 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 	Pointer<Byte> buffer = cBuffer;
 	Int pitchB = *Pointer<Int>(data + OFFSET(DrawData, colorPitchB[index]));
 
-	switch(state.targetFormat[index])
+	switch(format)
 	{
-	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
 		{
 			buffer += 2 * x;
 			Int value = *Pointer<Int>(buffer);
 
-			Int channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask5551Q[bgraWriteMask & 0xF][0]));
+			Int channelMask;
+			switch(format)
+			{
+			case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+			case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+				channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask4argbQ[writeMask][0]));
+				break;
+			case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+			case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
+				channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask4rgbaQ[writeMask][0]));
+				break;
+			default:
+				UNREACHABLE("Format: %s", vk::Stringify(format).c_str());
+			}
 
 			Int c01 = Extract(As<Int2>(current.x), 0);
 			Int mask01 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][0]) + xMask * 8);
-			if(bgraWriteMask != 0x0000000F)
+			if(writeMask != 0x0000000F)
 			{
 				mask01 &= channelMask;
 			}
@@ -1565,7 +1508,88 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 
 			Int c23 = Extract(As<Int2>(current.x), 1);
 			Int mask23 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][2]) + xMask * 8);
-			if(bgraWriteMask != 0x0000000F)
+			if(writeMask != 0x0000000F)
+			{
+				mask23 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c23 & mask23) | (value & ~mask23);
+		}
+		break;
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+		{
+			buffer += 2 * x;
+			Int value = *Pointer<Int>(buffer);
+
+			Int channelMask = *Pointer<Int>(constants + OFFSET(Constants, maskr5g5b5a1Q[writeMask][0]));
+
+			Int c01 = Extract(As<Int2>(current.x), 0);
+			Int mask01 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][0]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask01 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c01 & mask01) | (value & ~mask01);
+
+			buffer += pitchB;
+			value = *Pointer<Int>(buffer);
+
+			Int c23 = Extract(As<Int2>(current.x), 1);
+			Int mask23 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][2]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask23 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c23 & mask23) | (value & ~mask23);
+		}
+		break;
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
+		{
+			buffer += 2 * x;
+			Int value = *Pointer<Int>(buffer);
+
+			Int channelMask = *Pointer<Int>(constants + OFFSET(Constants, maskb5g5r5a1Q[writeMask][0]));
+
+			Int c01 = Extract(As<Int2>(current.x), 0);
+			Int mask01 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][0]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask01 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c01 & mask01) | (value & ~mask01);
+
+			buffer += pitchB;
+			value = *Pointer<Int>(buffer);
+
+			Int c23 = Extract(As<Int2>(current.x), 1);
+			Int mask23 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][2]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask23 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c23 & mask23) | (value & ~mask23);
+		}
+		break;
+	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+		{
+			buffer += 2 * x;
+			Int value = *Pointer<Int>(buffer);
+
+			Int channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask5551Q[writeMask][0]));
+
+			Int c01 = Extract(As<Int2>(current.x), 0);
+			Int mask01 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][0]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask01 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c01 & mask01) | (value & ~mask01);
+
+			buffer += pitchB;
+			value = *Pointer<Int>(buffer);
+
+			Int c23 = Extract(As<Int2>(current.x), 1);
+			Int mask23 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][2]) + xMask * 8);
+			if(writeMask != 0x0000000F)
 			{
 				mask23 &= channelMask;
 			}
@@ -1577,11 +1601,11 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			buffer += 2 * x;
 			Int value = *Pointer<Int>(buffer);
 
-			Int channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask565Q[bgraWriteMask & 0x7][0]));
+			Int channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask565Q[writeMask & 0x7][0]));
 
 			Int c01 = Extract(As<Int2>(current.x), 0);
 			Int mask01 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][0]) + xMask * 8);
-			if((bgraWriteMask & 0x00000007) != 0x00000007)
+			if((writeMask & 0x00000007) != 0x00000007)
 			{
 				mask01 &= channelMask;
 			}
@@ -1592,7 +1616,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 
 			Int c23 = Extract(As<Int2>(current.x), 1);
 			Int mask23 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][2]) + xMask * 8);
-			if((bgraWriteMask & 0x00000007) != 0x00000007)
+			if((writeMask & 0x00000007) != 0x00000007)
 			{
 				mask23 &= channelMask;
 			}
@@ -1604,10 +1628,10 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		{
 			buffer += x * 4;
 			Short4 value = *Pointer<Short4>(buffer);
-			Short4 channelMask = *Pointer<Short4>(constants + OFFSET(Constants, maskB4Q[bgraWriteMask][0]));
+			Short4 channelMask = *Pointer<Short4>(constants + OFFSET(Constants, maskB4Q[writeMask]));
 
 			Short4 mask01 = *Pointer<Short4>(constants + OFFSET(Constants, maskD01Q) + xMask * 8);
-			if(bgraWriteMask != 0x0000000F)
+			if(writeMask != 0x0000000F)
 			{
 				mask01 &= channelMask;
 			}
@@ -1617,7 +1641,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			value = *Pointer<Short4>(buffer);
 
 			Short4 mask23 = *Pointer<Short4>(constants + OFFSET(Constants, maskD23Q) + xMask * 8);
-			if(bgraWriteMask != 0x0000000F)
+			if(writeMask != 0x0000000F)
 			{
 				mask23 &= channelMask;
 			}
@@ -1631,10 +1655,10 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		{
 			buffer += x * 4;
 			Short4 value = *Pointer<Short4>(buffer);
-			Short4 channelMask = *Pointer<Short4>(constants + OFFSET(Constants, maskB4Q[rgbaWriteMask][0]));
+			Short4 channelMask = *Pointer<Short4>(constants + OFFSET(Constants, maskB4Q[writeMask]));
 
 			Short4 mask01 = *Pointer<Short4>(constants + OFFSET(Constants, maskD01Q) + xMask * 8);
-			if(rgbaWriteMask != 0x0000000F)
+			if(writeMask != 0x0000000F)
 			{
 				mask01 &= channelMask;
 			}
@@ -1644,7 +1668,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			value = *Pointer<Short4>(buffer);
 
 			Short4 mask23 = *Pointer<Short4>(constants + OFFSET(Constants, maskD23Q) + xMask * 8);
-			if(rgbaWriteMask != 0x0000000F)
+			if(writeMask != 0x0000000F)
 			{
 				mask23 &= channelMask;
 			}
@@ -1652,7 +1676,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		}
 		break;
 	case VK_FORMAT_R8G8_UNORM:
-		if((rgbaWriteMask & 0x00000003) != 0x0)
+		if((writeMask & 0x00000003) != 0x0)
 		{
 			buffer += 2 * x;
 			Int2 value;
@@ -1662,9 +1686,9 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			Int2 packedCol = As<Int2>(current.x);
 
 			UInt2 mergedMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskW4Q) + xMask * 8);
-			if((rgbaWriteMask & 0x3) != 0x3)
+			if((writeMask & 0x3) != 0x3)
 			{
-				Int tmpMask = *Pointer<Int>(constants + OFFSET(Constants, maskB4Q[5 * (rgbaWriteMask & 0x3)][0]));
+				Int tmpMask = *Pointer<Int>(constants + OFFSET(Constants, maskB4Q[5 * (writeMask & 0x3)]));
 				UInt2 rgbaMask = As<UInt2>(Int2(tmpMask, tmpMask));
 				mergedMask &= rgbaMask;
 			}
@@ -1676,7 +1700,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		}
 		break;
 	case VK_FORMAT_R8_UNORM:
-		if(rgbaWriteMask & 0x00000001)
+		if(writeMask & 0x00000001)
 		{
 			buffer += 1 * x;
 			Short4 value;
@@ -1691,130 +1715,16 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			*Pointer<Short>(buffer + pitchB) = Extract(current.x, 1);
 		}
 		break;
-	case VK_FORMAT_R16G16_UNORM:
-		{
-			buffer += 4 * x;
-
-			Short4 value = *Pointer<Short4>(buffer);
-
-			if((rgbaWriteMask & 0x00000003) != 0x00000003)
-			{
-				Short4 masked = value;
-				current.x &= *Pointer<Short4>(constants + OFFSET(Constants, maskW01Q[rgbaWriteMask & 0x3][0]));
-				masked &= *Pointer<Short4>(constants + OFFSET(Constants, maskW01Q[~rgbaWriteMask & 0x3][0]));
-				current.x |= masked;
-			}
-
-			current.x &= *Pointer<Short4>(constants + OFFSET(Constants, maskD01Q) + xMask * 8);
-			value &= *Pointer<Short4>(constants + OFFSET(Constants, invMaskD01Q) + xMask * 8);
-			current.x |= value;
-			*Pointer<Short4>(buffer) = current.x;
-
-			buffer += pitchB;
-
-			value = *Pointer<Short4>(buffer);
-
-			if((rgbaWriteMask & 0x00000003) != 0x00000003)
-			{
-				Short4 masked = value;
-				current.y &= *Pointer<Short4>(constants + OFFSET(Constants, maskW01Q[rgbaWriteMask & 0x3][0]));
-				masked &= *Pointer<Short4>(constants + OFFSET(Constants, maskW01Q[~rgbaWriteMask & 0x3][0]));
-				current.y |= masked;
-			}
-
-			current.y &= *Pointer<Short4>(constants + OFFSET(Constants, maskD23Q) + xMask * 8);
-			value &= *Pointer<Short4>(constants + OFFSET(Constants, invMaskD23Q) + xMask * 8);
-			current.y |= value;
-			*Pointer<Short4>(buffer) = current.y;
-		}
-		break;
-	case VK_FORMAT_R16G16B16A16_UNORM:
-		{
-			buffer += 8 * x;
-
-			{
-				Short4 value = *Pointer<Short4>(buffer);
-
-				if(rgbaWriteMask != 0x0000000F)
-				{
-					Short4 masked = value;
-					current.x &= *Pointer<Short4>(constants + OFFSET(Constants, maskW4Q[rgbaWriteMask][0]));
-					masked &= *Pointer<Short4>(constants + OFFSET(Constants, invMaskW4Q[rgbaWriteMask][0]));
-					current.x |= masked;
-				}
-
-				current.x &= *Pointer<Short4>(constants + OFFSET(Constants, maskQ0Q) + xMask * 8);
-				value &= *Pointer<Short4>(constants + OFFSET(Constants, invMaskQ0Q) + xMask * 8);
-				current.x |= value;
-				*Pointer<Short4>(buffer) = current.x;
-			}
-
-			{
-				Short4 value = *Pointer<Short4>(buffer + 8);
-
-				if(rgbaWriteMask != 0x0000000F)
-				{
-					Short4 masked = value;
-					current.y &= *Pointer<Short4>(constants + OFFSET(Constants, maskW4Q[rgbaWriteMask][0]));
-					masked &= *Pointer<Short4>(constants + OFFSET(Constants, invMaskW4Q[rgbaWriteMask][0]));
-					current.y |= masked;
-				}
-
-				current.y &= *Pointer<Short4>(constants + OFFSET(Constants, maskQ1Q) + xMask * 8);
-				value &= *Pointer<Short4>(constants + OFFSET(Constants, invMaskQ1Q) + xMask * 8);
-				current.y |= value;
-				*Pointer<Short4>(buffer + 8) = current.y;
-			}
-
-			buffer += pitchB;
-
-			{
-				Short4 value = *Pointer<Short4>(buffer);
-
-				if(rgbaWriteMask != 0x0000000F)
-				{
-					Short4 masked = value;
-					current.z &= *Pointer<Short4>(constants + OFFSET(Constants, maskW4Q[rgbaWriteMask][0]));
-					masked &= *Pointer<Short4>(constants + OFFSET(Constants, invMaskW4Q[rgbaWriteMask][0]));
-					current.z |= masked;
-				}
-
-				current.z &= *Pointer<Short4>(constants + OFFSET(Constants, maskQ2Q) + xMask * 8);
-				value &= *Pointer<Short4>(constants + OFFSET(Constants, invMaskQ2Q) + xMask * 8);
-				current.z |= value;
-				*Pointer<Short4>(buffer) = current.z;
-			}
-
-			{
-				Short4 value = *Pointer<Short4>(buffer + 8);
-
-				if(rgbaWriteMask != 0x0000000F)
-				{
-					Short4 masked = value;
-					current.w &= *Pointer<Short4>(constants + OFFSET(Constants, maskW4Q[rgbaWriteMask][0]));
-					masked &= *Pointer<Short4>(constants + OFFSET(Constants, invMaskW4Q[rgbaWriteMask][0]));
-					current.w |= masked;
-				}
-
-				current.w &= *Pointer<Short4>(constants + OFFSET(Constants, maskQ3Q) + xMask * 8);
-				value &= *Pointer<Short4>(constants + OFFSET(Constants, invMaskQ3Q) + xMask * 8);
-				current.w |= value;
-				*Pointer<Short4>(buffer + 8) = current.w;
-			}
-		}
-		break;
 	case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
-		rgbaWriteMask = bgraWriteMask;
-		// [[fallthrough]]
 	case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
 		{
 			buffer += 4 * x;
 
 			Int2 value = *Pointer<Int2>(buffer, 16);
 			Int2 mergedMask = *Pointer<Int2>(constants + OFFSET(Constants, maskD01Q) + xMask * 8);
-			if(rgbaWriteMask != 0xF)
+			if(writeMask != 0xF)
 			{
-				mergedMask &= *Pointer<Int2>(constants + OFFSET(Constants, mask10Q[rgbaWriteMask][0]));
+				mergedMask &= *Pointer<Int2>(constants + OFFSET(Constants, mask10Q[writeMask][0]));
 			}
 			*Pointer<Int2>(buffer) = (As<Int2>(current.x) & mergedMask) | (value & ~mergedMask);
 
@@ -1822,431 +1732,952 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 
 			value = *Pointer<Int2>(buffer, 16);
 			mergedMask = *Pointer<Int2>(constants + OFFSET(Constants, maskD23Q) + xMask * 8);
-			if(rgbaWriteMask != 0xF)
+			if(writeMask != 0xF)
 			{
-				mergedMask &= *Pointer<Int2>(constants + OFFSET(Constants, mask10Q[rgbaWriteMask][0]));
+				mergedMask &= *Pointer<Int2>(constants + OFFSET(Constants, mask10Q[writeMask][0]));
 			}
 			*Pointer<Int2>(buffer) = (As<Int2>(current.y) & mergedMask) | (value & ~mergedMask);
 		}
 		break;
 	default:
-		UNSUPPORTED("VkFormat: %d", int(state.targetFormat[index]));
+		UNSUPPORTED("VkFormat: %d", int(format));
 	}
 }
 
-void PixelRoutine::blendFactor(Vector4f &blendFactor, const Vector4f &oC, const Vector4f &pixel, VkBlendFactor blendFactorActive)
+Float PixelRoutine::blendConstant(vk::Format format, int component, BlendFactorModifier modifier)
 {
-	switch(blendFactorActive)
+	bool inverse = (modifier == OneMinus);
+
+	if(format.isUnsignedNormalized())
+	{
+		return inverse ? *Pointer<Float>(data + OFFSET(DrawData, factor.invBlendConstantU.v[component]))
+		               : *Pointer<Float>(data + OFFSET(DrawData, factor.blendConstantU.v[component]));
+	}
+	else if(format.isSignedNormalized())
+	{
+		return inverse ? *Pointer<Float>(data + OFFSET(DrawData, factor.invBlendConstantS.v[component]))
+		               : *Pointer<Float>(data + OFFSET(DrawData, factor.blendConstantS.v[component]));
+	}
+	else  // Floating-point format
+	{
+		ASSERT(format.isFloatFormat());
+		return inverse ? *Pointer<Float>(data + OFFSET(DrawData, factor.invBlendConstantF.v[component]))
+		               : *Pointer<Float>(data + OFFSET(DrawData, factor.blendConstantF.v[component]));
+	}
+}
+
+void PixelRoutine::blendFactorRGB(SIMD::Float4 &blendFactor, const SIMD::Float4 &sourceColor, const SIMD::Float4 &destColor, VkBlendFactor colorBlendFactor, vk::Format format)
+{
+	switch(colorBlendFactor)
 	{
 	case VK_BLEND_FACTOR_ZERO:
-		blendFactor.x = Float4(0);
-		blendFactor.y = Float4(0);
-		blendFactor.z = Float4(0);
+		blendFactor.x = 0.0f;
+		blendFactor.y = 0.0f;
+		blendFactor.z = 0.0f;
 		break;
 	case VK_BLEND_FACTOR_ONE:
-		blendFactor.x = Float4(1);
-		blendFactor.y = Float4(1);
-		blendFactor.z = Float4(1);
+		blendFactor.x = 1.0f;
+		blendFactor.y = 1.0f;
+		blendFactor.z = 1.0f;
 		break;
 	case VK_BLEND_FACTOR_SRC_COLOR:
-		blendFactor.x = oC.x;
-		blendFactor.y = oC.y;
-		blendFactor.z = oC.z;
+		blendFactor.x = sourceColor.x;
+		blendFactor.y = sourceColor.y;
+		blendFactor.z = sourceColor.z;
 		break;
 	case VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
-		blendFactor.x = Float4(1.0f) - oC.x;
-		blendFactor.y = Float4(1.0f) - oC.y;
-		blendFactor.z = Float4(1.0f) - oC.z;
+		blendFactor.x = 1.0f - sourceColor.x;
+		blendFactor.y = 1.0f - sourceColor.y;
+		blendFactor.z = 1.0f - sourceColor.z;
 		break;
 	case VK_BLEND_FACTOR_DST_COLOR:
-		blendFactor.x = pixel.x;
-		blendFactor.y = pixel.y;
-		blendFactor.z = pixel.z;
+		blendFactor.x = destColor.x;
+		blendFactor.y = destColor.y;
+		blendFactor.z = destColor.z;
 		break;
 	case VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR:
-		blendFactor.x = Float4(1.0f) - pixel.x;
-		blendFactor.y = Float4(1.0f) - pixel.y;
-		blendFactor.z = Float4(1.0f) - pixel.z;
+		blendFactor.x = 1.0f - destColor.x;
+		blendFactor.y = 1.0f - destColor.y;
+		blendFactor.z = 1.0f - destColor.z;
 		break;
 	case VK_BLEND_FACTOR_SRC_ALPHA:
-		blendFactor.x = oC.w;
-		blendFactor.y = oC.w;
-		blendFactor.z = oC.w;
+		blendFactor.x = sourceColor.w;
+		blendFactor.y = sourceColor.w;
+		blendFactor.z = sourceColor.w;
 		break;
 	case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
-		blendFactor.x = Float4(1.0f) - oC.w;
-		blendFactor.y = Float4(1.0f) - oC.w;
-		blendFactor.z = Float4(1.0f) - oC.w;
+		blendFactor.x = 1.0f - sourceColor.w;
+		blendFactor.y = 1.0f - sourceColor.w;
+		blendFactor.z = 1.0f - sourceColor.w;
 		break;
 	case VK_BLEND_FACTOR_DST_ALPHA:
-		blendFactor.x = pixel.w;
-		blendFactor.y = pixel.w;
-		blendFactor.z = pixel.w;
+		blendFactor.x = destColor.w;
+		blendFactor.y = destColor.w;
+		blendFactor.z = destColor.w;
 		break;
 	case VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
-		blendFactor.x = Float4(1.0f) - pixel.w;
-		blendFactor.y = Float4(1.0f) - pixel.w;
-		blendFactor.z = Float4(1.0f) - pixel.w;
+		blendFactor.x = 1.0f - destColor.w;
+		blendFactor.y = 1.0f - destColor.w;
+		blendFactor.z = 1.0f - destColor.w;
 		break;
 	case VK_BLEND_FACTOR_SRC_ALPHA_SATURATE:
-		blendFactor.x = Float4(1.0f) - pixel.w;
-		blendFactor.x = Min(blendFactor.x, oC.w);
+		blendFactor.x = 1.0f - destColor.w;
+		blendFactor.x = Min(blendFactor.x, sourceColor.w);
 		blendFactor.y = blendFactor.x;
 		blendFactor.z = blendFactor.x;
 		break;
 	case VK_BLEND_FACTOR_CONSTANT_COLOR:
-		blendFactor.x = *Pointer<Float4>(data + OFFSET(DrawData, factor.blendConstant4F[0]));
-		blendFactor.y = *Pointer<Float4>(data + OFFSET(DrawData, factor.blendConstant4F[1]));
-		blendFactor.z = *Pointer<Float4>(data + OFFSET(DrawData, factor.blendConstant4F[2]));
+		blendFactor.x = blendConstant(format, 0);
+		blendFactor.y = blendConstant(format, 1);
+		blendFactor.z = blendConstant(format, 2);
 		break;
 	case VK_BLEND_FACTOR_CONSTANT_ALPHA:
-		blendFactor.x = *Pointer<Float4>(data + OFFSET(DrawData, factor.blendConstant4F[3]));
-		blendFactor.y = *Pointer<Float4>(data + OFFSET(DrawData, factor.blendConstant4F[3]));
-		blendFactor.z = *Pointer<Float4>(data + OFFSET(DrawData, factor.blendConstant4F[3]));
+		blendFactor.x = blendConstant(format, 3);
+		blendFactor.y = blendConstant(format, 3);
+		blendFactor.z = blendConstant(format, 3);
 		break;
 	case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
-		blendFactor.x = *Pointer<Float4>(data + OFFSET(DrawData, factor.invBlendConstant4F[0]));
-		blendFactor.y = *Pointer<Float4>(data + OFFSET(DrawData, factor.invBlendConstant4F[1]));
-		blendFactor.z = *Pointer<Float4>(data + OFFSET(DrawData, factor.invBlendConstant4F[2]));
+		blendFactor.x = blendConstant(format, 0, OneMinus);
+		blendFactor.y = blendConstant(format, 1, OneMinus);
+		blendFactor.z = blendConstant(format, 2, OneMinus);
 		break;
 	case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
-		blendFactor.x = *Pointer<Float4>(data + OFFSET(DrawData, factor.invBlendConstant4F[3]));
-		blendFactor.y = *Pointer<Float4>(data + OFFSET(DrawData, factor.invBlendConstant4F[3]));
-		blendFactor.z = *Pointer<Float4>(data + OFFSET(DrawData, factor.invBlendConstant4F[3]));
+		blendFactor.x = blendConstant(format, 3, OneMinus);
+		blendFactor.y = blendConstant(format, 3, OneMinus);
+		blendFactor.z = blendConstant(format, 3, OneMinus);
 		break;
 
 	default:
-		UNSUPPORTED("VkBlendFactor: %d", int(blendFactorActive));
+		UNSUPPORTED("VkBlendFactor: %d", int(colorBlendFactor));
+	}
+
+	// "If the color attachment is fixed-point, the components of the source and destination values and blend factors are each clamped
+	//  to [0,1] or [-1,1] respectively for an unsigned normalized or signed normalized color attachment prior to evaluating the blend
+	//  operations. If the color attachment is floating-point, no clamping occurs."
+	if(blendFactorCanExceedFormatRange(colorBlendFactor, format))
+	{
+		if(format.isUnsignedNormalized())
+		{
+			blendFactor.x = Min(Max(blendFactor.x, 0.0f), 1.0f);
+			blendFactor.y = Min(Max(blendFactor.y, 0.0f), 1.0f);
+			blendFactor.z = Min(Max(blendFactor.z, 0.0f), 1.0f);
+		}
+		else if(format.isSignedNormalized())
+		{
+			blendFactor.x = Min(Max(blendFactor.x, -1.0f), 1.0f);
+			blendFactor.y = Min(Max(blendFactor.y, -1.0f), 1.0f);
+			blendFactor.z = Min(Max(blendFactor.z, -1.0f), 1.0f);
+		}
 	}
 }
 
-void PixelRoutine::blendFactorAlpha(Vector4f &blendFactor, const Vector4f &oC, const Vector4f &pixel, VkBlendFactor blendFactorAlphaActive)
+void PixelRoutine::blendFactorAlpha(SIMD::Float &blendFactorAlpha, const SIMD::Float &sourceAlpha, const SIMD::Float &destAlpha, VkBlendFactor alphaBlendFactor, vk::Format format)
 {
-	switch(blendFactorAlphaActive)
+	switch(alphaBlendFactor)
 	{
 	case VK_BLEND_FACTOR_ZERO:
-		blendFactor.w = Float4(0);
+		blendFactorAlpha = 0.0f;
 		break;
 	case VK_BLEND_FACTOR_ONE:
-		blendFactor.w = Float4(1);
+		blendFactorAlpha = 1.0f;
 		break;
 	case VK_BLEND_FACTOR_SRC_COLOR:
-		blendFactor.w = oC.w;
+		blendFactorAlpha = sourceAlpha;
 		break;
 	case VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
-		blendFactor.w = Float4(1.0f) - oC.w;
+		blendFactorAlpha = 1.0f - sourceAlpha;
 		break;
 	case VK_BLEND_FACTOR_DST_COLOR:
-		blendFactor.w = pixel.w;
+		blendFactorAlpha = destAlpha;
 		break;
 	case VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR:
-		blendFactor.w = Float4(1.0f) - pixel.w;
+		blendFactorAlpha = 1.0f - destAlpha;
 		break;
 	case VK_BLEND_FACTOR_SRC_ALPHA:
-		blendFactor.w = oC.w;
+		blendFactorAlpha = sourceAlpha;
 		break;
 	case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
-		blendFactor.w = Float4(1.0f) - oC.w;
+		blendFactorAlpha = 1.0f - sourceAlpha;
 		break;
 	case VK_BLEND_FACTOR_DST_ALPHA:
-		blendFactor.w = pixel.w;
+		blendFactorAlpha = destAlpha;
 		break;
 	case VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
-		blendFactor.w = Float4(1.0f) - pixel.w;
+		blendFactorAlpha = 1.0f - destAlpha;
 		break;
 	case VK_BLEND_FACTOR_SRC_ALPHA_SATURATE:
-		blendFactor.w = Float4(1.0f);
+		blendFactorAlpha = 1.0f;
 		break;
 	case VK_BLEND_FACTOR_CONSTANT_COLOR:
 	case VK_BLEND_FACTOR_CONSTANT_ALPHA:
-		blendFactor.w = *Pointer<Float4>(data + OFFSET(DrawData, factor.blendConstant4F[3]));
+		blendFactorAlpha = blendConstant(format, 3);
 		break;
 	case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
 	case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
-		blendFactor.w = *Pointer<Float4>(data + OFFSET(DrawData, factor.invBlendConstant4F[3]));
+		blendFactorAlpha = blendConstant(format, 3, OneMinus);
 		break;
 	default:
-		UNSUPPORTED("VkBlendFactor: %d", int(blendFactorAlphaActive));
+		UNSUPPORTED("VkBlendFactor: %d", int(alphaBlendFactor));
+	}
+
+	// "If the color attachment is fixed-point, the components of the source and destination values and blend factors are each clamped
+	//  to [0,1] or [-1,1] respectively for an unsigned normalized or signed normalized color attachment prior to evaluating the blend
+	//  operations. If the color attachment is floating-point, no clamping occurs."
+	if(blendFactorCanExceedFormatRange(alphaBlendFactor, format))
+	{
+		if(format.isUnsignedNormalized())
+		{
+			blendFactorAlpha = Min(Max(blendFactorAlpha, 0.0f), 1.0f);
+		}
+		else if(format.isSignedNormalized())
+		{
+			blendFactorAlpha = Min(Max(blendFactorAlpha, -1.0f), 1.0f);
+		}
 	}
 }
 
-void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4f &oC, const Int &x)
+SIMD::Float PixelRoutine::blendOpOverlay(SIMD::Float &src, SIMD::Float &dst)
+{
+	SIMD::Int largeDst = CmpGT(dst, 0.5f);
+	return As<SIMD::Float>(
+	    (~largeDst & As<SIMD::Int>(2.0f * src * dst)) |
+	    (largeDst & As<SIMD::Int>(1.0f - (2.0f * (1.0f - src) * (1.0f - dst)))));
+}
+
+SIMD::Float PixelRoutine::blendOpColorDodge(SIMD::Float &src, SIMD::Float &dst)
+{
+	SIMD::Int srcBelowOne = CmpLT(src, 1.0f);
+	SIMD::Int positiveDst = CmpGT(dst, 0.0f);
+	return As<SIMD::Float>(positiveDst & ((~srcBelowOne & As<SIMD::Int>(SIMD::Float(1.0f))) |
+	                                      (srcBelowOne & As<SIMD::Int>(Min(1.0f, (dst / (1.0f - src)))))));
+}
+
+SIMD::Float PixelRoutine::blendOpColorBurn(SIMD::Float &src, SIMD::Float &dst)
+{
+	SIMD::Int dstBelowOne = CmpLT(dst, 1.0f);
+	SIMD::Int positiveSrc = CmpGT(src, 0.0f);
+	return As<SIMD::Float>(
+	    (~dstBelowOne & As<SIMD::Int>(SIMD::Float(1.0f))) |
+	    (dstBelowOne & positiveSrc & As<SIMD::Int>(1.0f - Min(1.0f, (1.0f - dst) / src))));
+}
+
+SIMD::Float PixelRoutine::blendOpHardlight(SIMD::Float &src, SIMD::Float &dst)
+{
+	SIMD::Int largeSrc = CmpGT(src, 0.5f);
+	return As<SIMD::Float>(
+	    (~largeSrc & As<SIMD::Int>(2.0f * src * dst)) |
+	    (largeSrc & As<SIMD::Int>(1.0f - (2.0f * (1.0f - src) * (1.0f - dst)))));
+}
+
+SIMD::Float PixelRoutine::blendOpSoftlight(SIMD::Float &src, SIMD::Float &dst)
+{
+	SIMD::Int largeSrc = CmpGT(src, 0.5f);
+	SIMD::Int largeDst = CmpGT(dst, 0.25f);
+
+	return As<SIMD::Float>(
+	    (~largeSrc & As<SIMD::Int>(dst - ((1.0f - (2.0f * src)) * dst * (1.0f - dst)))) |
+	    (largeSrc & ((~largeDst & As<SIMD::Int>(dst + (((2.0f * src) - 1.0f) * dst * ((((16.0f * dst) - 12.0f) * dst) + 3.0f)))) |
+	                 (largeDst & As<SIMD::Int>(dst + (((2.0f * src) - 1.0f) * (Sqrt<Mediump>(dst) - dst)))))));
+}
+
+SIMD::Float PixelRoutine::maxRGB(SIMD::Float4 &c)
+{
+	return Max(Max(c.x, c.y), c.z);
+}
+
+SIMD::Float PixelRoutine::minRGB(SIMD::Float4 &c)
+{
+	return Min(Min(c.x, c.y), c.z);
+}
+
+void PixelRoutine::setLumSat(SIMD::Float4 &cbase, SIMD::Float4 &csat, SIMD::Float4 &clum, SIMD::Float &x, SIMD::Float &y, SIMD::Float &z)
+{
+	SIMD::Float minbase = minRGB(cbase);
+	SIMD::Float sbase = maxRGB(cbase) - minbase;
+	SIMD::Float ssat = maxRGB(csat) - minRGB(csat);
+	SIMD::Int isNonZero = CmpGT(sbase, 0.0f);
+	SIMD::Float4 color;
+	color.x = As<SIMD::Float>(isNonZero & As<SIMD::Int>((cbase.x - minbase) * ssat / sbase));
+	color.y = As<SIMD::Float>(isNonZero & As<SIMD::Int>((cbase.y - minbase) * ssat / sbase));
+	color.z = As<SIMD::Float>(isNonZero & As<SIMD::Int>((cbase.z - minbase) * ssat / sbase));
+	setLum(color, clum, x, y, z);
+}
+
+SIMD::Float PixelRoutine::lumRGB(SIMD::Float4 &c)
+{
+	return c.x * 0.3f + c.y * 0.59f + c.z * 0.11f;
+}
+
+SIMD::Float PixelRoutine::computeLum(SIMD::Float &color, SIMD::Float &lum, SIMD::Float &mincol, SIMD::Float &maxcol, SIMD::Int &negative, SIMD::Int &aboveOne)
+{
+	return As<SIMD::Float>(
+	    (negative & As<SIMD::Int>(lum + ((color - lum) * lum) / (lum - mincol))) |
+	    (~negative & ((aboveOne & As<SIMD::Int>(lum + ((color - lum) * (1.0f - lum)) / (maxcol - lum))) |
+	                  (~aboveOne & As<SIMD::Int>(color)))));
+}
+
+void PixelRoutine::setLum(SIMD::Float4 &cbase, SIMD::Float4 &clum, SIMD::Float &x, SIMD::Float &y, SIMD::Float &z)
+{
+	SIMD::Float lbase = lumRGB(cbase);
+	SIMD::Float llum = lumRGB(clum);
+	SIMD::Float ldiff = llum - lbase;
+
+	SIMD::Float4 color;
+	color.x = cbase.x + ldiff;
+	color.y = cbase.y + ldiff;
+	color.z = cbase.z + ldiff;
+
+	SIMD::Float lum = lumRGB(color);
+	SIMD::Float mincol = minRGB(color);
+	SIMD::Float maxcol = maxRGB(color);
+
+	SIMD::Int negative = CmpLT(mincol, 0.0f);
+	SIMD::Int aboveOne = CmpGT(maxcol, 1.0f);
+
+	x = computeLum(color.x, lum, mincol, maxcol, negative, aboveOne);
+	y = computeLum(color.y, lum, mincol, maxcol, negative, aboveOne);
+	z = computeLum(color.z, lum, mincol, maxcol, negative, aboveOne);
+}
+
+void PixelRoutine::premultiply(SIMD::Float4 &c)
+{
+	SIMD::Int nonZeroAlpha = CmpNEQ(c.w, 0.0f);
+	c.x = As<SIMD::Float>(nonZeroAlpha & As<SIMD::Int>(c.x / c.w));
+	c.y = As<SIMD::Float>(nonZeroAlpha & As<SIMD::Int>(c.y / c.w));
+	c.z = As<SIMD::Float>(nonZeroAlpha & As<SIMD::Int>(c.z / c.w));
+}
+
+SIMD::Float4 PixelRoutine::computeAdvancedBlendMode(int index, const SIMD::Float4 &src, const SIMD::Float4 &dst, const SIMD::Float4 &srcFactor, const SIMD::Float4 &dstFactor)
+{
+	SIMD::Float4 srcColor = src;
+	srcColor.x *= srcFactor.x;
+	srcColor.y *= srcFactor.y;
+	srcColor.z *= srcFactor.z;
+	srcColor.w *= srcFactor.w;
+
+	SIMD::Float4 dstColor = dst;
+	dstColor.x *= dstFactor.x;
+	dstColor.y *= dstFactor.y;
+	dstColor.z *= dstFactor.z;
+	dstColor.w *= dstFactor.w;
+
+	premultiply(srcColor);
+	premultiply(dstColor);
+
+	SIMD::Float4 blendedColor;
+
+	switch(state.blendState[index].blendOperation)
+	{
+	case VK_BLEND_OP_MULTIPLY_EXT:
+		blendedColor.x = (srcColor.x * dstColor.x);
+		blendedColor.y = (srcColor.y * dstColor.y);
+		blendedColor.z = (srcColor.z * dstColor.z);
+		break;
+	case VK_BLEND_OP_SCREEN_EXT:
+		blendedColor.x = srcColor.x + dstColor.x - (srcColor.x * dstColor.x);
+		blendedColor.y = srcColor.y + dstColor.y - (srcColor.y * dstColor.y);
+		blendedColor.z = srcColor.z + dstColor.z - (srcColor.z * dstColor.z);
+		break;
+	case VK_BLEND_OP_OVERLAY_EXT:
+		blendedColor.x = blendOpOverlay(srcColor.x, dstColor.x);
+		blendedColor.y = blendOpOverlay(srcColor.y, dstColor.y);
+		blendedColor.z = blendOpOverlay(srcColor.z, dstColor.z);
+		break;
+	case VK_BLEND_OP_DARKEN_EXT:
+		blendedColor.x = Min(srcColor.x, dstColor.x);
+		blendedColor.y = Min(srcColor.y, dstColor.y);
+		blendedColor.z = Min(srcColor.z, dstColor.z);
+		break;
+	case VK_BLEND_OP_LIGHTEN_EXT:
+		blendedColor.x = Max(srcColor.x, dstColor.x);
+		blendedColor.y = Max(srcColor.y, dstColor.y);
+		blendedColor.z = Max(srcColor.z, dstColor.z);
+		break;
+	case VK_BLEND_OP_COLORDODGE_EXT:
+		blendedColor.x = blendOpColorDodge(srcColor.x, dstColor.x);
+		blendedColor.y = blendOpColorDodge(srcColor.y, dstColor.y);
+		blendedColor.z = blendOpColorDodge(srcColor.z, dstColor.z);
+		break;
+	case VK_BLEND_OP_COLORBURN_EXT:
+		blendedColor.x = blendOpColorBurn(srcColor.x, dstColor.x);
+		blendedColor.y = blendOpColorBurn(srcColor.y, dstColor.y);
+		blendedColor.z = blendOpColorBurn(srcColor.z, dstColor.z);
+		break;
+	case VK_BLEND_OP_HARDLIGHT_EXT:
+		blendedColor.x = blendOpHardlight(srcColor.x, dstColor.x);
+		blendedColor.y = blendOpHardlight(srcColor.y, dstColor.y);
+		blendedColor.z = blendOpHardlight(srcColor.z, dstColor.z);
+		break;
+	case VK_BLEND_OP_SOFTLIGHT_EXT:
+		blendedColor.x = blendOpSoftlight(srcColor.x, dstColor.x);
+		blendedColor.y = blendOpSoftlight(srcColor.y, dstColor.y);
+		blendedColor.z = blendOpSoftlight(srcColor.z, dstColor.z);
+		break;
+	case VK_BLEND_OP_DIFFERENCE_EXT:
+		blendedColor.x = Abs(srcColor.x - dstColor.x);
+		blendedColor.y = Abs(srcColor.y - dstColor.y);
+		blendedColor.z = Abs(srcColor.z - dstColor.z);
+		break;
+	case VK_BLEND_OP_EXCLUSION_EXT:
+		blendedColor.x = srcColor.x + dstColor.x - (srcColor.x * dstColor.x * 2.0f);
+		blendedColor.y = srcColor.y + dstColor.y - (srcColor.y * dstColor.y * 2.0f);
+		blendedColor.z = srcColor.z + dstColor.z - (srcColor.z * dstColor.z * 2.0f);
+		break;
+	case VK_BLEND_OP_HSL_HUE_EXT:
+		setLumSat(srcColor, dstColor, dstColor, blendedColor.x, blendedColor.y, blendedColor.z);
+		break;
+	case VK_BLEND_OP_HSL_SATURATION_EXT:
+		setLumSat(dstColor, srcColor, dstColor, blendedColor.x, blendedColor.y, blendedColor.z);
+		break;
+	case VK_BLEND_OP_HSL_COLOR_EXT:
+		setLum(srcColor, dstColor, blendedColor.x, blendedColor.y, blendedColor.z);
+		break;
+	case VK_BLEND_OP_HSL_LUMINOSITY_EXT:
+		setLum(dstColor, srcColor, blendedColor.x, blendedColor.y, blendedColor.z);
+		break;
+	default:
+		UNSUPPORTED("Unsupported advanced VkBlendOp: %d", int(state.blendState[index].blendOperation));
+		break;
+	}
+
+	SIMD::Float p = srcColor.w * dstColor.w;
+	blendedColor.x *= p;
+	blendedColor.y *= p;
+	blendedColor.z *= p;
+
+	p = srcColor.w * (1.0f - dstColor.w);
+	blendedColor.x += srcColor.x * p;
+	blendedColor.y += srcColor.y * p;
+	blendedColor.z += srcColor.z * p;
+
+	p = dstColor.w * (1.0f - srcColor.w);
+	blendedColor.x += dstColor.x * p;
+	blendedColor.y += dstColor.y * p;
+	blendedColor.z += dstColor.z * p;
+
+	return blendedColor;
+}
+
+bool PixelRoutine::blendFactorCanExceedFormatRange(VkBlendFactor blendFactor, vk::Format format)
+{
+	switch(blendFactor)
+	{
+	case VK_BLEND_FACTOR_ZERO:
+	case VK_BLEND_FACTOR_ONE:
+		return false;
+	case VK_BLEND_FACTOR_SRC_COLOR:
+	case VK_BLEND_FACTOR_SRC_ALPHA:
+		// Source values have been clamped after fragment shader execution if the attachment format is normalized.
+		return false;
+	case VK_BLEND_FACTOR_DST_COLOR:
+	case VK_BLEND_FACTOR_DST_ALPHA:
+		// Dest values have a valid range due to being read from the attachment.
+		return false;
+	case VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
+	case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
+	case VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR:
+	case VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
+		// For signed formats, negative values cause the result to exceed 1.0.
+		return format.isSignedNormalized();
+	case VK_BLEND_FACTOR_SRC_ALPHA_SATURATE:
+		// min(As, 1 - Ad)
+		return false;
+	case VK_BLEND_FACTOR_CONSTANT_COLOR:
+	case VK_BLEND_FACTOR_CONSTANT_ALPHA:
+	case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+	case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
+		return false;
+
+	default:
+		UNSUPPORTED("VkBlendFactor: %d", int(blendFactor));
+		return false;
+	}
+}
+
+SIMD::Float4 PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, const SIMD::Float4 &sourceColor, const Int &x)
 {
 	if(!state.blendState[index].alphaBlendEnable)
 	{
-		return;
+		return sourceColor;
 	}
 
-	vk::Format format = state.targetFormat[index];
+	vk::Format format = state.colorFormat[index];
 	ASSERT(format.supportsColorAttachmentBlend());
 
 	Pointer<Byte> buffer = cBuffer;
 	Int pitchB = *Pointer<Int>(data + OFFSET(DrawData, colorPitchB[index]));
 
-	// pixel holds four texel color values.
+	// texelColor holds four texel color values.
 	// Note: Despite the type being Vector4f, the colors may be stored as
 	// integers. Half-floats are stored as full 32-bit floats.
 	// Non-float and non-fixed point formats are not alpha blended.
-	Vector4f pixel;
+	Vector4f texelColor;
 
-	Vector4s color;
-	Short4 c01;
-	Short4 c23;
-
-	Float4 one;
-	if(format.isFloatFormat())
-	{
-		one = Float4(1.0f);
-	}
-	else if(format.isUnnormalizedInteger())
-	{
-		one = As<Float4>(format.isUnsignedComponent(0) ? Int4(0xFFFFFFFF) : Int4(0x7FFFFFFF));
-	}
-
-	switch(state.targetFormat[index])
+	switch(format)
 	{
 	case VK_FORMAT_R32_SINT:
 	case VK_FORMAT_R32_UINT:
 	case VK_FORMAT_R32_SFLOAT:
 		// FIXME: movlps
 		buffer += 4 * x;
-		pixel.x.x = *Pointer<Float>(buffer + 0);
-		pixel.x.y = *Pointer<Float>(buffer + 4);
+		texelColor.x.x = *Pointer<Float>(buffer + 0);
+		texelColor.x.y = *Pointer<Float>(buffer + 4);
 		buffer += pitchB;
 		// FIXME: movhps
-		pixel.x.z = *Pointer<Float>(buffer + 0);
-		pixel.x.w = *Pointer<Float>(buffer + 4);
-		pixel.y = pixel.z = pixel.w = one;
+		texelColor.x.z = *Pointer<Float>(buffer + 0);
+		texelColor.x.w = *Pointer<Float>(buffer + 4);
+		texelColor.y = texelColor.z = texelColor.w = 1.0f;
 		break;
 	case VK_FORMAT_R32G32_SINT:
 	case VK_FORMAT_R32G32_UINT:
 	case VK_FORMAT_R32G32_SFLOAT:
 		buffer += 8 * x;
-		pixel.x = *Pointer<Float4>(buffer, 16);
+		texelColor.x = *Pointer<Float4>(buffer, 16);
 		buffer += pitchB;
-		pixel.y = *Pointer<Float4>(buffer, 16);
-		pixel.z = pixel.x;
-		pixel.x = ShuffleLowHigh(pixel.x, pixel.y, 0x0202);
-		pixel.z = ShuffleLowHigh(pixel.z, pixel.y, 0x1313);
-		pixel.y = pixel.z;
-		pixel.z = pixel.w = one;
+		texelColor.y = *Pointer<Float4>(buffer, 16);
+		texelColor.z = texelColor.x;
+		texelColor.x = ShuffleLowHigh(texelColor.x, texelColor.y, 0x0202);
+		texelColor.z = ShuffleLowHigh(texelColor.z, texelColor.y, 0x1313);
+		texelColor.y = texelColor.z;
+		texelColor.z = texelColor.w = 1.0f;
 		break;
 	case VK_FORMAT_R32G32B32A32_SFLOAT:
 	case VK_FORMAT_R32G32B32A32_SINT:
 	case VK_FORMAT_R32G32B32A32_UINT:
 		buffer += 16 * x;
-		pixel.x = *Pointer<Float4>(buffer + 0, 16);
-		pixel.y = *Pointer<Float4>(buffer + 16, 16);
+		texelColor.x = *Pointer<Float4>(buffer + 0, 16);
+		texelColor.y = *Pointer<Float4>(buffer + 16, 16);
 		buffer += pitchB;
-		pixel.z = *Pointer<Float4>(buffer + 0, 16);
-		pixel.w = *Pointer<Float4>(buffer + 16, 16);
-		transpose4x4(pixel.x, pixel.y, pixel.z, pixel.w);
+		texelColor.z = *Pointer<Float4>(buffer + 0, 16);
+		texelColor.w = *Pointer<Float4>(buffer + 16, 16);
+		transpose4x4(texelColor.x, texelColor.y, texelColor.z, texelColor.w);
+		break;
+	case VK_FORMAT_R16_UNORM:
+		buffer += 2 * x;
+		texelColor.x.x = Float(Int(*Pointer<UShort>(buffer + 0)));
+		texelColor.x.y = Float(Int(*Pointer<UShort>(buffer + 2)));
+		buffer += pitchB;
+		texelColor.x.z = Float(Int(*Pointer<UShort>(buffer + 0)));
+		texelColor.x.w = Float(Int(*Pointer<UShort>(buffer + 2)));
+		texelColor.x *= (1.0f / 0xFFFF);
+		texelColor.y = texelColor.z = texelColor.w = 1.0f;
 		break;
 	case VK_FORMAT_R16_SFLOAT:
 		buffer += 2 * x;
-		pixel.x.x = Float(*Pointer<Half>(buffer + 0));
-		pixel.x.y = Float(*Pointer<Half>(buffer + 2));
+		texelColor.x.x = Float(*Pointer<Half>(buffer + 0));
+		texelColor.x.y = Float(*Pointer<Half>(buffer + 2));
 		buffer += pitchB;
-		pixel.x.z = Float(*Pointer<Half>(buffer + 0));
-		pixel.x.w = Float(*Pointer<Half>(buffer + 2));
-		pixel.y = pixel.z = pixel.w = one;
+		texelColor.x.z = Float(*Pointer<Half>(buffer + 0));
+		texelColor.x.w = Float(*Pointer<Half>(buffer + 2));
+		texelColor.y = texelColor.z = texelColor.w = 1.0f;
+		break;
+	case VK_FORMAT_R16G16_UNORM:
+		buffer += 4 * x;
+		texelColor.x.x = Float(Int(*Pointer<UShort>(buffer + 0)));
+		texelColor.y.x = Float(Int(*Pointer<UShort>(buffer + 2)));
+		texelColor.x.y = Float(Int(*Pointer<UShort>(buffer + 4)));
+		texelColor.y.y = Float(Int(*Pointer<UShort>(buffer + 6)));
+		buffer += pitchB;
+		texelColor.x.z = Float(Int(*Pointer<UShort>(buffer + 0)));
+		texelColor.y.z = Float(Int(*Pointer<UShort>(buffer + 2)));
+		texelColor.x.w = Float(Int(*Pointer<UShort>(buffer + 4)));
+		texelColor.y.w = Float(Int(*Pointer<UShort>(buffer + 6)));
+		texelColor.x *= (1.0f / 0xFFFF);
+		texelColor.y *= (1.0f / 0xFFFF);
+		texelColor.z = texelColor.w = 1.0f;
 		break;
 	case VK_FORMAT_R16G16_SFLOAT:
 		buffer += 4 * x;
-		pixel.x.x = Float(*Pointer<Half>(buffer + 0));
-		pixel.y.x = Float(*Pointer<Half>(buffer + 2));
-		pixel.x.y = Float(*Pointer<Half>(buffer + 4));
-		pixel.y.y = Float(*Pointer<Half>(buffer + 6));
+		texelColor.x.x = Float(*Pointer<Half>(buffer + 0));
+		texelColor.y.x = Float(*Pointer<Half>(buffer + 2));
+		texelColor.x.y = Float(*Pointer<Half>(buffer + 4));
+		texelColor.y.y = Float(*Pointer<Half>(buffer + 6));
 		buffer += pitchB;
-		pixel.x.z = Float(*Pointer<Half>(buffer + 0));
-		pixel.y.z = Float(*Pointer<Half>(buffer + 2));
-		pixel.x.w = Float(*Pointer<Half>(buffer + 4));
-		pixel.y.w = Float(*Pointer<Half>(buffer + 6));
-		pixel.z = pixel.w = one;
+		texelColor.x.z = Float(*Pointer<Half>(buffer + 0));
+		texelColor.y.z = Float(*Pointer<Half>(buffer + 2));
+		texelColor.x.w = Float(*Pointer<Half>(buffer + 4));
+		texelColor.y.w = Float(*Pointer<Half>(buffer + 6));
+		texelColor.z = texelColor.w = 1.0f;
+		break;
+	case VK_FORMAT_R16G16B16A16_UNORM:
+		buffer += 8 * x;
+		texelColor.x.x = Float(Int(*Pointer<UShort>(buffer + 0x0)));
+		texelColor.y.x = Float(Int(*Pointer<UShort>(buffer + 0x2)));
+		texelColor.z.x = Float(Int(*Pointer<UShort>(buffer + 0x4)));
+		texelColor.w.x = Float(Int(*Pointer<UShort>(buffer + 0x6)));
+		texelColor.x.y = Float(Int(*Pointer<UShort>(buffer + 0x8)));
+		texelColor.y.y = Float(Int(*Pointer<UShort>(buffer + 0xa)));
+		texelColor.z.y = Float(Int(*Pointer<UShort>(buffer + 0xc)));
+		texelColor.w.y = Float(Int(*Pointer<UShort>(buffer + 0xe)));
+		buffer += pitchB;
+		texelColor.x.z = Float(Int(*Pointer<UShort>(buffer + 0x0)));
+		texelColor.y.z = Float(Int(*Pointer<UShort>(buffer + 0x2)));
+		texelColor.z.z = Float(Int(*Pointer<UShort>(buffer + 0x4)));
+		texelColor.w.z = Float(Int(*Pointer<UShort>(buffer + 0x6)));
+		texelColor.x.w = Float(Int(*Pointer<UShort>(buffer + 0x8)));
+		texelColor.y.w = Float(Int(*Pointer<UShort>(buffer + 0xa)));
+		texelColor.z.w = Float(Int(*Pointer<UShort>(buffer + 0xc)));
+		texelColor.w.w = Float(Int(*Pointer<UShort>(buffer + 0xe)));
+		texelColor.x *= (1.0f / 0xFFFF);
+		texelColor.y *= (1.0f / 0xFFFF);
+		texelColor.z *= (1.0f / 0xFFFF);
+		texelColor.w *= (1.0f / 0xFFFF);
 		break;
 	case VK_FORMAT_R16G16B16A16_SFLOAT:
 		buffer += 8 * x;
-		pixel.x.x = Float(*Pointer<Half>(buffer + 0x0));
-		pixel.y.x = Float(*Pointer<Half>(buffer + 0x2));
-		pixel.z.x = Float(*Pointer<Half>(buffer + 0x4));
-		pixel.w.x = Float(*Pointer<Half>(buffer + 0x6));
-		pixel.x.y = Float(*Pointer<Half>(buffer + 0x8));
-		pixel.y.y = Float(*Pointer<Half>(buffer + 0xa));
-		pixel.z.y = Float(*Pointer<Half>(buffer + 0xc));
-		pixel.w.y = Float(*Pointer<Half>(buffer + 0xe));
+		texelColor.x.x = Float(*Pointer<Half>(buffer + 0x0));
+		texelColor.y.x = Float(*Pointer<Half>(buffer + 0x2));
+		texelColor.z.x = Float(*Pointer<Half>(buffer + 0x4));
+		texelColor.w.x = Float(*Pointer<Half>(buffer + 0x6));
+		texelColor.x.y = Float(*Pointer<Half>(buffer + 0x8));
+		texelColor.y.y = Float(*Pointer<Half>(buffer + 0xa));
+		texelColor.z.y = Float(*Pointer<Half>(buffer + 0xc));
+		texelColor.w.y = Float(*Pointer<Half>(buffer + 0xe));
 		buffer += pitchB;
-		pixel.x.z = Float(*Pointer<Half>(buffer + 0x0));
-		pixel.y.z = Float(*Pointer<Half>(buffer + 0x2));
-		pixel.z.z = Float(*Pointer<Half>(buffer + 0x4));
-		pixel.w.z = Float(*Pointer<Half>(buffer + 0x6));
-		pixel.x.w = Float(*Pointer<Half>(buffer + 0x8));
-		pixel.y.w = Float(*Pointer<Half>(buffer + 0xa));
-		pixel.z.w = Float(*Pointer<Half>(buffer + 0xc));
-		pixel.w.w = Float(*Pointer<Half>(buffer + 0xe));
+		texelColor.x.z = Float(*Pointer<Half>(buffer + 0x0));
+		texelColor.y.z = Float(*Pointer<Half>(buffer + 0x2));
+		texelColor.z.z = Float(*Pointer<Half>(buffer + 0x4));
+		texelColor.w.z = Float(*Pointer<Half>(buffer + 0x6));
+		texelColor.x.w = Float(*Pointer<Half>(buffer + 0x8));
+		texelColor.y.w = Float(*Pointer<Half>(buffer + 0xa));
+		texelColor.z.w = Float(*Pointer<Half>(buffer + 0xc));
+		texelColor.w.w = Float(*Pointer<Half>(buffer + 0xe));
 		break;
 	case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
 		buffer += 4 * x;
-		pixel.x = r11g11b10Unpack(*Pointer<UInt>(buffer + 0));
-		pixel.y = r11g11b10Unpack(*Pointer<UInt>(buffer + 4));
+		texelColor.x = r11g11b10Unpack(*Pointer<UInt>(buffer + 0));
+		texelColor.y = r11g11b10Unpack(*Pointer<UInt>(buffer + 4));
 		buffer += pitchB;
-		pixel.z = r11g11b10Unpack(*Pointer<UInt>(buffer + 0));
-		pixel.w = r11g11b10Unpack(*Pointer<UInt>(buffer + 4));
-		transpose4x3(pixel.x, pixel.y, pixel.z, pixel.w);
-		pixel.w = one;
+		texelColor.z = r11g11b10Unpack(*Pointer<UInt>(buffer + 0));
+		texelColor.w = r11g11b10Unpack(*Pointer<UInt>(buffer + 4));
+		transpose4x3(texelColor.x, texelColor.y, texelColor.z, texelColor.w);
+		texelColor.w = 1.0f;
 		break;
 	default:
-		UNSUPPORTED("VkFormat: %d", int(state.targetFormat[index]));
+		{
+			// Attempt to read an integer based format and convert it to float
+			Vector4s color;
+			readPixel(index, cBuffer, x, color);
+			texelColor.x = Float4(As<UShort4>(color.x)) * (1.0f / 0xFFFF);
+			texelColor.y = Float4(As<UShort4>(color.y)) * (1.0f / 0xFFFF);
+			texelColor.z = Float4(As<UShort4>(color.z)) * (1.0f / 0xFFFF);
+			texelColor.w = Float4(As<UShort4>(color.w)) * (1.0f / 0xFFFF);
+		}
+		break;
 	}
 
-	// Final Color = ObjectColor * SourceBlendFactor + PixelColor * DestinationBlendFactor
-	Vector4f sourceFactor;
-	Vector4f destFactor;
+	ASSERT(SIMD::Width == 4);
+	SIMD::Float4 destColor;
+	destColor.x = texelColor.x;
+	destColor.y = texelColor.y;
+	destColor.z = texelColor.z;
+	destColor.w = texelColor.w;
 
-	blendFactor(sourceFactor, oC, pixel, state.blendState[index].sourceBlendFactor);
-	blendFactor(destFactor, oC, pixel, state.blendState[index].destBlendFactor);
+	SIMD::Float4 sourceFactor;
+	SIMD::Float4 destFactor;
 
-	oC.x *= sourceFactor.x;
-	oC.y *= sourceFactor.y;
-	oC.z *= sourceFactor.z;
+	blendFactorRGB(sourceFactor, sourceColor, destColor, state.blendState[index].sourceBlendFactor, format);
+	blendFactorRGB(destFactor, sourceColor, destColor, state.blendState[index].destBlendFactor, format);
+	blendFactorAlpha(sourceFactor.w, sourceColor.w, destColor.w, state.blendState[index].sourceBlendFactorAlpha, format);
+	blendFactorAlpha(destFactor.w, sourceColor.w, destColor.w, state.blendState[index].destBlendFactorAlpha, format);
 
-	pixel.x *= destFactor.x;
-	pixel.y *= destFactor.y;
-	pixel.z *= destFactor.z;
+	SIMD::Float4 blendedColor;
 
 	switch(state.blendState[index].blendOperation)
 	{
 	case VK_BLEND_OP_ADD:
-		oC.x += pixel.x;
-		oC.y += pixel.y;
-		oC.z += pixel.z;
+		blendedColor.x = sourceColor.x * sourceFactor.x + destColor.x * destFactor.x;
+		blendedColor.y = sourceColor.y * sourceFactor.y + destColor.y * destFactor.y;
+		blendedColor.z = sourceColor.z * sourceFactor.z + destColor.z * destFactor.z;
 		break;
 	case VK_BLEND_OP_SUBTRACT:
-		oC.x -= pixel.x;
-		oC.y -= pixel.y;
-		oC.z -= pixel.z;
+		blendedColor.x = sourceColor.x * sourceFactor.x - destColor.x * destFactor.x;
+		blendedColor.y = sourceColor.y * sourceFactor.y - destColor.y * destFactor.y;
+		blendedColor.z = sourceColor.z * sourceFactor.z - destColor.z * destFactor.z;
 		break;
 	case VK_BLEND_OP_REVERSE_SUBTRACT:
-		oC.x = pixel.x - oC.x;
-		oC.y = pixel.y - oC.y;
-		oC.z = pixel.z - oC.z;
+		blendedColor.x = destColor.x * destFactor.x - sourceColor.x * sourceFactor.x;
+		blendedColor.y = destColor.y * destFactor.y - sourceColor.y * sourceFactor.y;
+		blendedColor.z = destColor.z * destFactor.z - sourceColor.z * sourceFactor.z;
 		break;
 	case VK_BLEND_OP_MIN:
-		oC.x = Min(oC.x, pixel.x);
-		oC.y = Min(oC.y, pixel.y);
-		oC.z = Min(oC.z, pixel.z);
+		blendedColor.x = Min(sourceColor.x, destColor.x);
+		blendedColor.y = Min(sourceColor.y, destColor.y);
+		blendedColor.z = Min(sourceColor.z, destColor.z);
 		break;
 	case VK_BLEND_OP_MAX:
-		oC.x = Max(oC.x, pixel.x);
-		oC.y = Max(oC.y, pixel.y);
-		oC.z = Max(oC.z, pixel.z);
+		blendedColor.x = Max(sourceColor.x, destColor.x);
+		blendedColor.y = Max(sourceColor.y, destColor.y);
+		blendedColor.z = Max(sourceColor.z, destColor.z);
 		break;
 	case VK_BLEND_OP_SRC_EXT:
-		// No operation
+		blendedColor.x = sourceColor.x;
+		blendedColor.y = sourceColor.y;
+		blendedColor.z = sourceColor.z;
 		break;
 	case VK_BLEND_OP_DST_EXT:
-		oC.x = pixel.x;
-		oC.y = pixel.y;
-		oC.z = pixel.z;
+		blendedColor.x = destColor.x;
+		blendedColor.y = destColor.y;
+		blendedColor.z = destColor.z;
 		break;
 	case VK_BLEND_OP_ZERO_EXT:
-		oC.x = Float4(0.0f);
-		oC.y = Float4(0.0f);
-		oC.z = Float4(0.0f);
+		blendedColor.x = 0.0f;
+		blendedColor.y = 0.0f;
+		blendedColor.z = 0.0f;
+		break;
+	case VK_BLEND_OP_MULTIPLY_EXT:
+	case VK_BLEND_OP_SCREEN_EXT:
+	case VK_BLEND_OP_OVERLAY_EXT:
+	case VK_BLEND_OP_DARKEN_EXT:
+	case VK_BLEND_OP_LIGHTEN_EXT:
+	case VK_BLEND_OP_COLORDODGE_EXT:
+	case VK_BLEND_OP_COLORBURN_EXT:
+	case VK_BLEND_OP_HARDLIGHT_EXT:
+	case VK_BLEND_OP_SOFTLIGHT_EXT:
+	case VK_BLEND_OP_DIFFERENCE_EXT:
+	case VK_BLEND_OP_EXCLUSION_EXT:
+	case VK_BLEND_OP_HSL_HUE_EXT:
+	case VK_BLEND_OP_HSL_SATURATION_EXT:
+	case VK_BLEND_OP_HSL_COLOR_EXT:
+	case VK_BLEND_OP_HSL_LUMINOSITY_EXT:
+		blendedColor = computeAdvancedBlendMode(index, sourceColor, destColor, sourceFactor, destFactor);
 		break;
 	default:
 		UNSUPPORTED("VkBlendOp: %d", int(state.blendState[index].blendOperation));
 	}
 
-	blendFactorAlpha(sourceFactor, oC, pixel, state.blendState[index].sourceBlendFactorAlpha);
-	blendFactorAlpha(destFactor, oC, pixel, state.blendState[index].destBlendFactorAlpha);
-
-	oC.w *= sourceFactor.w;
-	pixel.w *= destFactor.w;
-
 	switch(state.blendState[index].blendOperationAlpha)
 	{
 	case VK_BLEND_OP_ADD:
-		oC.w += pixel.w;
+		blendedColor.w = sourceColor.w * sourceFactor.w + destColor.w * destFactor.w;
 		break;
 	case VK_BLEND_OP_SUBTRACT:
-		oC.w -= pixel.w;
+		blendedColor.w = sourceColor.w * sourceFactor.w - destColor.w * destFactor.w;
 		break;
 	case VK_BLEND_OP_REVERSE_SUBTRACT:
-		pixel.w -= oC.w;
-		oC.w = pixel.w;
+		blendedColor.w = destColor.w * destFactor.w - sourceColor.w * sourceFactor.w;
 		break;
 	case VK_BLEND_OP_MIN:
-		oC.w = Min(oC.w, pixel.w);
+		blendedColor.w = Min(sourceColor.w, destColor.w);
 		break;
 	case VK_BLEND_OP_MAX:
-		oC.w = Max(oC.w, pixel.w);
+		blendedColor.w = Max(sourceColor.w, destColor.w);
 		break;
 	case VK_BLEND_OP_SRC_EXT:
-		// No operation
+		blendedColor.w = sourceColor.w;
 		break;
 	case VK_BLEND_OP_DST_EXT:
-		oC.w = pixel.w;
+		blendedColor.w = destColor.w;
 		break;
 	case VK_BLEND_OP_ZERO_EXT:
-		oC.w = Float4(0.0f);
+		blendedColor.w = 0.0f;
+		break;
+	case VK_BLEND_OP_MULTIPLY_EXT:
+	case VK_BLEND_OP_SCREEN_EXT:
+	case VK_BLEND_OP_OVERLAY_EXT:
+	case VK_BLEND_OP_DARKEN_EXT:
+	case VK_BLEND_OP_LIGHTEN_EXT:
+	case VK_BLEND_OP_COLORDODGE_EXT:
+	case VK_BLEND_OP_COLORBURN_EXT:
+	case VK_BLEND_OP_HARDLIGHT_EXT:
+	case VK_BLEND_OP_SOFTLIGHT_EXT:
+	case VK_BLEND_OP_DIFFERENCE_EXT:
+	case VK_BLEND_OP_EXCLUSION_EXT:
+	case VK_BLEND_OP_HSL_HUE_EXT:
+	case VK_BLEND_OP_HSL_SATURATION_EXT:
+	case VK_BLEND_OP_HSL_COLOR_EXT:
+	case VK_BLEND_OP_HSL_LUMINOSITY_EXT:
+		// All of the currently supported 'advanced blend modes' compute the alpha the same way.
+		blendedColor.w = sourceColor.w + destColor.w - (sourceColor.w * destColor.w);
 		break;
 	default:
 		UNSUPPORTED("VkBlendOp: %d", int(state.blendState[index].blendOperationAlpha));
 	}
 
-	if(format.isUnsignedComponent(0)) { oC.x = Max(oC.x, Float4(0.0f)); }
-	if(format.isUnsignedComponent(1)) { oC.y = Max(oC.y, Float4(0.0f)); }
-	if(format.isUnsignedComponent(2)) { oC.z = Max(oC.z, Float4(0.0f)); }
-	if(format.isUnsignedComponent(3)) { oC.w = Max(oC.w, Float4(0.0f)); }
+	return blendedColor;
 }
 
-void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int &x, Vector4f &oC, const Int &sMask, const Int &zMask, const Int &cMask)
+void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int &x, Vector4f &color, const Int &sMask, const Int &zMask, const Int &cMask)
 {
-	switch(state.targetFormat[index])
+	if(isSRGB(index))
+	{
+		color.x = linearToSRGB(color.x);
+		color.y = linearToSRGB(color.y);
+		color.z = linearToSRGB(color.z);
+	}
+
+	vk::Format format = state.colorFormat[index];
+	switch(format)
+	{
+	case VK_FORMAT_B8G8R8A8_UNORM:
+	case VK_FORMAT_B8G8R8A8_SRGB:
+	case VK_FORMAT_R8G8B8A8_UNORM:
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+	case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
+		color.w = Min(Max(color.w, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.w = As<Float4>(RoundInt(color.w * 0xFF));
+		color.z = Min(Max(color.z, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.z = As<Float4>(RoundInt(color.z * 0xFF));
+		// [[fallthrough]]
+	case VK_FORMAT_R8G8_UNORM:
+		color.y = Min(Max(color.y, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.y = As<Float4>(RoundInt(color.y * 0xFF));
+		//[[fallthrough]]
+	case VK_FORMAT_R8_UNORM:
+		color.x = Min(Max(color.x, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.x = As<Float4>(RoundInt(color.x * 0xFF));
+		break;
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
+		color.w = Min(Max(color.w, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.w = As<Float4>(RoundInt(color.w * 0xF));
+		color.z = Min(Max(color.z, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.z = As<Float4>(RoundInt(color.z * 0xF));
+		color.y = Min(Max(color.y, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.y = As<Float4>(RoundInt(color.y * 0xF));
+		color.x = Min(Max(color.x, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.x = As<Float4>(RoundInt(color.x * 0xF));
+		break;
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+	case VK_FORMAT_R5G6B5_UNORM_PACK16:
+		color.z = Min(Max(color.z, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.z = As<Float4>(RoundInt(color.z * 0x1F));
+		color.y = Min(Max(color.y, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.y = As<Float4>(RoundInt(color.y * 0x3F));
+		color.x = Min(Max(color.x, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.x = As<Float4>(RoundInt(color.x * 0x1F));
+		break;
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
+	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+		color.w = Min(Max(color.w, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.w = As<Float4>(RoundInt(color.w));
+		color.z = Min(Max(color.z, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.z = As<Float4>(RoundInt(color.z * 0x1F));
+		color.y = Min(Max(color.y, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.y = As<Float4>(RoundInt(color.y * 0x1F));
+		color.x = Min(Max(color.x, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.x = As<Float4>(RoundInt(color.x * 0x1F));
+		break;
+	case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+	case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+		color.w = Min(Max(color.w, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.w = As<Float4>(RoundInt(color.w * 0x3));
+		color.z = Min(Max(color.z, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.z = As<Float4>(RoundInt(color.z * 0x3FF));
+		color.y = Min(Max(color.y, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.y = As<Float4>(RoundInt(color.y * 0x3FF));
+		color.x = Min(Max(color.x, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.x = As<Float4>(RoundInt(color.x * 0x3FF));
+		break;
+	case VK_FORMAT_R16G16B16A16_UNORM:
+		color.w = Min(Max(color.w, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.w = As<Float4>(RoundInt(color.w * 0xFFFF));
+		color.z = Min(Max(color.z, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.z = As<Float4>(RoundInt(color.z * 0xFFFF));
+		// [[fallthrough]]
+	case VK_FORMAT_R16G16_UNORM:
+		color.y = Min(Max(color.y, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.y = As<Float4>(RoundInt(color.y * 0xFFFF));
+		//[[fallthrough]]
+	case VK_FORMAT_R16_UNORM:
+		color.x = Min(Max(color.x, 0.0f), 1.0f);  // TODO(b/204560089): Omit clamp if redundant
+		color.x = As<Float4>(RoundInt(color.x * 0xFFFF));
+		break;
+	default:
+		// TODO(b/204560089): Omit clamp if redundant
+		if(format.isUnsignedNormalized())
+		{
+			color.x = Min(Max(color.x, 0.0f), 1.0f);
+			color.y = Min(Max(color.y, 0.0f), 1.0f);
+			color.z = Min(Max(color.z, 0.0f), 1.0f);
+			color.w = Min(Max(color.w, 0.0f), 1.0f);
+		}
+		else if(format.isSignedNormalized())
+		{
+			color.x = Min(Max(color.x, -1.0f), 1.0f);
+			color.y = Min(Max(color.y, -1.0f), 1.0f);
+			color.z = Min(Max(color.z, -1.0f), 1.0f);
+			color.w = Min(Max(color.w, -1.0f), 1.0f);
+		}
+	}
+
+	switch(format)
 	{
 	case VK_FORMAT_R16_SFLOAT:
 	case VK_FORMAT_R32_SFLOAT:
 	case VK_FORMAT_R32_SINT:
 	case VK_FORMAT_R32_UINT:
+	case VK_FORMAT_R16_UNORM:
 	case VK_FORMAT_R16_SINT:
 	case VK_FORMAT_R16_UINT:
 	case VK_FORMAT_R8_SINT:
 	case VK_FORMAT_R8_UINT:
+	case VK_FORMAT_R8_UNORM:
 	case VK_FORMAT_A2B10G10R10_UINT_PACK32:
 	case VK_FORMAT_A2R10G10B10_UINT_PACK32:
+	case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+	case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
+	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+	case VK_FORMAT_R5G6B5_UNORM_PACK16:
 		break;
 	case VK_FORMAT_R16G16_SFLOAT:
 	case VK_FORMAT_R32G32_SFLOAT:
 	case VK_FORMAT_R32G32_SINT:
 	case VK_FORMAT_R32G32_UINT:
+	case VK_FORMAT_R16G16_UNORM:
 	case VK_FORMAT_R16G16_SINT:
 	case VK_FORMAT_R16G16_UINT:
 	case VK_FORMAT_R8G8_SINT:
 	case VK_FORMAT_R8G8_UINT:
-		oC.z = oC.x;
-		oC.x = UnpackLow(oC.x, oC.y);
-		oC.z = UnpackHigh(oC.z, oC.y);
-		oC.y = oC.z;
+	case VK_FORMAT_R8G8_UNORM:
+		color.z = color.x;
+		color.x = UnpackLow(color.x, color.y);
+		color.z = UnpackHigh(color.z, color.y);
+		color.y = color.z;
 		break;
 	case VK_FORMAT_R16G16B16A16_SFLOAT:
 	case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
 	case VK_FORMAT_R32G32B32A32_SFLOAT:
 	case VK_FORMAT_R32G32B32A32_SINT:
 	case VK_FORMAT_R32G32B32A32_UINT:
+	case VK_FORMAT_R16G16B16A16_UNORM:
 	case VK_FORMAT_R16G16B16A16_SINT:
 	case VK_FORMAT_R16G16B16A16_UINT:
 	case VK_FORMAT_R8G8B8A8_SINT:
 	case VK_FORMAT_R8G8B8A8_UINT:
 	case VK_FORMAT_A8B8G8R8_UINT_PACK32:
 	case VK_FORMAT_A8B8G8R8_SINT_PACK32:
-		transpose4x4(oC.x, oC.y, oC.z, oC.w);
+	case VK_FORMAT_R8G8B8A8_UNORM:
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+	case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
+		transpose4x4(color.x, color.y, color.z, color.w);
+		break;
+	case VK_FORMAT_B8G8R8A8_UNORM:
+	case VK_FORMAT_B8G8R8A8_SRGB:
+		transpose4x4zyxw(color.z, color.y, color.x, color.w);
 		break;
 	default:
-		UNSUPPORTED("VkFormat: %d", int(state.targetFormat[index]));
+		UNSUPPORTED("VkFormat: %d", int(format));
 	}
 
-	int rgbaWriteMask = state.colorWriteActive(index) & outputMasks[index];
-	int bgraWriteMask = (rgbaWriteMask & 0x0000000A) | (rgbaWriteMask & 0x00000001) << 2 | (rgbaWriteMask & 0x00000004) >> 2;
+	int writeMask = state.colorWriteActive(index);
+	if(format.isBGRformat())
+	{
+		// For BGR formats, flip R and B channels in the channels mask
+		writeMask = (writeMask & 0x0000000A) | (writeMask & 0x00000001) << 2 | (writeMask & 0x00000004) >> 2;
+	}
 
 	Int xMask;  // Combination of all masks
 
@@ -2264,18 +2695,16 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		xMask &= sMask;
 	}
 
-	auto targetFormat = state.targetFormat[index];
-
 	Pointer<Byte> buffer = cBuffer;
 	Int pitchB = *Pointer<Int>(data + OFFSET(DrawData, colorPitchB[index]));
 	Float4 value;
 
-	switch(targetFormat)
+	switch(format)
 	{
 	case VK_FORMAT_R32_SFLOAT:
 	case VK_FORMAT_R32_SINT:
 	case VK_FORMAT_R32_UINT:
-		if(rgbaWriteMask & 0x00000001)
+		if(writeMask & 0x00000001)
 		{
 			buffer += 4 * x;
 
@@ -2289,23 +2718,23 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			value.z = *Pointer<Float>(buffer + 0);
 			value.w = *Pointer<Float>(buffer + 4);
 
-			oC.x = As<Float4>(As<Int4>(oC.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X) + xMask * 16, 16));
+			color.x = As<Float4>(As<Int4>(color.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X) + xMask * 16, 16));
 			value = As<Float4>(As<Int4>(value) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X) + xMask * 16, 16));
-			oC.x = As<Float4>(As<Int4>(oC.x) | As<Int4>(value));
+			color.x = As<Float4>(As<Int4>(color.x) | As<Int4>(value));
 
 			// FIXME: movhps
-			*Pointer<Float>(buffer + 0) = oC.x.z;
-			*Pointer<Float>(buffer + 4) = oC.x.w;
+			*Pointer<Float>(buffer + 0) = color.x.z;
+			*Pointer<Float>(buffer + 4) = color.x.w;
 
 			buffer -= pitchB;
 
 			// FIXME: movlps
-			*Pointer<Float>(buffer + 0) = oC.x.x;
-			*Pointer<Float>(buffer + 4) = oC.x.y;
+			*Pointer<Float>(buffer + 0) = color.x.x;
+			*Pointer<Float>(buffer + 4) = color.x.y;
 		}
 		break;
 	case VK_FORMAT_R16_SFLOAT:
-		if(rgbaWriteMask & 0x00000001)
+		if(writeMask & 0x00000001)
 		{
 			buffer += 2 * x;
 
@@ -2317,22 +2746,23 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			value = Insert(value, Float(*Pointer<Half>(buffer + 0)), 2);
 			value = Insert(value, Float(*Pointer<Half>(buffer + 2)), 3);
 
-			oC.x = As<Float4>(As<Int4>(oC.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X) + xMask * 16, 16));
+			color.x = As<Float4>(As<Int4>(color.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X) + xMask * 16, 16));
 			value = As<Float4>(As<Int4>(value) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X) + xMask * 16, 16));
-			oC.x = As<Float4>(As<Int4>(oC.x) | As<Int4>(value));
+			color.x = As<Float4>(As<Int4>(color.x) | As<Int4>(value));
 
-			*Pointer<Half>(buffer + 0) = Half(oC.x.z);
-			*Pointer<Half>(buffer + 2) = Half(oC.x.w);
+			*Pointer<Half>(buffer + 0) = Half(color.x.z);
+			*Pointer<Half>(buffer + 2) = Half(color.x.w);
 
 			buffer -= pitchB;
 
-			*Pointer<Half>(buffer + 0) = Half(oC.x.x);
-			*Pointer<Half>(buffer + 2) = Half(oC.x.y);
+			*Pointer<Half>(buffer + 0) = Half(color.x.x);
+			*Pointer<Half>(buffer + 2) = Half(color.x.y);
 		}
 		break;
+	case VK_FORMAT_R16_UNORM:
 	case VK_FORMAT_R16_SINT:
 	case VK_FORMAT_R16_UINT:
-		if(rgbaWriteMask & 0x00000001)
+		if(writeMask & 0x00000001)
 		{
 			buffer += 2 * x;
 
@@ -2344,54 +2774,38 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			xyzw = As<UShort4>(Insert(As<Int2>(xyzw), *Pointer<Int>(buffer), 1));
 			value = As<Float4>(Int4(xyzw));
 
-			oC.x = As<Float4>(As<Int4>(oC.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X) + xMask * 16, 16));
+			color.x = As<Float4>(As<Int4>(color.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X) + xMask * 16, 16));
 			value = As<Float4>(As<Int4>(value) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X) + xMask * 16, 16));
-			oC.x = As<Float4>(As<Int4>(oC.x) | As<Int4>(value));
+			color.x = As<Float4>(As<Int4>(color.x) | As<Int4>(value));
 
-			if(targetFormat == VK_FORMAT_R16_SINT)
-			{
-				Float component = oC.x.z;
-				*Pointer<Short>(buffer + 0) = Short(As<Int>(component));
-				component = oC.x.w;
-				*Pointer<Short>(buffer + 2) = Short(As<Int>(component));
+			Float component = color.x.z;
+			*Pointer<UShort>(buffer + 0) = UShort(As<Int>(component));
+			component = color.x.w;
+			*Pointer<UShort>(buffer + 2) = UShort(As<Int>(component));
 
-				buffer -= pitchB;
+			buffer -= pitchB;
 
-				component = oC.x.x;
-				*Pointer<Short>(buffer + 0) = Short(As<Int>(component));
-				component = oC.x.y;
-				*Pointer<Short>(buffer + 2) = Short(As<Int>(component));
-			}
-			else  // VK_FORMAT_R16_UINT
-			{
-				Float component = oC.x.z;
-				*Pointer<UShort>(buffer + 0) = UShort(As<Int>(component));
-				component = oC.x.w;
-				*Pointer<UShort>(buffer + 2) = UShort(As<Int>(component));
-
-				buffer -= pitchB;
-
-				component = oC.x.x;
-				*Pointer<UShort>(buffer + 0) = UShort(As<Int>(component));
-				component = oC.x.y;
-				*Pointer<UShort>(buffer + 2) = UShort(As<Int>(component));
-			}
+			component = color.x.x;
+			*Pointer<UShort>(buffer + 0) = UShort(As<Int>(component));
+			component = color.x.y;
+			*Pointer<UShort>(buffer + 2) = UShort(As<Int>(component));
 		}
 		break;
 	case VK_FORMAT_R8_SINT:
 	case VK_FORMAT_R8_UINT:
-		if(rgbaWriteMask & 0x00000001)
+	case VK_FORMAT_R8_UNORM:
+		if(writeMask & 0x00000001)
 		{
 			buffer += x;
 
 			UInt xyzw, packedCol;
 
-			xyzw = UInt(*Pointer<UShort>(buffer)) & 0xFFFF;
+			xyzw = UInt(*Pointer<UShort>(buffer)) & 0xFFFFu;
 			buffer += pitchB;
 			xyzw |= UInt(*Pointer<UShort>(buffer)) << 16;
 
-			Short4 tmpCol = Short4(As<Int4>(oC.x));
-			if(targetFormat == VK_FORMAT_R8_SINT)
+			Short4 tmpCol = Short4(As<Int4>(color.x));
+			if(format == VK_FORMAT_R8_SINT)
 			{
 				tmpCol = As<Short4>(PackSigned(tmpCol, tmpCol));
 			}
@@ -2416,53 +2830,53 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 
 		value = *Pointer<Float4>(buffer);
 
-		if((rgbaWriteMask & 0x00000003) != 0x00000003)
+		if((writeMask & 0x00000003) != 0x00000003)
 		{
 			Float4 masked = value;
-			oC.x = As<Float4>(As<Int4>(oC.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskD01X[rgbaWriteMask & 0x3][0])));
-			masked = As<Float4>(As<Int4>(masked) & *Pointer<Int4>(constants + OFFSET(Constants, maskD01X[~rgbaWriteMask & 0x3][0])));
-			oC.x = As<Float4>(As<Int4>(oC.x) | As<Int4>(masked));
+			color.x = As<Float4>(As<Int4>(color.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskD01X[writeMask & 0x3][0])));
+			masked = As<Float4>(As<Int4>(masked) & *Pointer<Int4>(constants + OFFSET(Constants, maskD01X[~writeMask & 0x3][0])));
+			color.x = As<Float4>(As<Int4>(color.x) | As<Int4>(masked));
 		}
 
-		oC.x = As<Float4>(As<Int4>(oC.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskQ01X) + xMask * 16, 16));
+		color.x = As<Float4>(As<Int4>(color.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskQ01X) + xMask * 16, 16));
 		value = As<Float4>(As<Int4>(value) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskQ01X) + xMask * 16, 16));
-		oC.x = As<Float4>(As<Int4>(oC.x) | As<Int4>(value));
-		*Pointer<Float4>(buffer) = oC.x;
+		color.x = As<Float4>(As<Int4>(color.x) | As<Int4>(value));
+		*Pointer<Float4>(buffer) = color.x;
 
 		buffer += pitchB;
 
 		value = *Pointer<Float4>(buffer);
 
-		if((rgbaWriteMask & 0x00000003) != 0x00000003)
+		if((writeMask & 0x00000003) != 0x00000003)
 		{
 			Float4 masked;
 
 			masked = value;
-			oC.y = As<Float4>(As<Int4>(oC.y) & *Pointer<Int4>(constants + OFFSET(Constants, maskD01X[rgbaWriteMask & 0x3][0])));
-			masked = As<Float4>(As<Int4>(masked) & *Pointer<Int4>(constants + OFFSET(Constants, maskD01X[~rgbaWriteMask & 0x3][0])));
-			oC.y = As<Float4>(As<Int4>(oC.y) | As<Int4>(masked));
+			color.y = As<Float4>(As<Int4>(color.y) & *Pointer<Int4>(constants + OFFSET(Constants, maskD01X[writeMask & 0x3][0])));
+			masked = As<Float4>(As<Int4>(masked) & *Pointer<Int4>(constants + OFFSET(Constants, maskD01X[~writeMask & 0x3][0])));
+			color.y = As<Float4>(As<Int4>(color.y) | As<Int4>(masked));
 		}
 
-		oC.y = As<Float4>(As<Int4>(oC.y) & *Pointer<Int4>(constants + OFFSET(Constants, maskQ23X) + xMask * 16, 16));
+		color.y = As<Float4>(As<Int4>(color.y) & *Pointer<Int4>(constants + OFFSET(Constants, maskQ23X) + xMask * 16, 16));
 		value = As<Float4>(As<Int4>(value) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskQ23X) + xMask * 16, 16));
-		oC.y = As<Float4>(As<Int4>(oC.y) | As<Int4>(value));
-		*Pointer<Float4>(buffer) = oC.y;
+		color.y = As<Float4>(As<Int4>(color.y) | As<Int4>(value));
+		*Pointer<Float4>(buffer) = color.y;
 		break;
 	case VK_FORMAT_R16G16_SFLOAT:
-		if((rgbaWriteMask & 0x00000003) != 0x0)
+		if((writeMask & 0x00000003) != 0x0)
 		{
 			buffer += 4 * x;
 
 			UInt2 rgbaMask;
 			UInt2 packedCol;
-			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(oC.x.y))) << 16) | UInt(As<UShort>(Half(oC.x.x))), 0);
-			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(oC.x.w))) << 16) | UInt(As<UShort>(Half(oC.x.z))), 1);
+			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(color.x.y))) << 16) | UInt(As<UShort>(Half(color.x.x))), 0);
+			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(color.x.w))) << 16) | UInt(As<UShort>(Half(color.x.z))), 1);
 
 			UShort4 value = *Pointer<UShort4>(buffer);
 			UInt2 mergedMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskD01Q) + xMask * 8);
-			if((rgbaWriteMask & 0x3) != 0x3)
+			if((writeMask & 0x3) != 0x3)
 			{
-				Int tmpMask = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[rgbaWriteMask & 0x3][0]));
+				Int tmpMask = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[writeMask & 0x3]));
 				rgbaMask = As<UInt2>(Int2(tmpMask, tmpMask));
 				mergedMask &= rgbaMask;
 			}
@@ -2470,30 +2884,31 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 
 			buffer += pitchB;
 
-			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(oC.y.y))) << 16) | UInt(As<UShort>(Half(oC.y.x))), 0);
-			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(oC.y.w))) << 16) | UInt(As<UShort>(Half(oC.y.z))), 1);
+			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(color.y.y))) << 16) | UInt(As<UShort>(Half(color.y.x))), 0);
+			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(color.y.w))) << 16) | UInt(As<UShort>(Half(color.y.z))), 1);
 			value = *Pointer<UShort4>(buffer);
 			mergedMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskD23Q) + xMask * 8);
-			if((rgbaWriteMask & 0x3) != 0x3)
+			if((writeMask & 0x3) != 0x3)
 			{
 				mergedMask &= rgbaMask;
 			}
 			*Pointer<UInt2>(buffer) = (packedCol & mergedMask) | (As<UInt2>(value) & ~mergedMask);
 		}
 		break;
+	case VK_FORMAT_R16G16_UNORM:
 	case VK_FORMAT_R16G16_SINT:
 	case VK_FORMAT_R16G16_UINT:
-		if((rgbaWriteMask & 0x00000003) != 0x0)
+		if((writeMask & 0x00000003) != 0x0)
 		{
 			buffer += 4 * x;
 
 			UInt2 rgbaMask;
-			UShort4 packedCol = UShort4(As<Int4>(oC.x));
+			UShort4 packedCol = UShort4(As<Int4>(color.x));
 			UShort4 value = *Pointer<UShort4>(buffer);
 			UInt2 mergedMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskD01Q) + xMask * 8);
-			if((rgbaWriteMask & 0x3) != 0x3)
+			if((writeMask & 0x3) != 0x3)
 			{
-				Int tmpMask = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[rgbaWriteMask & 0x3][0]));
+				Int tmpMask = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[writeMask & 0x3]));
 				rgbaMask = As<UInt2>(Int2(tmpMask, tmpMask));
 				mergedMask &= rgbaMask;
 			}
@@ -2501,10 +2916,10 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 
 			buffer += pitchB;
 
-			packedCol = UShort4(As<Int4>(oC.y));
+			packedCol = UShort4(As<Int4>(color.y));
 			value = *Pointer<UShort4>(buffer);
 			mergedMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskD23Q) + xMask * 8);
-			if((rgbaWriteMask & 0x3) != 0x3)
+			if((writeMask & 0x3) != 0x3)
 			{
 				mergedMask &= rgbaMask;
 			}
@@ -2513,7 +2928,8 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		break;
 	case VK_FORMAT_R8G8_SINT:
 	case VK_FORMAT_R8G8_UINT:
-		if((rgbaWriteMask & 0x00000003) != 0x0)
+	case VK_FORMAT_R8G8_UNORM:
+		if((writeMask & 0x00000003) != 0x0)
 		{
 			buffer += 2 * x;
 
@@ -2523,19 +2939,19 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			buffer += pitchB;
 			xyzw = Insert(xyzw, *Pointer<Int>(buffer), 1);
 
-			if(targetFormat == VK_FORMAT_R8G8_SINT)
+			if(format == VK_FORMAT_R8G8_SINT)
 			{
-				packedCol = As<Int2>(PackSigned(Short4(As<Int4>(oC.x)), Short4(As<Int4>(oC.y))));
+				packedCol = As<Int2>(PackSigned(Short4(As<Int4>(color.x)), Short4(As<Int4>(color.y))));
 			}
 			else
 			{
-				packedCol = As<Int2>(PackUnsigned(Short4(As<Int4>(oC.x)), Short4(As<Int4>(oC.y))));
+				packedCol = As<Int2>(PackUnsigned(Short4(As<Int4>(color.x)), Short4(As<Int4>(color.y))));
 			}
 
 			UInt2 mergedMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskW4Q) + xMask * 8);
-			if((rgbaWriteMask & 0x3) != 0x3)
+			if((writeMask & 0x3) != 0x3)
 			{
-				Int tmpMask = *Pointer<Int>(constants + OFFSET(Constants, maskB4Q[5 * (rgbaWriteMask & 0x3)][0]));
+				Int tmpMask = *Pointer<Int>(constants + OFFSET(Constants, maskB4Q[5 * (writeMask & 0x3)]));
 				UInt2 rgbaMask = As<UInt2>(Int2(tmpMask, tmpMask));
 				mergedMask &= rgbaMask;
 			}
@@ -2555,35 +2971,35 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		{
 			value = *Pointer<Float4>(buffer, 16);
 
-			if(rgbaWriteMask != 0x0000000F)
+			if(writeMask != 0x0000000F)
 			{
 				Float4 masked = value;
-				oC.x = As<Float4>(As<Int4>(oC.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X[rgbaWriteMask][0])));
-				masked = As<Float4>(As<Int4>(masked) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X[rgbaWriteMask][0])));
-				oC.x = As<Float4>(As<Int4>(oC.x) | As<Int4>(masked));
+				color.x = As<Float4>(As<Int4>(color.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X[writeMask])));
+				masked = As<Float4>(As<Int4>(masked) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X[writeMask])));
+				color.x = As<Float4>(As<Int4>(color.x) | As<Int4>(masked));
 			}
 
-			oC.x = As<Float4>(As<Int4>(oC.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskX0X) + xMask * 16, 16));
+			color.x = As<Float4>(As<Int4>(color.x) & *Pointer<Int4>(constants + OFFSET(Constants, maskX0X) + xMask * 16, 16));
 			value = As<Float4>(As<Int4>(value) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskX0X) + xMask * 16, 16));
-			oC.x = As<Float4>(As<Int4>(oC.x) | As<Int4>(value));
-			*Pointer<Float4>(buffer, 16) = oC.x;
+			color.x = As<Float4>(As<Int4>(color.x) | As<Int4>(value));
+			*Pointer<Float4>(buffer, 16) = color.x;
 		}
 
 		{
 			value = *Pointer<Float4>(buffer + 16, 16);
 
-			if(rgbaWriteMask != 0x0000000F)
+			if(writeMask != 0x0000000F)
 			{
 				Float4 masked = value;
-				oC.y = As<Float4>(As<Int4>(oC.y) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X[rgbaWriteMask][0])));
-				masked = As<Float4>(As<Int4>(masked) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X[rgbaWriteMask][0])));
-				oC.y = As<Float4>(As<Int4>(oC.y) | As<Int4>(masked));
+				color.y = As<Float4>(As<Int4>(color.y) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X[writeMask])));
+				masked = As<Float4>(As<Int4>(masked) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X[writeMask])));
+				color.y = As<Float4>(As<Int4>(color.y) | As<Int4>(masked));
 			}
 
-			oC.y = As<Float4>(As<Int4>(oC.y) & *Pointer<Int4>(constants + OFFSET(Constants, maskX1X) + xMask * 16, 16));
+			color.y = As<Float4>(As<Int4>(color.y) & *Pointer<Int4>(constants + OFFSET(Constants, maskX1X) + xMask * 16, 16));
 			value = As<Float4>(As<Int4>(value) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskX1X) + xMask * 16, 16));
-			oC.y = As<Float4>(As<Int4>(oC.y) | As<Int4>(value));
-			*Pointer<Float4>(buffer + 16, 16) = oC.y;
+			color.y = As<Float4>(As<Int4>(color.y) | As<Int4>(value));
+			*Pointer<Float4>(buffer + 16, 16) = color.y;
 		}
 
 		buffer += pitchB;
@@ -2591,53 +3007,53 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		{
 			value = *Pointer<Float4>(buffer, 16);
 
-			if(rgbaWriteMask != 0x0000000F)
+			if(writeMask != 0x0000000F)
 			{
 				Float4 masked = value;
-				oC.z = As<Float4>(As<Int4>(oC.z) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X[rgbaWriteMask][0])));
-				masked = As<Float4>(As<Int4>(masked) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X[rgbaWriteMask][0])));
-				oC.z = As<Float4>(As<Int4>(oC.z) | As<Int4>(masked));
+				color.z = As<Float4>(As<Int4>(color.z) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X[writeMask])));
+				masked = As<Float4>(As<Int4>(masked) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X[writeMask])));
+				color.z = As<Float4>(As<Int4>(color.z) | As<Int4>(masked));
 			}
 
-			oC.z = As<Float4>(As<Int4>(oC.z) & *Pointer<Int4>(constants + OFFSET(Constants, maskX2X) + xMask * 16, 16));
+			color.z = As<Float4>(As<Int4>(color.z) & *Pointer<Int4>(constants + OFFSET(Constants, maskX2X) + xMask * 16, 16));
 			value = As<Float4>(As<Int4>(value) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskX2X) + xMask * 16, 16));
-			oC.z = As<Float4>(As<Int4>(oC.z) | As<Int4>(value));
-			*Pointer<Float4>(buffer, 16) = oC.z;
+			color.z = As<Float4>(As<Int4>(color.z) | As<Int4>(value));
+			*Pointer<Float4>(buffer, 16) = color.z;
 		}
 
 		{
 			value = *Pointer<Float4>(buffer + 16, 16);
 
-			if(rgbaWriteMask != 0x0000000F)
+			if(writeMask != 0x0000000F)
 			{
 				Float4 masked = value;
-				oC.w = As<Float4>(As<Int4>(oC.w) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X[rgbaWriteMask][0])));
-				masked = As<Float4>(As<Int4>(masked) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X[rgbaWriteMask][0])));
-				oC.w = As<Float4>(As<Int4>(oC.w) | As<Int4>(masked));
+				color.w = As<Float4>(As<Int4>(color.w) & *Pointer<Int4>(constants + OFFSET(Constants, maskD4X[writeMask])));
+				masked = As<Float4>(As<Int4>(masked) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskD4X[writeMask])));
+				color.w = As<Float4>(As<Int4>(color.w) | As<Int4>(masked));
 			}
 
-			oC.w = As<Float4>(As<Int4>(oC.w) & *Pointer<Int4>(constants + OFFSET(Constants, maskX3X) + xMask * 16, 16));
+			color.w = As<Float4>(As<Int4>(color.w) & *Pointer<Int4>(constants + OFFSET(Constants, maskX3X) + xMask * 16, 16));
 			value = As<Float4>(As<Int4>(value) & *Pointer<Int4>(constants + OFFSET(Constants, invMaskX3X) + xMask * 16, 16));
-			oC.w = As<Float4>(As<Int4>(oC.w) | As<Int4>(value));
-			*Pointer<Float4>(buffer + 16, 16) = oC.w;
+			color.w = As<Float4>(As<Int4>(color.w) | As<Int4>(value));
+			*Pointer<Float4>(buffer + 16, 16) = color.w;
 		}
 		break;
 	case VK_FORMAT_R16G16B16A16_SFLOAT:
-		if((rgbaWriteMask & 0x0000000F) != 0x0)
+		if((writeMask & 0x0000000F) != 0x0)
 		{
 			buffer += 8 * x;
 
 			UInt4 rgbaMask;
 			UInt4 value = *Pointer<UInt4>(buffer);
 			UInt4 packedCol;
-			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(oC.x.y))) << 16) | UInt(As<UShort>(Half(oC.x.x))), 0);
-			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(oC.x.w))) << 16) | UInt(As<UShort>(Half(oC.x.z))), 1);
-			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(oC.y.y))) << 16) | UInt(As<UShort>(Half(oC.y.x))), 2);
-			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(oC.y.w))) << 16) | UInt(As<UShort>(Half(oC.y.z))), 3);
+			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(color.x.y))) << 16) | UInt(As<UShort>(Half(color.x.x))), 0);
+			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(color.x.w))) << 16) | UInt(As<UShort>(Half(color.x.z))), 1);
+			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(color.y.y))) << 16) | UInt(As<UShort>(Half(color.y.x))), 2);
+			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(color.y.w))) << 16) | UInt(As<UShort>(Half(color.y.z))), 3);
 			UInt4 mergedMask = *Pointer<UInt4>(constants + OFFSET(Constants, maskQ01X) + xMask * 16);
-			if((rgbaWriteMask & 0xF) != 0xF)
+			if((writeMask & 0xF) != 0xF)
 			{
-				UInt2 tmpMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskW4Q[rgbaWriteMask][0]));
+				UInt2 tmpMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskW4Q[writeMask]));
 				rgbaMask = UInt4(tmpMask, tmpMask);
 				mergedMask &= rgbaMask;
 			}
@@ -2646,12 +3062,12 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			buffer += pitchB;
 
 			value = *Pointer<UInt4>(buffer);
-			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(oC.z.y))) << 16) | UInt(As<UShort>(Half(oC.z.x))), 0);
-			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(oC.z.w))) << 16) | UInt(As<UShort>(Half(oC.z.z))), 1);
-			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(oC.w.y))) << 16) | UInt(As<UShort>(Half(oC.w.x))), 2);
-			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(oC.w.w))) << 16) | UInt(As<UShort>(Half(oC.w.z))), 3);
+			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(color.z.y))) << 16) | UInt(As<UShort>(Half(color.z.x))), 0);
+			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(color.z.w))) << 16) | UInt(As<UShort>(Half(color.z.z))), 1);
+			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(color.w.y))) << 16) | UInt(As<UShort>(Half(color.w.x))), 2);
+			packedCol = Insert(packedCol, (UInt(As<UShort>(Half(color.w.w))) << 16) | UInt(As<UShort>(Half(color.w.z))), 3);
 			mergedMask = *Pointer<UInt4>(constants + OFFSET(Constants, maskQ23X) + xMask * 16);
-			if((rgbaWriteMask & 0xF) != 0xF)
+			if((writeMask & 0xF) != 0xF)
 			{
 				mergedMask &= rgbaMask;
 			}
@@ -2659,15 +3075,15 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 		}
 		break;
 	case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
-		if((rgbaWriteMask & 0x7) != 0x0)
+		if((writeMask & 0x7) != 0x0)
 		{
 			buffer += 4 * x;
 
 			UInt4 packedCol;
-			packedCol = Insert(packedCol, r11g11b10Pack(oC.x), 0);
-			packedCol = Insert(packedCol, r11g11b10Pack(oC.y), 1);
-			packedCol = Insert(packedCol, r11g11b10Pack(oC.z), 2);
-			packedCol = Insert(packedCol, r11g11b10Pack(oC.w), 3);
+			packedCol = Insert(packedCol, r11g11b10Pack(color.x), 0);
+			packedCol = Insert(packedCol, r11g11b10Pack(color.y), 1);
+			packedCol = Insert(packedCol, r11g11b10Pack(color.z), 2);
+			packedCol = Insert(packedCol, r11g11b10Pack(color.w), 3);
 
 			UInt4 value;
 			value = Insert(value, *Pointer<UInt>(buffer + 0), 0);
@@ -2676,10 +3092,10 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			value = Insert(value, *Pointer<UInt>(buffer + 0), 2);
 			value = Insert(value, *Pointer<UInt>(buffer + 4), 3);
 
-			UInt4 mask = *Pointer<UInt4>(constants + OFFSET(Constants, maskD4X[0][0]) + xMask * 16, 16);
-			if((rgbaWriteMask & 0x7) != 0x7)
+			UInt4 mask = *Pointer<UInt4>(constants + OFFSET(Constants, maskD4X[0]) + xMask * 16, 16);
+			if((writeMask & 0x7) != 0x7)
 			{
-				mask &= *Pointer<UInt4>(constants + OFFSET(Constants, mask11X[rgbaWriteMask & 0x7][0]), 16);
+				mask &= *Pointer<UInt4>(constants + OFFSET(Constants, mask11X[writeMask & 0x7]), 16);
 			}
 			value = (packedCol & mask) | (value & ~mask);
 
@@ -2690,19 +3106,20 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			*Pointer<UInt>(buffer + 4) = value.y;
 		}
 		break;
+	case VK_FORMAT_R16G16B16A16_UNORM:
 	case VK_FORMAT_R16G16B16A16_SINT:
 	case VK_FORMAT_R16G16B16A16_UINT:
-		if((rgbaWriteMask & 0x0000000F) != 0x0)
+		if((writeMask & 0x0000000F) != 0x0)
 		{
 			buffer += 8 * x;
 
 			UInt4 rgbaMask;
 			UShort8 value = *Pointer<UShort8>(buffer);
-			UShort8 packedCol = UShort8(UShort4(As<Int4>(oC.x)), UShort4(As<Int4>(oC.y)));
+			UShort8 packedCol = UShort8(UShort4(As<Int4>(color.x)), UShort4(As<Int4>(color.y)));
 			UInt4 mergedMask = *Pointer<UInt4>(constants + OFFSET(Constants, maskQ01X) + xMask * 16);
-			if((rgbaWriteMask & 0xF) != 0xF)
+			if((writeMask & 0xF) != 0xF)
 			{
-				UInt2 tmpMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskW4Q[rgbaWriteMask][0]));
+				UInt2 tmpMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskW4Q[writeMask]));
 				rgbaMask = UInt4(tmpMask, tmpMask);
 				mergedMask &= rgbaMask;
 			}
@@ -2711,40 +3128,46 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			buffer += pitchB;
 
 			value = *Pointer<UShort8>(buffer);
-			packedCol = UShort8(UShort4(As<Int4>(oC.z)), UShort4(As<Int4>(oC.w)));
+			packedCol = UShort8(UShort4(As<Int4>(color.z)), UShort4(As<Int4>(color.w)));
 			mergedMask = *Pointer<UInt4>(constants + OFFSET(Constants, maskQ23X) + xMask * 16);
-			if((rgbaWriteMask & 0xF) != 0xF)
+			if((writeMask & 0xF) != 0xF)
 			{
 				mergedMask &= rgbaMask;
 			}
 			*Pointer<UInt4>(buffer) = (As<UInt4>(packedCol) & mergedMask) | (As<UInt4>(value) & ~mergedMask);
 		}
 		break;
+	case VK_FORMAT_B8G8R8A8_UNORM:
+	case VK_FORMAT_B8G8R8A8_SRGB:
 	case VK_FORMAT_R8G8B8A8_SINT:
 	case VK_FORMAT_R8G8B8A8_UINT:
 	case VK_FORMAT_A8B8G8R8_UINT_PACK32:
 	case VK_FORMAT_A8B8G8R8_SINT_PACK32:
-		if((rgbaWriteMask & 0x0000000F) != 0x0)
+	case VK_FORMAT_R8G8B8A8_UNORM:
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+	case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
+		if((writeMask & 0x0000000F) != 0x0)
 		{
 			UInt2 value, packedCol, mergedMask;
 
 			buffer += 4 * x;
 
-			bool isSigned = targetFormat == VK_FORMAT_R8G8B8A8_SINT || targetFormat == VK_FORMAT_A8B8G8R8_SINT_PACK32;
+			bool isSigned = !format.isUnsigned();
 
 			if(isSigned)
 			{
-				packedCol = As<UInt2>(PackSigned(Short4(As<Int4>(oC.x)), Short4(As<Int4>(oC.y))));
+				packedCol = As<UInt2>(PackSigned(Short4(As<Int4>(color.x)), Short4(As<Int4>(color.y))));
 			}
 			else
 			{
-				packedCol = As<UInt2>(PackUnsigned(Short4(As<Int4>(oC.x)), Short4(As<Int4>(oC.y))));
+				packedCol = As<UInt2>(PackUnsigned(Short4(As<Int4>(color.x)), Short4(As<Int4>(color.y))));
 			}
 			value = *Pointer<UInt2>(buffer, 16);
 			mergedMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskD01Q) + xMask * 8);
-			if(rgbaWriteMask != 0xF)
+			if(writeMask != 0xF)
 			{
-				mergedMask &= *Pointer<UInt2>(constants + OFFSET(Constants, maskB4Q[rgbaWriteMask][0]));
+				mergedMask &= *Pointer<UInt2>(constants + OFFSET(Constants, maskB4Q[writeMask]));
 			}
 			*Pointer<UInt2>(buffer) = (packedCol & mergedMask) | (value & ~mergedMask);
 
@@ -2752,36 +3175,37 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 
 			if(isSigned)
 			{
-				packedCol = As<UInt2>(PackSigned(Short4(As<Int4>(oC.z)), Short4(As<Int4>(oC.w))));
+				packedCol = As<UInt2>(PackSigned(Short4(As<Int4>(color.z)), Short4(As<Int4>(color.w))));
 			}
 			else
 			{
-				packedCol = As<UInt2>(PackUnsigned(Short4(As<Int4>(oC.z)), Short4(As<Int4>(oC.w))));
+				packedCol = As<UInt2>(PackUnsigned(Short4(As<Int4>(color.z)), Short4(As<Int4>(color.w))));
 			}
 			value = *Pointer<UInt2>(buffer, 16);
 			mergedMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskD23Q) + xMask * 8);
-			if(rgbaWriteMask != 0xF)
+			if(writeMask != 0xF)
 			{
-				mergedMask &= *Pointer<UInt2>(constants + OFFSET(Constants, maskB4Q[rgbaWriteMask][0]));
+				mergedMask &= *Pointer<UInt2>(constants + OFFSET(Constants, maskB4Q[writeMask]));
 			}
 			*Pointer<UInt2>(buffer) = (packedCol & mergedMask) | (value & ~mergedMask);
 		}
 		break;
 	case VK_FORMAT_A2B10G10R10_UINT_PACK32:
-		if((rgbaWriteMask & 0x0000000F) != 0x0)
+	case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+		if((writeMask & 0x0000000F) != 0x0)
 		{
 			Int2 mergedMask, packedCol, value;
-			Int4 packed = ((As<Int4>(oC.w) & Int4(0x3)) << 30) |
-			              ((As<Int4>(oC.z) & Int4(0x3ff)) << 20) |
-			              ((As<Int4>(oC.y) & Int4(0x3ff)) << 10) |
-			              ((As<Int4>(oC.x) & Int4(0x3ff)));
+			Int4 packed = ((As<Int4>(color.w) & Int4(0x3)) << 30) |
+			              ((As<Int4>(color.z) & Int4(0x3ff)) << 20) |
+			              ((As<Int4>(color.y) & Int4(0x3ff)) << 10) |
+			              ((As<Int4>(color.x) & Int4(0x3ff)));
 
 			buffer += 4 * x;
 			value = *Pointer<Int2>(buffer, 16);
 			mergedMask = *Pointer<Int2>(constants + OFFSET(Constants, maskD01Q) + xMask * 8);
-			if(rgbaWriteMask != 0xF)
+			if(writeMask != 0xF)
 			{
-				mergedMask &= *Pointer<Int2>(constants + OFFSET(Constants, mask10Q[rgbaWriteMask][0]));
+				mergedMask &= *Pointer<Int2>(constants + OFFSET(Constants, mask10Q[writeMask]));
 			}
 			*Pointer<Int2>(buffer) = (As<Int2>(packed) & mergedMask) | (value & ~mergedMask);
 
@@ -2789,55 +3213,263 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 
 			value = *Pointer<Int2>(buffer, 16);
 			mergedMask = *Pointer<Int2>(constants + OFFSET(Constants, maskD23Q) + xMask * 8);
-			if(rgbaWriteMask != 0xF)
+			if(writeMask != 0xF)
 			{
-				mergedMask &= *Pointer<Int2>(constants + OFFSET(Constants, mask10Q[rgbaWriteMask][0]));
+				mergedMask &= *Pointer<Int2>(constants + OFFSET(Constants, mask10Q[writeMask]));
 			}
 			*Pointer<Int2>(buffer) = (As<Int2>(Int4(packed.zwww)) & mergedMask) | (value & ~mergedMask);
 		}
 		break;
 	case VK_FORMAT_A2R10G10B10_UINT_PACK32:
-		if((bgraWriteMask & 0x0000000F) != 0x0)
+	case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+		if((writeMask & 0x0000000F) != 0x0)
 		{
 			Int2 mergedMask, packedCol, value;
-			Int4 packed = ((As<Int4>(oC.w) & Int4(0x3)) << 30) |
-			              ((As<Int4>(oC.x) & Int4(0x3ff)) << 20) |
-			              ((As<Int4>(oC.y) & Int4(0x3ff)) << 10) |
-			              ((As<Int4>(oC.z) & Int4(0x3ff)));
+			Int4 packed = ((As<Int4>(color.w) & Int4(0x3)) << 30) |
+			              ((As<Int4>(color.x) & Int4(0x3ff)) << 20) |
+			              ((As<Int4>(color.y) & Int4(0x3ff)) << 10) |
+			              ((As<Int4>(color.z) & Int4(0x3ff)));
 
 			buffer += 4 * x;
 			value = *Pointer<Int2>(buffer, 16);
 			mergedMask = *Pointer<Int2>(constants + OFFSET(Constants, maskD01Q) + xMask * 8);
-			if(bgraWriteMask != 0xF)
+			if(writeMask != 0xF)
 			{
-				mergedMask &= *Pointer<Int2>(constants + OFFSET(Constants, mask10Q[bgraWriteMask][0]));
+				mergedMask &= *Pointer<Int2>(constants + OFFSET(Constants, mask10Q[writeMask]));
 			}
 			*Pointer<Int2>(buffer) = (As<Int2>(packed) & mergedMask) | (value & ~mergedMask);
 
-			buffer += *Pointer<Int>(data + OFFSET(DrawData, colorPitchB[index]));
+			buffer += pitchB;
 
 			value = *Pointer<Int2>(buffer, 16);
 			mergedMask = *Pointer<Int2>(constants + OFFSET(Constants, maskD23Q) + xMask * 8);
-			if(bgraWriteMask != 0xF)
+			if(writeMask != 0xF)
 			{
-				mergedMask &= *Pointer<Int2>(constants + OFFSET(Constants, mask10Q[bgraWriteMask][0]));
+				mergedMask &= *Pointer<Int2>(constants + OFFSET(Constants, mask10Q[writeMask]));
 			}
 			*Pointer<Int2>(buffer) = (As<Int2>(Int4(packed.zwww)) & mergedMask) | (value & ~mergedMask);
 		}
 		break;
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+		{
+			buffer += 2 * x;
+			Int value = *Pointer<Int>(buffer);
+
+			Int channelMask;
+			Short4 current;
+			switch(format)
+			{
+			case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+				channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask4argbQ[writeMask][0]));
+				current = (UShort4(As<Int4>(color.x)) & UShort4(0xF)) << 12 |
+				          (UShort4(As<Int4>(color.y)) & UShort4(0xF)) << 8 |
+				          (UShort4(As<Int4>(color.z)) & UShort4(0xF)) << 4 |
+				          (UShort4(As<Int4>(color.w)) & UShort4(0xF));
+				break;
+			case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+				channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask4argbQ[writeMask][0]));
+				current = (UShort4(As<Int4>(color.z)) & UShort4(0xF)) << 12 |
+				          (UShort4(As<Int4>(color.y)) & UShort4(0xF)) << 8 |
+				          (UShort4(As<Int4>(color.x)) & UShort4(0xF)) << 4 |
+				          (UShort4(As<Int4>(color.w)) & UShort4(0xF));
+				break;
+			case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+				channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask4rgbaQ[writeMask][0]));
+				current = (UShort4(As<Int4>(color.w)) & UShort4(0xF)) << 12 |
+				          (UShort4(As<Int4>(color.x)) & UShort4(0xF)) << 8 |
+				          (UShort4(As<Int4>(color.y)) & UShort4(0xF)) << 4 |
+				          (UShort4(As<Int4>(color.z)) & UShort4(0xF));
+				break;
+			case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
+				channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask4rgbaQ[writeMask][0]));
+				current = (UShort4(As<Int4>(color.w)) & UShort4(0xF)) << 12 |
+				          (UShort4(As<Int4>(color.z)) & UShort4(0xF)) << 8 |
+				          (UShort4(As<Int4>(color.y)) & UShort4(0xF)) << 4 |
+				          (UShort4(As<Int4>(color.x)) & UShort4(0xF));
+				break;
+			default:
+				UNREACHABLE("Format: %s", vk::Stringify(format).c_str());
+			}
+
+			Int c01 = Extract(As<Int2>(current), 0);
+			Int mask01 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][0]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask01 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c01 & mask01) | (value & ~mask01);
+
+			buffer += pitchB;
+			value = *Pointer<Int>(buffer);
+
+			Int c23 = Extract(As<Int2>(current), 1);
+			Int mask23 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][2]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask23 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c23 & mask23) | (value & ~mask23);
+		}
+		break;
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+		{
+			buffer += 2 * x;
+			Int value = *Pointer<Int>(buffer);
+
+			Int channelMask = *Pointer<Int>(constants + OFFSET(Constants, maskr5g5b5a1Q[writeMask][0]));
+			Short4 current = (UShort4(As<Int4>(color.x)) & UShort4(0x1F)) << 11 |
+			                 (UShort4(As<Int4>(color.y)) & UShort4(0x1F)) << 6 |
+			                 (UShort4(As<Int4>(color.z)) & UShort4(0x1F)) << 1 |
+			                 (UShort4(As<Int4>(color.w)) & UShort4(0x1));
+
+			Int c01 = Extract(As<Int2>(current), 0);
+			Int mask01 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][0]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask01 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c01 & mask01) | (value & ~mask01);
+
+			buffer += pitchB;
+			value = *Pointer<Int>(buffer);
+
+			Int c23 = Extract(As<Int2>(current), 1);
+			Int mask23 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][2]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask23 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c23 & mask23) | (value & ~mask23);
+		}
+		break;
+	case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
+		{
+			buffer += 2 * x;
+			Int value = *Pointer<Int>(buffer);
+
+			Int channelMask = *Pointer<Int>(constants + OFFSET(Constants, maskb5g5r5a1Q[writeMask][0]));
+			Short4 current = (UShort4(As<Int4>(color.z)) & UShort4(0x1F)) << 11 |
+			                 (UShort4(As<Int4>(color.y)) & UShort4(0x1F)) << 6 |
+			                 (UShort4(As<Int4>(color.x)) & UShort4(0x1F)) << 1 |
+			                 (UShort4(As<Int4>(color.w)) & UShort4(0x1));
+
+			Int c01 = Extract(As<Int2>(current), 0);
+			Int mask01 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][0]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask01 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c01 & mask01) | (value & ~mask01);
+
+			buffer += pitchB;
+			value = *Pointer<Int>(buffer);
+
+			Int c23 = Extract(As<Int2>(current), 1);
+			Int mask23 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][2]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask23 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c23 & mask23) | (value & ~mask23);
+		}
+		break;
+	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+		{
+			buffer += 2 * x;
+			Int value = *Pointer<Int>(buffer);
+
+			Int channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask5551Q[writeMask][0]));
+			Short4 current = (UShort4(As<Int4>(color.w)) & UShort4(0x1)) << 15 |
+			                 (UShort4(As<Int4>(color.x)) & UShort4(0x1F)) << 10 |
+			                 (UShort4(As<Int4>(color.y)) & UShort4(0x1F)) << 5 |
+			                 (UShort4(As<Int4>(color.z)) & UShort4(0x1F));
+
+			Int c01 = Extract(As<Int2>(current), 0);
+			Int mask01 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][0]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask01 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c01 & mask01) | (value & ~mask01);
+
+			buffer += pitchB;
+			value = *Pointer<Int>(buffer);
+
+			Int c23 = Extract(As<Int2>(current), 1);
+			Int mask23 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][2]) + xMask * 8);
+			if(writeMask != 0x0000000F)
+			{
+				mask23 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c23 & mask23) | (value & ~mask23);
+		}
+		break;
+	case VK_FORMAT_R5G6B5_UNORM_PACK16:
+		{
+			buffer += 2 * x;
+			Int value = *Pointer<Int>(buffer);
+
+			Int channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask565Q[writeMask & 0x7][0]));
+			Short4 current = (UShort4(As<Int4>(color.z)) & UShort4(0x1F)) |
+			                 (UShort4(As<Int4>(color.y)) & UShort4(0x3F)) << 5 |
+			                 (UShort4(As<Int4>(color.x)) & UShort4(0x1F)) << 11;
+
+			Int c01 = Extract(As<Int2>(current), 0);
+			Int mask01 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][0]) + xMask * 8);
+			if((writeMask & 0x00000007) != 0x00000007)
+			{
+				mask01 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c01 & mask01) | (value & ~mask01);
+
+			buffer += pitchB;
+			value = *Pointer<Int>(buffer);
+
+			Int c23 = Extract(As<Int2>(current), 1);
+			Int mask23 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][2]) + xMask * 8);
+			if((writeMask & 0x00000007) != 0x00000007)
+			{
+				mask23 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c23 & mask23) | (value & ~mask23);
+		}
+		break;
+	case VK_FORMAT_B5G6R5_UNORM_PACK16:
+		{
+			buffer += 2 * x;
+			Int value = *Pointer<Int>(buffer);
+
+			Int channelMask = *Pointer<Int>(constants + OFFSET(Constants, mask565Q[writeMask & 0x7][0]));
+			Short4 current = (UShort4(As<Int4>(color.x)) & UShort4(0x1F)) |
+			                 (UShort4(As<Int4>(color.y)) & UShort4(0x3F)) << 5 |
+			                 (UShort4(As<Int4>(color.z)) & UShort4(0x1F)) << 11;
+
+			Int c01 = Extract(As<Int2>(current), 0);
+			Int mask01 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][0]) + xMask * 8);
+			if((writeMask & 0x00000007) != 0x00000007)
+			{
+				mask01 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c01 & mask01) | (value & ~mask01);
+
+			buffer += pitchB;
+			value = *Pointer<Int>(buffer);
+
+			Int c23 = Extract(As<Int2>(current), 1);
+			Int mask23 = *Pointer<Int>(constants + OFFSET(Constants, maskW4Q[0][2]) + xMask * 8);
+			if((writeMask & 0x00000007) != 0x00000007)
+			{
+				mask23 &= channelMask;
+			}
+			*Pointer<Int>(buffer) = (c23 & mask23) | (value & ~mask23);
+		}
+		break;
 	default:
-		UNSUPPORTED("VkFormat: %d", int(targetFormat));
+		UNSUPPORTED("VkFormat: %d", int(format));
 	}
-}
-
-UShort4 PixelRoutine::convertFixed16(const Float4 &cf, bool saturate)
-{
-	return UShort4(cf * Float4(0xFFFF), saturate);
-}
-
-Float4 PixelRoutine::convertFloat32(const UShort4 &cf)
-{
-	return Float4(cf) * Float4(1.0f / 65535.0f);
 }
 
 void PixelRoutine::sRGBtoLinear16_12_16(Vector4s &c)
@@ -2896,9 +3528,9 @@ void PixelRoutine::linearToSRGB12_16(Vector4s &c)
 Float4 PixelRoutine::sRGBtoLinear(const Float4 &x)  // Approximates x^2.2
 {
 	Float4 linear = x * x;
-	linear = linear * Float4(0.73f) + linear * x * Float4(0.27f);
+	linear = linear * 0.73f + linear * x * 0.27f;
 
-	return Min(Max(linear, Float4(0.0f)), Float4(1.0f));
+	return Min(Max(linear, 0.0f), 1.0f);
 }
 
 }  // namespace sw

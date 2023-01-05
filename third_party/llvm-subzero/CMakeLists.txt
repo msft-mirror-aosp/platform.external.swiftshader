@@ -44,7 +44,6 @@ set(LLVM_SUBZERO_SRC_FILES
     "include/llvm/ADT/DenseMapInfo.h"
     "include/llvm/ADT/edit_distance.h"
     "include/llvm/ADT/EpochTracker.h"
-    "include/llvm/ADT/FoldingSet.h"
     "include/llvm/ADT/Hashing.h"
     "include/llvm/ADT/ilist_base.h"
     "include/llvm/ADT/ilist_iterator.h"
@@ -105,7 +104,6 @@ set(LLVM_SUBZERO_SRC_FILES
     "include/llvm/Support/COFF.h"
     "include/llvm/Support/CommandLine.h"
     "include/llvm/Support/Compiler.h"
-    "include/llvm/Support/ConvertUTF.h"
     "include/llvm/Support/DataStream.h"
     "include/llvm/Support/Debug.h"
     "include/llvm/Support/ELF.h"
@@ -161,12 +159,9 @@ set(LLVM_SUBZERO_SRC_FILES
     "lib/Support/Atomic.cpp"
     "lib/Support/circular_raw_ostream.cpp"
     "lib/Support/CommandLine.cpp"
-    "lib/Support/ConvertUTF.cpp"
-    "lib/Support/ConvertUTFWrapper.cpp"
     "lib/Support/Debug.cpp"
     "lib/Support/Errno.cpp"
     "lib/Support/ErrorHandling.cpp"
-    "lib/Support/FoldingSet.cpp"
     "lib/Support/Hashing.cpp"
     "lib/Support/ManagedStatic.cpp"
     "lib/Support/MemoryBuffer.cpp"
@@ -211,15 +206,19 @@ elseif(APPLE)
     set(LLVM_SUBZERO_PLATFORM_INCLUDE_DIR "build/MacOS/include")
 endif()
 
-if(WIN32)
+if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     list(APPEND LLVM_SUBZERO_COMPILE_OPTIONS
         "/wd4141"  # 'inline': used more than once
-        "/wd4146" # unary minus operator applied to unsigned type, result still unsigned
+        "/wd4146"  # unary minus operator applied to unsigned type, result still unsigned
         "/wd4244"  # '=': conversion from '__int64' to 'llvm_regoff_t', possible loss of data
         "/wd4267"  # '=': conversion from 'size_t' to 'sopno', possible loss of data
         "/wd4291"  # 'void *operator new(size_t,const `anonymous-namespace'::NamedBufferAlloc &)': no matching operator delete found; memory will not be freed if initialization throws an exception
-        "/wd4334" # ''operator' : result of 32-bit shift implicitly converted to 64 bits (was 64-bit shift intended?)
-        "/wd4996" # The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: new_name.
+        "/wd4334"  # ''operator' : result of 32-bit shift implicitly converted to 64 bits (was 64-bit shift intended?)
+        "/wd4996"  # The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: new_name.
+    )
+else()  # Clang or GCC
+    list(APPEND LLVM_SUBZERO_COMPILE_OPTIONS
+         "-Wno-deprecated-declarations"
     )
 endif()
 

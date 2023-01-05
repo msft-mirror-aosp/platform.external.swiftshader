@@ -79,35 +79,37 @@ TEST(TransformationReplaceBranchFromDeadBlockWithExitTest, BasicTest) {
   transformation_context.GetFactManager()->AddFactBlockIsDead(20);
 
   // Bad: 4 is not a block
-  ASSERT_FALSE(TransformationReplaceBranchFromDeadBlockWithExit(4, SpvOpKill, 0)
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationReplaceBranchFromDeadBlockWithExit(4, spv::Op::OpKill, 0)
+          .IsApplicable(context.get(), transformation_context));
   // Bad: 200 does not exist
   ASSERT_FALSE(
-      TransformationReplaceBranchFromDeadBlockWithExit(200, SpvOpKill, 0)
+      TransformationReplaceBranchFromDeadBlockWithExit(200, spv::Op::OpKill, 0)
           .IsApplicable(context.get(), transformation_context));
   // Bad: 21 is not a dead block
   ASSERT_FALSE(
-      TransformationReplaceBranchFromDeadBlockWithExit(21, SpvOpKill, 0)
+      TransformationReplaceBranchFromDeadBlockWithExit(21, spv::Op::OpKill, 0)
           .IsApplicable(context.get(), transformation_context));
   // Bad: terminator of 8 is not OpBranch
-  ASSERT_FALSE(TransformationReplaceBranchFromDeadBlockWithExit(8, SpvOpKill, 0)
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationReplaceBranchFromDeadBlockWithExit(8, spv::Op::OpKill, 0)
+          .IsApplicable(context.get(), transformation_context));
   // Bad: 10's successor only has 10 as a predecessor
   ASSERT_FALSE(
-      TransformationReplaceBranchFromDeadBlockWithExit(10, SpvOpKill, 0)
+      TransformationReplaceBranchFromDeadBlockWithExit(10, spv::Op::OpKill, 0)
           .IsApplicable(context.get(), transformation_context));
 
 #ifndef NDEBUG
   ASSERT_DEATH(
-      TransformationReplaceBranchFromDeadBlockWithExit(20, SpvOpSwitch, 0)
+      TransformationReplaceBranchFromDeadBlockWithExit(20, spv::Op::OpSwitch, 0)
           .IsApplicable(context.get(), transformation_context),
       "Invalid early exit opcode.");
 #endif
 
   auto transformation1 =
-      TransformationReplaceBranchFromDeadBlockWithExit(20, SpvOpKill, 0);
+      TransformationReplaceBranchFromDeadBlockWithExit(20, spv::Op::OpKill, 0);
   auto transformation2 =
-      TransformationReplaceBranchFromDeadBlockWithExit(16, SpvOpKill, 0);
+      TransformationReplaceBranchFromDeadBlockWithExit(16, spv::Op::OpKill, 0);
   ASSERT_TRUE(
       transformation1.IsApplicable(context.get(), transformation_context));
   ASSERT_TRUE(
@@ -281,48 +283,48 @@ TEST(TransformationReplaceBranchFromDeadBlockWithExitTest,
 
   // Bad: OpKill not allowed in vertex shader
   ASSERT_FALSE(
-      TransformationReplaceBranchFromDeadBlockWithExit(201, SpvOpKill, 0)
+      TransformationReplaceBranchFromDeadBlockWithExit(201, spv::Op::OpKill, 0)
           .IsApplicable(context.get(), transformation_context));
 
   // Bad: OpReturn is not allowed in function that expects a returned value.
-  ASSERT_FALSE(
-      TransformationReplaceBranchFromDeadBlockWithExit(200, SpvOpReturn, 0)
-          .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(TransformationReplaceBranchFromDeadBlockWithExit(
+                   200, spv::Op::OpReturn, 0)
+                   .IsApplicable(context.get(), transformation_context));
 
   // Bad: Return value id does not exist
   ASSERT_FALSE(TransformationReplaceBranchFromDeadBlockWithExit(
-                   201, SpvOpReturnValue, 1000)
+                   201, spv::Op::OpReturnValue, 1000)
                    .IsApplicable(context.get(), transformation_context));
 
   // Bad: Return value id does not have a type
-  ASSERT_FALSE(
-      TransformationReplaceBranchFromDeadBlockWithExit(200, SpvOpReturnValue, 6)
-          .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(TransformationReplaceBranchFromDeadBlockWithExit(
+                   200, spv::Op::OpReturnValue, 6)
+                   .IsApplicable(context.get(), transformation_context));
 
   // Bad: Return value id does not have the right type
   ASSERT_FALSE(TransformationReplaceBranchFromDeadBlockWithExit(
-                   201, SpvOpReturnValue, 48)
+                   201, spv::Op::OpReturnValue, 48)
                    .IsApplicable(context.get(), transformation_context));
 
   // Bad: Return value id is not available
   ASSERT_FALSE(TransformationReplaceBranchFromDeadBlockWithExit(
-                   200, SpvOpReturnValue, 400)
+                   200, spv::Op::OpReturnValue, 400)
                    .IsApplicable(context.get(), transformation_context));
 
   // Bad: Early exit now allowed in continue construct
-  ASSERT_FALSE(
-      TransformationReplaceBranchFromDeadBlockWithExit(101, SpvOpUnreachable, 0)
-          .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(TransformationReplaceBranchFromDeadBlockWithExit(
+                   101, spv::Op::OpUnreachable, 0)
+                   .IsApplicable(context.get(), transformation_context));
 
   // Bad: Early exit now allowed in continue construct (again)
   ASSERT_FALSE(TransformationReplaceBranchFromDeadBlockWithExit(
-                   300, SpvOpReturnValue, 14)
+                   300, spv::Op::OpReturnValue, 14)
                    .IsApplicable(context.get(), transformation_context));
 
   auto transformation1 = TransformationReplaceBranchFromDeadBlockWithExit(
-      200, SpvOpUnreachable, 0);
+      200, spv::Op::OpUnreachable, 0);
   auto transformation2 = TransformationReplaceBranchFromDeadBlockWithExit(
-      201, SpvOpReturnValue, 400);
+      201, spv::Op::OpReturnValue, 400);
 
   ASSERT_TRUE(
       transformation1.IsApplicable(context.get(), transformation_context));
@@ -339,7 +341,7 @@ TEST(TransformationReplaceBranchFromDeadBlockWithExitTest,
 
   opt::Instruction* return_value_inst =
       context->get_instr_block(201)->terminator();
-  ASSERT_EQ(SpvOpReturnValue, return_value_inst->opcode());
+  ASSERT_EQ(spv::Op::OpReturnValue, return_value_inst->opcode());
   ASSERT_EQ(SPV_OPERAND_TYPE_ID, return_value_inst->GetInOperand(0).type);
   ASSERT_EQ(400, return_value_inst->GetSingleWordInOperand(0));
 
@@ -504,9 +506,9 @@ TEST(TransformationReplaceBranchFromDeadBlockWithExitTest, OpPhi) {
   transformation_context.GetFactManager()->AddFactBlockIsDead(20);
 
   auto transformation1 =
-      TransformationReplaceBranchFromDeadBlockWithExit(20, SpvOpKill, 0);
+      TransformationReplaceBranchFromDeadBlockWithExit(20, spv::Op::OpKill, 0);
   auto transformation2 =
-      TransformationReplaceBranchFromDeadBlockWithExit(16, SpvOpKill, 0);
+      TransformationReplaceBranchFromDeadBlockWithExit(16, spv::Op::OpKill, 0);
   ASSERT_TRUE(
       transformation1.IsApplicable(context.get(), transformation_context));
   ASSERT_TRUE(
@@ -563,6 +565,302 @@ TEST(TransformationReplaceBranchFromDeadBlockWithExitTest, OpPhi) {
                OpReturn
                OpFunctionEnd
   )";
+  ASSERT_TRUE(IsEqual(env, after_transformation, context.get()));
+}
+
+TEST(TransformationReplaceBranchFromDeadBlockWithExitTest,
+     DominatorAfterDeadBlockSuccessor) {
+  std::string shader = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %4 "main"
+               OpExecutionMode %4 OriginUpperLeft
+               OpSource ESSL 320
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %6 = OpTypeBool
+          %7 = OpConstantFalse %6
+          %4 = OpFunction %2 None %3
+          %5 = OpLabel
+               OpSelectionMerge %8 None
+               OpBranchConditional %7 %9 %10
+          %9 = OpLabel
+               OpBranch %11
+         %11 = OpLabel
+         %12 = OpCopyObject %6 %7
+               OpBranch %8
+         %10 = OpLabel
+               OpBranch %13
+          %8 = OpLabel
+               OpReturn
+         %13 = OpLabel
+               OpBranch %8
+               OpFunctionEnd
+  )";
+
+  const auto env = SPV_ENV_UNIVERSAL_1_4;
+  const auto consumer = nullptr;
+  const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
+  spvtools::ValidatorOptions validator_options;
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
+
+  transformation_context.GetFactManager()->AddFactBlockIsDead(9);
+  transformation_context.GetFactManager()->AddFactBlockIsDead(11);
+
+  ASSERT_FALSE(TransformationReplaceBranchFromDeadBlockWithExit(
+                   11, spv::Op::OpUnreachable, 0)
+                   .IsApplicable(context.get(), transformation_context));
+}
+
+TEST(TransformationReplaceBranchFromDeadBlockWithExitTest,
+     UnreachableSuccessor) {
+  std::string shader = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %4 "main"
+               OpExecutionMode %4 OriginUpperLeft
+               OpSource ESSL 320
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %6 = OpTypeBool
+          %7 = OpConstantFalse %6
+          %4 = OpFunction %2 None %3
+          %5 = OpLabel
+               OpSelectionMerge %8 None
+               OpBranchConditional %7 %9 %10
+          %9 = OpLabel
+               OpBranch %11
+         %11 = OpLabel
+         %12 = OpCopyObject %6 %7
+               OpBranch %8
+         %10 = OpLabel
+               OpReturn
+          %8 = OpLabel
+               OpReturn
+         %13 = OpLabel
+               OpBranch %8
+               OpFunctionEnd
+  )";
+
+  const auto env = SPV_ENV_UNIVERSAL_1_4;
+  const auto consumer = nullptr;
+  const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
+  spvtools::ValidatorOptions validator_options;
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
+
+  transformation_context.GetFactManager()->AddFactBlockIsDead(9);
+  transformation_context.GetFactManager()->AddFactBlockIsDead(11);
+
+  TransformationReplaceBranchFromDeadBlockWithExit transformation(
+      11, spv::Op::OpUnreachable, 0);
+  ASSERT_TRUE(
+      transformation.IsApplicable(context.get(), transformation_context));
+  transformation.Apply(context.get(), &transformation_context);
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+
+  std::string after_transformation = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %4 "main"
+               OpExecutionMode %4 OriginUpperLeft
+               OpSource ESSL 320
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %6 = OpTypeBool
+          %7 = OpConstantFalse %6
+          %4 = OpFunction %2 None %3
+          %5 = OpLabel
+               OpSelectionMerge %8 None
+               OpBranchConditional %7 %9 %10
+          %9 = OpLabel
+               OpBranch %11
+         %11 = OpLabel
+         %12 = OpCopyObject %6 %7
+               OpUnreachable
+         %10 = OpLabel
+               OpReturn
+          %8 = OpLabel
+               OpReturn
+         %13 = OpLabel
+               OpBranch %8
+               OpFunctionEnd
+  )";
+
+  ASSERT_TRUE(IsEqual(env, after_transformation, context.get()));
+}
+
+TEST(TransformationReplaceBranchFromDeadBlockWithExitTest,
+     DeadBlockAfterItsSuccessor) {
+  std::string shader = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %4 "main"
+               OpExecutionMode %4 OriginUpperLeft
+               OpSource ESSL 320
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %6 = OpTypeBool
+          %7 = OpConstantTrue %6
+          %4 = OpFunction %2 None %3
+          %5 = OpLabel
+               OpSelectionMerge %8 None
+               OpBranchConditional %7 %9 %10
+          %9 = OpLabel
+               OpBranch %11
+         %11 = OpLabel
+         %12 = OpCopyObject %6 %7
+               OpBranch %8
+         %10 = OpLabel
+               OpBranch %13
+          %8 = OpLabel
+               OpReturn
+         %13 = OpLabel
+               OpBranch %8
+               OpFunctionEnd
+  )";
+
+  const auto env = SPV_ENV_UNIVERSAL_1_4;
+  const auto consumer = nullptr;
+  const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
+  spvtools::ValidatorOptions validator_options;
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
+
+  transformation_context.GetFactManager()->AddFactBlockIsDead(10);
+  transformation_context.GetFactManager()->AddFactBlockIsDead(13);
+
+  TransformationReplaceBranchFromDeadBlockWithExit transformation(
+      13, spv::Op::OpUnreachable, 0);
+  ASSERT_TRUE(
+      transformation.IsApplicable(context.get(), transformation_context));
+  transformation.Apply(context.get(), &transformation_context);
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+
+  std::string after_transformation = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %4 "main"
+               OpExecutionMode %4 OriginUpperLeft
+               OpSource ESSL 320
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %6 = OpTypeBool
+          %7 = OpConstantTrue %6
+          %4 = OpFunction %2 None %3
+          %5 = OpLabel
+               OpSelectionMerge %8 None
+               OpBranchConditional %7 %9 %10
+          %9 = OpLabel
+               OpBranch %11
+         %11 = OpLabel
+         %12 = OpCopyObject %6 %7
+               OpBranch %8
+         %10 = OpLabel
+               OpBranch %13
+          %8 = OpLabel
+               OpReturn
+         %13 = OpLabel
+               OpUnreachable
+               OpFunctionEnd
+  )";
+
+  ASSERT_TRUE(IsEqual(env, after_transformation, context.get()));
+}
+
+TEST(TransformationReplaceBranchFromDeadBlockWithExitTest,
+     BranchToOuterMergeBlock) {
+  std::string shader = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %4 "main"
+               OpExecutionMode %4 OriginUpperLeft
+               OpSource ESSL 320
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %6 = OpTypeBool
+          %7 = OpConstantTrue %6
+         %15 = OpTypeInt 32 0
+         %14 = OpUndef %15
+          %4 = OpFunction %2 None %3
+          %5 = OpLabel
+               OpSelectionMerge %8 None
+               OpSwitch %14 %9 1 %8
+          %9 = OpLabel
+               OpSelectionMerge %10 None
+               OpBranchConditional %7 %11 %10
+          %8 = OpLabel
+               OpReturn
+         %11 = OpLabel
+               OpBranch %8
+         %10 = OpLabel
+               OpBranch %8
+               OpFunctionEnd
+  )";
+
+  const auto env = SPV_ENV_UNIVERSAL_1_4;
+  const auto consumer = nullptr;
+  const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
+  spvtools::ValidatorOptions validator_options;
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
+
+  transformation_context.GetFactManager()->AddFactBlockIsDead(10);
+
+  TransformationReplaceBranchFromDeadBlockWithExit transformation(
+      10, spv::Op::OpUnreachable, 0);
+  ASSERT_TRUE(
+      transformation.IsApplicable(context.get(), transformation_context));
+  transformation.Apply(context.get(), &transformation_context);
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+
+  std::string after_transformation = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %4 "main"
+               OpExecutionMode %4 OriginUpperLeft
+               OpSource ESSL 320
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %6 = OpTypeBool
+          %7 = OpConstantTrue %6
+         %15 = OpTypeInt 32 0
+         %14 = OpUndef %15
+          %4 = OpFunction %2 None %3
+          %5 = OpLabel
+               OpSelectionMerge %8 None
+               OpSwitch %14 %9 1 %8
+          %9 = OpLabel
+               OpSelectionMerge %10 None
+               OpBranchConditional %7 %11 %10
+          %8 = OpLabel
+               OpReturn
+         %11 = OpLabel
+               OpBranch %8
+         %10 = OpLabel
+               OpUnreachable
+               OpFunctionEnd
+  )";
+
   ASSERT_TRUE(IsEqual(env, after_transformation, context.get()));
 }
 

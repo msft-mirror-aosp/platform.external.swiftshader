@@ -28,7 +28,7 @@ namespace fuzz {
 class TransformationPropagateInstructionDown : public Transformation {
  public:
   explicit TransformationPropagateInstructionDown(
-      const protobufs::TransformationPropagateInstructionDown& message);
+      protobufs::TransformationPropagateInstructionDown message);
 
   TransformationPropagateInstructionDown(
       uint32_t block_id, uint32_t phi_fresh_id,
@@ -120,12 +120,12 @@ class TransformationPropagateInstructionDown : public Transformation {
                                                      uint32_t block_id);
 
   // Returns true if |opcode| is supported by this transformation.
-  static bool IsOpcodeSupported(SpvOp opcode);
+  static bool IsOpcodeSupported(spv::Op opcode);
 
   // Returns the first instruction in the |block| that allows us to insert
   // |opcode| above itself. Returns nullptr is no such instruction exists.
   static opt::Instruction* GetFirstInsertBeforeInstruction(
-      opt::IRContext* ir_context, uint32_t block_id, SpvOp opcode);
+      opt::IRContext* ir_context, uint32_t block_id, spv::Op opcode);
 
   // Returns a result id of a basic block, where an OpPhi instruction can be
   // inserted. Returns nullptr if it's not possible to create an OpPhi. The

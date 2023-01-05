@@ -21,8 +21,8 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationMutatePointer::TransformationMutatePointer(
-    const protobufs::TransformationMutatePointer& message)
-    : message_(message) {}
+    protobufs::TransformationMutatePointer message)
+    : message_(std::move(message)) {}
 
 TransformationMutatePointer::TransformationMutatePointer(
     uint32_t pointer_id, uint32_t fresh_id,
@@ -51,7 +51,7 @@ bool TransformationMutatePointer::IsApplicable(
   // Check that it is possible to insert OpLoad and OpStore before
   // |insert_before_inst|. We are only using OpLoad here since the result does
   // not depend on the opcode.
-  if (!fuzzerutil::CanInsertOpcodeBeforeInstruction(SpvOpLoad,
+  if (!fuzzerutil::CanInsertOpcodeBeforeInstruction(spv::Op::OpLoad,
                                                     insert_before_inst)) {
     return false;
   }
@@ -92,36 +92,47 @@ void TransformationMutatePointer::Apply(
   auto* insert_before_inst =
       FindInstruction(message_.insert_before(), ir_context);
   assert(insert_before_inst && "|insert_before| descriptor is invalid");
+  opt::BasicBlock* enclosing_block =
+      ir_context->get_instr_block(insert_before_inst);
 
   auto pointee_type_id = fuzzerutil::GetPointeeTypeIdFromPointerType(
       ir_context, fuzzerutil::GetTypeId(ir_context, message_.pointer_id()));
 
   // Back up the original value.
-  insert_before_inst->InsertBefore(MakeUnique<opt::Instruction>(
-      ir_context, SpvOpLoad, pointee_type_id, message_.fresh_id(),
+  auto backup_instruction = MakeUnique<opt::Instruction>(
+      ir_context, spv::Op::OpLoad, pointee_type_id, message_.fresh_id(),
       opt::Instruction::OperandList{
-          {SPV_OPERAND_TYPE_ID, {message_.pointer_id()}}}));
+          {SPV_OPERAND_TYPE_ID, {message_.pointer_id()}}});
+  auto backup_instruction_ptr = backup_instruction.get();
+  insert_before_inst->InsertBefore(std::move(backup_instruction));
+  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(backup_instruction_ptr);
+  ir_context->set_instr_block(backup_instruction_ptr, enclosing_block);
 
   // Insert a new value.
-  insert_before_inst->InsertBefore(MakeUnique<opt::Instruction>(
-      ir_context, SpvOpStore, 0, 0,
+  auto new_value_instruction = MakeUnique<opt::Instruction>(
+      ir_context, spv::Op::OpStore, 0, 0,
       opt::Instruction::OperandList{
           {SPV_OPERAND_TYPE_ID, {message_.pointer_id()}},
           {SPV_OPERAND_TYPE_ID,
            {fuzzerutil::MaybeGetZeroConstant(
-               ir_context, *transformation_context, pointee_type_id, true)}}}));
+               ir_context, *transformation_context, pointee_type_id, true)}}});
+  auto new_value_instruction_ptr = new_value_instruction.get();
+  insert_before_inst->InsertBefore(std::move(new_value_instruction));
+  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(new_value_instruction_ptr);
+  ir_context->set_instr_block(new_value_instruction_ptr, enclosing_block);
 
   // Restore the original value.
-  insert_before_inst->InsertBefore(MakeUnique<opt::Instruction>(
-      ir_context, SpvOpStore, 0, 0,
+  auto restore_instruction = MakeUnique<opt::Instruction>(
+      ir_context, spv::Op::OpStore, 0, 0,
       opt::Instruction::OperandList{
           {SPV_OPERAND_TYPE_ID, {message_.pointer_id()}},
-          {SPV_OPERAND_TYPE_ID, {message_.fresh_id()}}}));
+          {SPV_OPERAND_TYPE_ID, {message_.fresh_id()}}});
+  auto restore_instruction_ptr = restore_instruction.get();
+  insert_before_inst->InsertBefore(std::move(restore_instruction));
+  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(restore_instruction_ptr);
+  ir_context->set_instr_block(restore_instruction_ptr, enclosing_block);
 
   fuzzerutil::UpdateModuleIdBound(ir_context, message_.fresh_id());
-
-  // Make sure analyses represent the correct state of the module.
-  ir_context->InvalidateAnalysesExceptFor(opt::IRContext::kAnalysisNone);
 }
 
 protobufs::Transformation TransformationMutatePointer::ToMessage() const {
@@ -134,8 +145,9 @@ bool TransformationMutatePointer::IsValidPointerInstruction(
     opt::IRContext* ir_context, const opt::Instruction& inst) {
   // |inst| must have both result id and type id and it may not cause undefined
   // behaviour.
-  if (!inst.result_id() || !inst.type_id() || inst.opcode() == SpvOpUndef ||
-      inst.opcode() == SpvOpConstantNull) {
+  if (!inst.result_id() || !inst.type_id() ||
+      inst.opcode() == spv::Op::OpUndef ||
+      inst.opcode() == spv::Op::OpConstantNull) {
     return false;
   }
 
@@ -144,15 +156,16 @@ bool TransformationMutatePointer::IsValidPointerInstruction(
   assert(type_inst != nullptr && "|inst| has invalid type id");
 
   // |inst| must be a pointer.
-  if (type_inst->opcode() != SpvOpTypePointer) {
+  if (type_inst->opcode() != spv::Op::OpTypePointer) {
     return false;
   }
 
   // |inst| must have a supported storage class.
-  switch (static_cast<SpvStorageClass>(type_inst->GetSingleWordInOperand(0))) {
-    case SpvStorageClassFunction:
-    case SpvStorageClassPrivate:
-    case SpvStorageClassWorkgroup:
+  switch (
+      static_cast<spv::StorageClass>(type_inst->GetSingleWordInOperand(0))) {
+    case spv::StorageClass::Function:
+    case spv::StorageClass::Private:
+    case spv::StorageClass::Workgroup:
       break;
     default:
       return false;

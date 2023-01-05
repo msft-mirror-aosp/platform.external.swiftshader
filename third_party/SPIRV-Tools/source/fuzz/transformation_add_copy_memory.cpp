@@ -22,17 +22,17 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationAddCopyMemory::TransformationAddCopyMemory(
-    const protobufs::TransformationAddCopyMemory& message)
-    : message_(message) {}
+    protobufs::TransformationAddCopyMemory message)
+    : message_(std::move(message)) {}
 
 TransformationAddCopyMemory::TransformationAddCopyMemory(
     const protobufs::InstructionDescriptor& instruction_descriptor,
-    uint32_t fresh_id, uint32_t source_id, SpvStorageClass storage_class,
+    uint32_t fresh_id, uint32_t source_id, spv::StorageClass storage_class,
     uint32_t initializer_id) {
   *message_.mutable_instruction_descriptor() = instruction_descriptor;
   message_.set_fresh_id(fresh_id);
   message_.set_source_id(source_id);
-  message_.set_storage_class(storage_class);
+  message_.set_storage_class(uint32_t(storage_class));
   message_.set_initializer_id(initializer_id);
 }
 
@@ -53,7 +53,8 @@ bool TransformationAddCopyMemory::IsApplicable(
   // Check that we can insert OpCopyMemory before |instruction_descriptor|.
   auto iter = fuzzerutil::GetIteratorForInstruction(
       ir_context->get_instr_block(inst), inst);
-  if (!fuzzerutil::CanInsertOpcodeBeforeInstruction(SpvOpCopyMemory, iter)) {
+  if (!fuzzerutil::CanInsertOpcodeBeforeInstruction(spv::Op::OpCopyMemory,
+                                                    iter)) {
     return false;
   }
 
@@ -65,8 +66,10 @@ bool TransformationAddCopyMemory::IsApplicable(
   }
 
   // |storage_class| is either Function or Private.
-  if (message_.storage_class() != SpvStorageClassFunction &&
-      message_.storage_class() != SpvStorageClassPrivate) {
+  if (spv::StorageClass(message_.storage_class()) !=
+          spv::StorageClass::Function &&
+      spv::StorageClass(message_.storage_class()) !=
+          spv::StorageClass::Private) {
     return false;
   }
 
@@ -76,7 +79,7 @@ bool TransformationAddCopyMemory::IsApplicable(
   // OpTypePointer with |message_.storage_class| exists.
   if (!fuzzerutil::MaybeGetPointerType(
           ir_context, pointee_type_id,
-          static_cast<SpvStorageClass>(message_.storage_class()))) {
+          static_cast<spv::StorageClass>(message_.storage_class()))) {
     return false;
   }
 
@@ -99,42 +102,47 @@ void TransformationAddCopyMemory::Apply(
   auto* insert_before_inst =
       FindInstruction(message_.instruction_descriptor(), ir_context);
   assert(insert_before_inst);
-
-  auto insert_before_iter = fuzzerutil::GetIteratorForInstruction(
-      ir_context->get_instr_block(insert_before_inst), insert_before_inst);
-
-  insert_before_iter.InsertBefore(MakeUnique<opt::Instruction>(
-      ir_context, SpvOpCopyMemory, 0, 0,
-      opt::Instruction::OperandList{
-          {SPV_OPERAND_TYPE_ID, {message_.fresh_id()}},
-          {SPV_OPERAND_TYPE_ID, {message_.source_id()}}}));
+  opt::BasicBlock* enclosing_block =
+      ir_context->get_instr_block(insert_before_inst);
 
   // Add global or local variable to copy memory into.
-  auto storage_class = static_cast<SpvStorageClass>(message_.storage_class());
+  auto storage_class = static_cast<spv::StorageClass>(message_.storage_class());
   auto type_id = fuzzerutil::MaybeGetPointerType(
       ir_context,
       fuzzerutil::GetPointeeTypeIdFromPointerType(
           ir_context, fuzzerutil::GetTypeId(ir_context, message_.source_id())),
       storage_class);
 
-  if (storage_class == SpvStorageClassPrivate) {
-    fuzzerutil::AddGlobalVariable(ir_context, message_.fresh_id(), type_id,
-                                  storage_class, message_.initializer_id());
+  if (storage_class == spv::StorageClass::Private) {
+    opt::Instruction* new_global =
+        fuzzerutil::AddGlobalVariable(ir_context, message_.fresh_id(), type_id,
+                                      storage_class, message_.initializer_id());
+    ir_context->get_def_use_mgr()->AnalyzeInstDefUse(new_global);
   } else {
-    assert(storage_class == SpvStorageClassFunction &&
+    assert(storage_class == spv::StorageClass::Function &&
            "Storage class can be either Private or Function");
-    fuzzerutil::AddLocalVariable(ir_context, message_.fresh_id(), type_id,
-                                 ir_context->get_instr_block(insert_before_inst)
-                                     ->GetParent()
-                                     ->result_id(),
-                                 message_.initializer_id());
+    opt::Function* enclosing_function = enclosing_block->GetParent();
+    opt::Instruction* new_local = fuzzerutil::AddLocalVariable(
+        ir_context, message_.fresh_id(), type_id,
+        enclosing_function->result_id(), message_.initializer_id());
+    ir_context->get_def_use_mgr()->AnalyzeInstDefUse(new_local);
+    ir_context->set_instr_block(new_local, &*enclosing_function->entry());
   }
 
-  fuzzerutil::UpdateModuleIdBound(ir_context, message_.fresh_id());
+  auto insert_before_iter = fuzzerutil::GetIteratorForInstruction(
+      enclosing_block, insert_before_inst);
 
-  // Make sure our changes are analyzed
-  ir_context->InvalidateAnalysesExceptFor(
-      opt::IRContext::Analysis::kAnalysisNone);
+  auto new_instruction = MakeUnique<opt::Instruction>(
+      ir_context, spv::Op::OpCopyMemory, 0, 0,
+      opt::Instruction::OperandList{
+          {SPV_OPERAND_TYPE_ID, {message_.fresh_id()}},
+          {SPV_OPERAND_TYPE_ID, {message_.source_id()}}});
+  auto new_instruction_ptr = new_instruction.get();
+  insert_before_iter.InsertBefore(std::move(new_instruction));
+  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(new_instruction_ptr);
+  ir_context->set_instr_block(new_instruction_ptr, enclosing_block);
+
+  fuzzerutil::UpdateModuleIdBound(ir_context, message_.fresh_id());
 
   // Even though the copy memory instruction will - at least temporarily - lead
   // to the destination and source pointers referring to identical values, this
@@ -155,7 +163,8 @@ protobufs::Transformation TransformationAddCopyMemory::ToMessage() const {
 bool TransformationAddCopyMemory::IsInstructionSupported(
     opt::IRContext* ir_context, opt::Instruction* inst) {
   if (!inst->result_id() || !inst->type_id() ||
-      inst->opcode() == SpvOpConstantNull || inst->opcode() == SpvOpUndef) {
+      inst->opcode() == spv::Op::OpConstantNull ||
+      inst->opcode() == spv::Op::OpUndef) {
     return false;
   }
 

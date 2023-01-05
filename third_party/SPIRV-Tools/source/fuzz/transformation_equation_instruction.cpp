@@ -21,14 +21,15 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationEquationInstruction::TransformationEquationInstruction(
-    const spvtools::fuzz::protobufs::TransformationEquationInstruction& message)
-    : message_(message) {}
+    protobufs::TransformationEquationInstruction message)
+    : message_(std::move(message)) {}
 
 TransformationEquationInstruction::TransformationEquationInstruction(
-    uint32_t fresh_id, SpvOp opcode, const std::vector<uint32_t>& in_operand_id,
+    uint32_t fresh_id, spv::Op opcode,
+    const std::vector<uint32_t>& in_operand_id,
     const protobufs::InstructionDescriptor& instruction_to_insert_before) {
   message_.set_fresh_id(fresh_id);
-  message_.set_opcode(opcode);
+  message_.set_opcode(uint32_t(opcode));
   for (auto id : in_operand_id) {
     message_.add_in_operand_id(id);
   }
@@ -57,7 +58,7 @@ bool TransformationEquationInstruction::IsApplicable(
     if (!inst) {
       return false;
     }
-    if (inst->opcode() == SpvOpUndef) {
+    if (inst->opcode() == spv::Op::OpUndef) {
       return false;
     }
     if (transformation_context.GetFactManager()->IdIsIrrelevant(id)) {
@@ -84,20 +85,24 @@ void TransformationEquationInstruction::Apply(
     rhs_id.push_back(id);
   }
 
-  FindInstruction(message_.instruction_to_insert_before(), ir_context)
-      ->InsertBefore(MakeUnique<opt::Instruction>(
-          ir_context, static_cast<SpvOp>(message_.opcode()),
+  auto insert_before =
+      FindInstruction(message_.instruction_to_insert_before(), ir_context);
+  opt::Instruction* new_instruction =
+      insert_before->InsertBefore(MakeUnique<opt::Instruction>(
+          ir_context, static_cast<spv::Op>(message_.opcode()),
           MaybeGetResultTypeId(ir_context), message_.fresh_id(),
           std::move(in_operands)));
 
-  ir_context->InvalidateAnalysesExceptFor(opt::IRContext::kAnalysisNone);
+  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(new_instruction);
+  ir_context->set_instr_block(new_instruction,
+                              ir_context->get_instr_block(insert_before));
 
   // Add an equation fact as long as the result id is not irrelevant (it could
   // be if we are inserting into a dead block).
   if (!transformation_context->GetFactManager()->IdIsIrrelevant(
           message_.fresh_id())) {
     transformation_context->GetFactManager()->AddFactIdEquation(
-        message_.fresh_id(), static_cast<SpvOp>(message_.opcode()), rhs_id);
+        message_.fresh_id(), static_cast<spv::Op>(message_.opcode()), rhs_id);
   }
 }
 
@@ -109,10 +114,10 @@ protobufs::Transformation TransformationEquationInstruction::ToMessage() const {
 
 uint32_t TransformationEquationInstruction::MaybeGetResultTypeId(
     opt::IRContext* ir_context) const {
-  auto opcode = static_cast<SpvOp>(message_.opcode());
+  auto opcode = static_cast<spv::Op>(message_.opcode());
   switch (opcode) {
-    case SpvOpConvertUToF:
-    case SpvOpConvertSToF: {
+    case spv::Op::OpConvertUToF:
+    case spv::Op::OpConvertSToF: {
       if (message_.in_operand_id_size() != 1) {
         return 0;
       }
@@ -144,7 +149,7 @@ uint32_t TransformationEquationInstruction::MaybeGetResultTypeId(
                                              type->AsInteger()->width());
       }
     }
-    case SpvOpBitcast: {
+    case spv::Op::OpBitcast: {
       if (message_.in_operand_id_size() != 1) {
         return 0;
       }
@@ -206,8 +211,8 @@ uint32_t TransformationEquationInstruction::MaybeGetResultTypeId(
         return 0;
       }
     }
-    case SpvOpIAdd:
-    case SpvOpISub: {
+    case spv::Op::OpIAdd:
+    case spv::Op::OpISub: {
       if (message_.in_operand_id_size() != 2) {
         return 0;
       }
@@ -245,7 +250,7 @@ uint32_t TransformationEquationInstruction::MaybeGetResultTypeId(
              "A type must have been found for the first operand.");
       return first_operand_type_id;
     }
-    case SpvOpLogicalNot: {
+    case spv::Op::OpLogicalNot: {
       if (message_.in_operand_id().size() != 1) {
         return 0;
       }
@@ -263,7 +268,7 @@ uint32_t TransformationEquationInstruction::MaybeGetResultTypeId(
       }
       return operand_inst->type_id();
     }
-    case SpvOpSNegate: {
+    case spv::Op::OpSNegate: {
       if (message_.in_operand_id().size() != 1) {
         return 0;
       }

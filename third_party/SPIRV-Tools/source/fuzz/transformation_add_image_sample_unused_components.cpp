@@ -22,9 +22,8 @@ namespace fuzz {
 
 TransformationAddImageSampleUnusedComponents::
     TransformationAddImageSampleUnusedComponents(
-        const spvtools::fuzz::protobufs::
-            TransformationAddImageSampleUnusedComponents& message)
-    : message_(message) {}
+        protobufs::TransformationAddImageSampleUnusedComponents message)
+    : message_(std::move(message)) {}
 
 TransformationAddImageSampleUnusedComponents::
     TransformationAddImageSampleUnusedComponents(
@@ -74,7 +73,7 @@ bool TransformationAddImageSampleUnusedComponents::IsApplicable(
   // It must be an OpCompositeConstruct instruction such that it can be checked
   // that the original components are present.
   if (coordinate_with_unused_components_instruction->opcode() !=
-      SpvOpCompositeConstruct) {
+      spv::Op::OpCompositeConstruct) {
     return false;
   }
 

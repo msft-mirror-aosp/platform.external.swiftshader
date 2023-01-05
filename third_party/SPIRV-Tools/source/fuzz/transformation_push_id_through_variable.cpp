@@ -21,9 +21,8 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationPushIdThroughVariable::TransformationPushIdThroughVariable(
-    const spvtools::fuzz::protobufs::TransformationPushIdThroughVariable&
-        message)
-    : message_(message) {}
+    protobufs::TransformationPushIdThroughVariable message)
+    : message_(std::move(message)) {}
 
 TransformationPushIdThroughVariable::TransformationPushIdThroughVariable(
     uint32_t value_id, uint32_t value_synonym_id, uint32_t variable_id,
@@ -54,15 +53,15 @@ bool TransformationPushIdThroughVariable::IsApplicable(
 
   // It must be valid to insert the OpStore and OpLoad instruction before it.
   if (!fuzzerutil::CanInsertOpcodeBeforeInstruction(
-          SpvOpStore, instruction_to_insert_before) ||
+          spv::Op::OpStore, instruction_to_insert_before) ||
       !fuzzerutil::CanInsertOpcodeBeforeInstruction(
-          SpvOpLoad, instruction_to_insert_before)) {
+          spv::Op::OpLoad, instruction_to_insert_before)) {
     return false;
   }
 
   // The instruction to insert before must belong to a reachable block.
   auto basic_block = ir_context->get_instr_block(instruction_to_insert_before);
-  if (!fuzzerutil::BlockIsReachableInItsFunction(ir_context, basic_block)) {
+  if (!ir_context->IsReachable(*basic_block)) {
     return false;
   }
 
@@ -76,14 +75,16 @@ bool TransformationPushIdThroughVariable::IsApplicable(
   // A pointer type instruction pointing to the value type must be defined.
   auto pointer_type_id = fuzzerutil::MaybeGetPointerType(
       ir_context, value_instruction->type_id(),
-      static_cast<SpvStorageClass>(message_.variable_storage_class()));
+      static_cast<spv::StorageClass>(message_.variable_storage_class()));
   if (!pointer_type_id) {
     return false;
   }
 
   // |message_.variable_storage_class| must be private or function.
-  assert((message_.variable_storage_class() == SpvStorageClassPrivate ||
-          message_.variable_storage_class() == SpvStorageClassFunction) &&
+  assert((message_.variable_storage_class() ==
+              (uint32_t)spv::StorageClass::Private ||
+          message_.variable_storage_class() ==
+              (uint32_t)spv::StorageClass::Function) &&
          "The variable storage class must be private or function.");
 
   // Check that initializer is valid.
@@ -105,48 +106,59 @@ void TransformationPushIdThroughVariable::Apply(
   auto value_instruction =
       ir_context->get_def_use_mgr()->GetDef(message_.value_id());
 
+  opt::Instruction* insert_before =
+      FindInstruction(message_.instruction_descriptor(), ir_context);
+  opt::BasicBlock* enclosing_block = ir_context->get_instr_block(insert_before);
+
   // A pointer type instruction pointing to the value type must be defined.
   auto pointer_type_id = fuzzerutil::MaybeGetPointerType(
       ir_context, value_instruction->type_id(),
-      static_cast<SpvStorageClass>(message_.variable_storage_class()));
+      static_cast<spv::StorageClass>(message_.variable_storage_class()));
   assert(pointer_type_id && "The required pointer type must be available.");
 
   // Adds whether a global or local variable.
-  if (message_.variable_storage_class() == SpvStorageClassPrivate) {
-    fuzzerutil::AddGlobalVariable(ir_context, message_.variable_id(),
-                                  pointer_type_id, SpvStorageClassPrivate,
-                                  message_.initializer_id());
+  if (spv::StorageClass(message_.variable_storage_class()) ==
+      spv::StorageClass::Private) {
+    opt::Instruction* global_variable = fuzzerutil::AddGlobalVariable(
+        ir_context, message_.variable_id(), pointer_type_id,
+        spv::StorageClass::Private, message_.initializer_id());
+    ir_context->get_def_use_mgr()->AnalyzeInstDefUse(global_variable);
   } else {
-    auto function_id = ir_context
-                           ->get_instr_block(FindInstruction(
-                               message_.instruction_descriptor(), ir_context))
-                           ->GetParent()
-                           ->result_id();
-    fuzzerutil::AddLocalVariable(ir_context, message_.variable_id(),
-                                 pointer_type_id, function_id,
-                                 message_.initializer_id());
+    opt::Function* function =
+        ir_context
+            ->get_instr_block(
+                FindInstruction(message_.instruction_descriptor(), ir_context))
+            ->GetParent();
+    opt::Instruction* local_variable = fuzzerutil::AddLocalVariable(
+        ir_context, message_.variable_id(), pointer_type_id,
+        function->result_id(), message_.initializer_id());
+    ir_context->get_def_use_mgr()->AnalyzeInstDefUse(local_variable);
+    ir_context->set_instr_block(local_variable, &*function->entry());
   }
 
   // First, insert the OpLoad instruction before |instruction_descriptor| and
   // then insert the OpStore instruction before the OpLoad instruction.
   fuzzerutil::UpdateModuleIdBound(ir_context, message_.value_synonym_id());
-  FindInstruction(message_.instruction_descriptor(), ir_context)
-      ->InsertBefore(MakeUnique<opt::Instruction>(
-          ir_context, SpvOpLoad, value_instruction->type_id(),
+  opt::Instruction* load_instruction =
+      insert_before->InsertBefore(MakeUnique<opt::Instruction>(
+          ir_context, spv::Op::OpLoad, value_instruction->type_id(),
           message_.value_synonym_id(),
           opt::Instruction::OperandList(
-              {{SPV_OPERAND_TYPE_ID, {message_.variable_id()}}})))
-      ->InsertBefore(MakeUnique<opt::Instruction>(
-          ir_context, SpvOpStore, 0, 0,
+              {{SPV_OPERAND_TYPE_ID, {message_.variable_id()}}})));
+  opt::Instruction* store_instruction =
+      load_instruction->InsertBefore(MakeUnique<opt::Instruction>(
+          ir_context, spv::Op::OpStore, 0, 0,
           opt::Instruction::OperandList(
               {{SPV_OPERAND_TYPE_ID, {message_.variable_id()}},
                {SPV_OPERAND_TYPE_ID, {message_.value_id()}}})));
-
-  ir_context->InvalidateAnalysesExceptFor(opt::IRContext::kAnalysisNone);
+  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(store_instruction);
+  ir_context->set_instr_block(store_instruction, enclosing_block);
+  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(load_instruction);
+  ir_context->set_instr_block(load_instruction, enclosing_block);
 
   // We should be able to create a synonym of |value_id| if it's not irrelevant.
   if (fuzzerutil::CanMakeSynonymOf(ir_context, *transformation_context,
-                                   value_instruction) &&
+                                   *value_instruction) &&
       !transformation_context->GetFactManager()->IdIsIrrelevant(
           message_.value_synonym_id())) {
     // Adds the fact that |message_.value_synonym_id|

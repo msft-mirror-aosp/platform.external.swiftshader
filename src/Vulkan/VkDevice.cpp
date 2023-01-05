@@ -19,6 +19,7 @@
 #include "VkFence.hpp"
 #include "VkQueue.hpp"
 #include "VkSemaphore.hpp"
+#include "VkStringify.hpp"
 #include "VkTimelineSemaphore.hpp"
 #include "Debug/Context.hpp"
 #include "Debug/Server.hpp"
@@ -119,9 +120,8 @@ Device::Device(const VkDeviceCreateInfo *pCreateInfo, void *mem, PhysicalDevice 
     : physicalDevice(physicalDevice)
     , queues(reinterpret_cast<Queue *>(mem))
     , enabledExtensionCount(pCreateInfo->enabledExtensionCount)
-    , enabledFeatures(enabledFeatures ? *enabledFeatures : VkPhysicalDeviceFeatures{})
-    ,  // "Setting pEnabledFeatures to NULL and not including a VkPhysicalDeviceFeatures2 in the pNext member of VkDeviceCreateInfo is equivalent to setting all members of the structure to VK_FALSE."
-    scheduler(scheduler)
+    , enabledFeatures(enabledFeatures ? *enabledFeatures : VkPhysicalDeviceFeatures{})  // "Setting pEnabledFeatures to NULL and not including a VkPhysicalDeviceFeatures2 in the pNext member of VkDeviceCreateInfo is equivalent to setting all members of the structure to VK_FALSE."
+    , scheduler(scheduler)
 {
 	for(uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
 	{
@@ -152,36 +152,16 @@ Device::Device(const VkDeviceCreateInfo *pCreateInfo, void *mem, PhysicalDevice 
 		UNSUPPORTED("enabledLayerCount");
 	}
 
-	// FIXME (b/119409619): use an allocator here so we can control all memory allocations
+	// TODO(b/119409619): use an allocator here so we can control all memory allocations
 	blitter.reset(new sw::Blitter());
 	samplingRoutineCache.reset(new SamplingRoutineCache());
 	samplerIndexer.reset(new SamplerIndexer());
 
-#ifdef ENABLE_VK_DEBUGGER
-	static auto port = getenv("VK_DEBUGGER_PORT");
-	if(port)
-	{
-		// Construct the debugger context and server - this may block for a
-		// debugger connection, allowing breakpoints to be set before they're
-		// executed.
-		debugger.context = vk::dbg::Context::create();
-		debugger.server = vk::dbg::Server::create(debugger.context, atoi(port));
-	}
-#endif  // ENABLE_VK_DEBUGGER
-
 #ifdef SWIFTSHADER_DEVICE_MEMORY_REPORT
-	const VkBaseInStructure *extensionCreateInfo = reinterpret_cast<const VkBaseInStructure *>(pCreateInfo->pNext);
-	while(extensionCreateInfo)
+	const auto *deviceMemoryReportCreateInfo = GetExtendedStruct<VkDeviceDeviceMemoryReportCreateInfoEXT>(pCreateInfo->pNext, VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT);
+	if(deviceMemoryReportCreateInfo && deviceMemoryReportCreateInfo->pfnUserCallback != nullptr)
 	{
-		if(extensionCreateInfo->sType == VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT)
-		{
-			auto deviceMemoryReportCreateInfo = reinterpret_cast<const VkDeviceDeviceMemoryReportCreateInfoEXT *>(pCreateInfo->pNext);
-			if(deviceMemoryReportCreateInfo->pfnUserCallback != nullptr)
-			{
-				deviceMemoryReportCallbacks.emplace_back(deviceMemoryReportCreateInfo->pfnUserCallback, deviceMemoryReportCreateInfo->pUserData);
-			}
-		}
-		extensionCreateInfo = extensionCreateInfo->pNext;
+		deviceMemoryReportCallbacks.emplace_back(deviceMemoryReportCreateInfo->pfnUserCallback, deviceMemoryReportCreateInfo->pUserData);
 	}
 #endif  // SWIFTSHADER_DEVICE_MEMORY_REPORT
 }
@@ -193,7 +173,7 @@ void Device::destroy(const VkAllocationCallbacks *pAllocator)
 		queues[i].~Queue();
 	}
 
-	vk::deallocate(queues, pAllocator);
+	vk::freeHostMemory(queues, pAllocator);
 }
 
 size_t Device::ComputeRequiredAllocationSize(const VkDeviceCreateInfo *pCreateInfo)
@@ -363,6 +343,59 @@ void Device::getDescriptorSetLayoutSupport(const VkDescriptorSetLayoutCreateInfo
 
 	// We have no "strange" limitations to enforce beyond the device limits, so we can safely always claim support.
 	pSupport->supported = VK_TRUE;
+
+	if(pCreateInfo->bindingCount > 0)
+	{
+		bool hasVariableSizedDescriptor = false;
+
+		const VkBaseInStructure *layoutInfo = reinterpret_cast<const VkBaseInStructure *>(pCreateInfo->pNext);
+		while(layoutInfo && !hasVariableSizedDescriptor)
+		{
+			if(layoutInfo->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO)
+			{
+				const VkDescriptorSetLayoutBindingFlagsCreateInfo *bindingFlagsCreateInfo =
+				    reinterpret_cast<const VkDescriptorSetLayoutBindingFlagsCreateInfo *>(layoutInfo);
+
+				for(uint32_t i = 0; i < bindingFlagsCreateInfo->bindingCount; i++)
+				{
+					if(bindingFlagsCreateInfo->pBindingFlags[i] & VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT)
+					{
+						hasVariableSizedDescriptor = true;
+						break;
+					}
+				}
+			}
+			else
+			{
+				UNSUPPORTED("layoutInfo->sType = %s", vk::Stringify(layoutInfo->sType).c_str());
+			}
+
+			layoutInfo = layoutInfo->pNext;
+		}
+
+		const auto &highestNumberedBinding = pCreateInfo->pBindings[pCreateInfo->bindingCount - 1];
+
+		VkBaseOutStructure *layoutSupport = reinterpret_cast<VkBaseOutStructure *>(pSupport->pNext);
+		while(layoutSupport)
+		{
+			if(layoutSupport->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT)
+			{
+				VkDescriptorSetVariableDescriptorCountLayoutSupport *variableDescriptorCountLayoutSupport =
+				    reinterpret_cast<VkDescriptorSetVariableDescriptorCountLayoutSupport *>(layoutSupport);
+
+				// If the VkDescriptorSetLayoutCreateInfo structure does not include a variable-sized descriptor,
+				// [...] then maxVariableDescriptorCount is set to zero.
+				variableDescriptorCountLayoutSupport->maxVariableDescriptorCount =
+				    hasVariableSizedDescriptor ? ((highestNumberedBinding.descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) ? vk::MAX_INLINE_UNIFORM_BLOCK_SIZE : vk::MAX_UPDATE_AFTER_BIND_DESCRIPTORS) : 0;
+			}
+			else
+			{
+				UNSUPPORTED("layoutSupport->sType = %s", vk::Stringify(layoutSupport->sType).c_str());
+			}
+
+			layoutSupport = layoutSupport->pNext;
+		}
+	}
 }
 
 void Device::updateDescriptorSets(uint32_t descriptorWriteCount, const VkWriteDescriptorSet *pDescriptorWrites,
@@ -458,7 +491,7 @@ void Device::prepareForSampling(ImageView *imageView)
 	}
 }
 
-void Device::contentsChanged(ImageView *imageView)
+void Device::contentsChanged(ImageView *imageView, Image::ContentsChangedContext context)
 {
 	if(imageView != nullptr)
 	{
@@ -467,9 +500,44 @@ void Device::contentsChanged(ImageView *imageView)
 		auto it = imageViewSet.find(imageView);
 		if(it != imageViewSet.end())
 		{
-			imageView->contentsChanged();
+			imageView->contentsChanged(context);
 		}
 	}
+}
+
+VkResult Device::setPrivateData(VkObjectType objectType, uint64_t objectHandle, const PrivateData *privateDataSlot, uint64_t data)
+{
+	marl::lock lock(privateDataMutex);
+
+	auto &privateDataSlotMap = privateData[privateDataSlot];
+	const PrivateDataObject privateDataObject = { objectType, objectHandle };
+	privateDataSlotMap[privateDataObject] = data;
+	return VK_SUCCESS;
+}
+
+void Device::getPrivateData(VkObjectType objectType, uint64_t objectHandle, const PrivateData *privateDataSlot, uint64_t *data)
+{
+	marl::lock lock(privateDataMutex);
+
+	*data = 0;
+	auto it = privateData.find(privateDataSlot);
+	if(it != privateData.end())
+	{
+		auto &privateDataSlotMap = it->second;
+		const PrivateDataObject privateDataObject = { objectType, objectHandle };
+		auto it2 = privateDataSlotMap.find(privateDataObject);
+		if(it2 != privateDataSlotMap.end())
+		{
+			*data = it2->second;
+		}
+	}
+}
+
+void Device::removePrivateDataSlot(const PrivateData *privateDataSlot)
+{
+	marl::lock lock(privateDataMutex);
+
+	privateData.erase(privateDataSlot);
 }
 
 #ifdef SWIFTSHADER_DEVICE_MEMORY_REPORT

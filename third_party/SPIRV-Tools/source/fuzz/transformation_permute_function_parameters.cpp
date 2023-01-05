@@ -23,9 +23,8 @@ namespace fuzz {
 
 TransformationPermuteFunctionParameters::
     TransformationPermuteFunctionParameters(
-        const spvtools::fuzz::protobufs::
-            TransformationPermuteFunctionParameters& message)
-    : message_(message) {}
+        protobufs::TransformationPermuteFunctionParameters message)
+    : message_(std::move(message)) {}
 
 TransformationPermuteFunctionParameters::
     TransformationPermuteFunctionParameters(
@@ -44,7 +43,7 @@ bool TransformationPermuteFunctionParameters::IsApplicable(
   // Check that function exists
   const auto* function =
       fuzzerutil::FindFunction(ir_context, message_.function_id());
-  if (!function || function->DefInst().opcode() != SpvOpFunction ||
+  if (!function || function->DefInst().opcode() != spv::Op::OpFunction ||
       fuzzerutil::FunctionIsEntryPoint(ir_context, function->result_id())) {
     return false;
   }

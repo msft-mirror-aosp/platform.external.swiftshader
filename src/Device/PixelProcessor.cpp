@@ -55,26 +55,15 @@ PixelProcessor::PixelProcessor()
 
 void PixelProcessor::setBlendConstant(const float4 &blendConstant)
 {
-	// TODO(b/140935644): Check if clamp is required
-	factor.blendConstant4W[0] = word4(static_cast<uint16_t>(iround(0xFFFFu * blendConstant.x)));
-	factor.blendConstant4W[1] = word4(static_cast<uint16_t>(iround(0xFFFFu * blendConstant.y)));
-	factor.blendConstant4W[2] = word4(static_cast<uint16_t>(iround(0xFFFFu * blendConstant.z)));
-	factor.blendConstant4W[3] = word4(static_cast<uint16_t>(iround(0xFFFFu * blendConstant.w)));
-
-	factor.invBlendConstant4W[0] = word4(0xFFFFu - factor.blendConstant4W[0][0]);
-	factor.invBlendConstant4W[1] = word4(0xFFFFu - factor.blendConstant4W[1][0]);
-	factor.invBlendConstant4W[2] = word4(0xFFFFu - factor.blendConstant4W[2][0]);
-	factor.invBlendConstant4W[3] = word4(0xFFFFu - factor.blendConstant4W[3][0]);
-
-	factor.blendConstant4F[0] = float4(blendConstant.x);
-	factor.blendConstant4F[1] = float4(blendConstant.y);
-	factor.blendConstant4F[2] = float4(blendConstant.z);
-	factor.blendConstant4F[3] = float4(blendConstant.w);
-
-	factor.invBlendConstant4F[0] = float4(1 - blendConstant.x);
-	factor.invBlendConstant4F[1] = float4(1 - blendConstant.y);
-	factor.invBlendConstant4F[2] = float4(1 - blendConstant.z);
-	factor.invBlendConstant4F[3] = float4(1 - blendConstant.w);
+	for(int i = 0; i < 4; i++)
+	{
+		factor.blendConstantF[i] = blendConstant[i];
+		factor.invBlendConstantF[i] = 1.0f - blendConstant[i];
+		factor.blendConstantU[i] = clamp(blendConstant[i], 0.0f, 1.0f);
+		factor.invBlendConstantU[i] = 1.0f - clamp(blendConstant[i], 0.0f, 1.0f);
+		factor.blendConstantS[i] = clamp(blendConstant[i], -1.0f, 1.0f);
+		factor.invBlendConstantS[i] = 1.0f - clamp(blendConstant[i], -1.0f, 1.0f);
+	}
 }
 
 void PixelProcessor::setRoutineCacheSize(int cacheSize)
@@ -84,6 +73,11 @@ void PixelProcessor::setRoutineCacheSize(int cacheSize)
 
 const PixelProcessor::State PixelProcessor::update(const vk::GraphicsState &pipelineState, const sw::SpirvShader *fragmentShader, const sw::SpirvShader *vertexShader, const vk::Attachments &attachments, bool occlusionEnabled) const
 {
+	const vk::VertexInputInterfaceState &vertexInputInterfaceState = pipelineState.getVertexInputInterfaceState();
+	const vk::PreRasterizationState &preRasterizationState = pipelineState.getPreRasterizationState();
+	const vk::FragmentState &fragmentState = pipelineState.getFragmentState();
+	const vk::FragmentOutputInterfaceState &fragmentOutputInterfaceState = pipelineState.getFragmentOutputInterfaceState();
+
 	State state;
 
 	state.numClipDistances = vertexShader->getNumOutputClipDistances();
@@ -91,41 +85,47 @@ const PixelProcessor::State PixelProcessor::update(const vk::GraphicsState &pipe
 
 	if(fragmentShader)
 	{
-		state.shaderID = fragmentShader->getSerialID();
-		state.pipelineLayoutIdentifier = pipelineState.getPipelineLayout()->identifier;
+		state.shaderID = fragmentShader->getIdentifier();
+		state.pipelineLayoutIdentifier = fragmentState.getPipelineLayout()->identifier;
+		state.robustBufferAccess = fragmentShader->getRobustBufferAccess();
 	}
 	else
 	{
 		state.shaderID = 0;
 		state.pipelineLayoutIdentifier = 0;
+		state.robustBufferAccess = false;
 	}
 
-	state.alphaToCoverage = pipelineState.hasAlphaToCoverage();
-	state.depthWriteEnable = pipelineState.depthWriteActive(attachments);
+	state.alphaToCoverage = fragmentOutputInterfaceState.hasAlphaToCoverage();
+	state.depthWriteEnable = fragmentState.depthWriteActive(attachments);
 
-	if(pipelineState.stencilActive(attachments))
+	if(fragmentState.stencilActive(attachments))
 	{
 		state.stencilActive = true;
-		state.frontStencil = pipelineState.getFrontStencil();
-		state.backStencil = pipelineState.getBackStencil();
+		state.frontStencil = fragmentState.getFrontStencil();
+		state.backStencil = fragmentState.getBackStencil();
 	}
 
-	if(pipelineState.depthBufferActive(attachments))
+	state.depthFormat = attachments.depthFormat();
+	state.depthBoundsTestActive = fragmentState.depthBoundsTestActive(attachments);
+	state.minDepthBounds = fragmentState.getMinDepthBounds();
+	state.maxDepthBounds = fragmentState.getMaxDepthBounds();
+
+	if(fragmentState.depthTestActive(attachments))
 	{
 		state.depthTestActive = true;
-		state.depthCompareMode = pipelineState.getDepthCompareMode();
-		state.depthFormat = attachments.depthBuffer->getFormat();
+		state.depthCompareMode = fragmentState.getDepthCompareMode();
 
-		state.depthBias = (pipelineState.getConstantDepthBias() != 0.0f) || (pipelineState.getSlopeDepthBias() != 0.0f);
+		state.depthBias = preRasterizationState.getConstantDepthBias() != 0.0f || preRasterizationState.getSlopeDepthBias() != 0.0f;
 
-		bool pipelineDepthClamp = pipelineState.getDepthClampEnable();
+		bool pipelineDepthClamp = preRasterizationState.getDepthClampEnable();
 		// "For fixed-point depth buffers, fragment depth values are always limited to the range [0,1] by clamping after depth bias addition is performed.
 		//  Unless the VK_EXT_depth_range_unrestricted extension is enabled, fragment depth values are clamped even when the depth buffer uses a floating-point representation."
-		state.depthClamp = pipelineDepthClamp || !state.depthFormat.isFloatFormat() || !pipelineState.hasDepthRangeUnrestricted();
+		state.depthClamp = pipelineDepthClamp || !state.depthFormat.isFloatFormat() || !preRasterizationState.hasDepthRangeUnrestricted();
 
 		if(pipelineDepthClamp)
 		{
-			const VkViewport viewport = pipelineState.getViewport();
+			const VkViewport viewport = preRasterizationState.getViewport();
 			state.minDepthClamp = min(viewport.minDepth, viewport.maxDepth);
 			state.maxDepthClamp = max(viewport.minDepth, viewport.maxDepth);
 		}
@@ -136,24 +136,22 @@ const PixelProcessor::State PixelProcessor::update(const vk::GraphicsState &pipe
 		}
 	}
 
-	state.depthBoundsTestActive = pipelineState.depthBoundsTestActive();
-	state.minDepthBounds = pipelineState.getMinDepthBounds();
-	state.maxDepthBounds = pipelineState.getMaxDepthBounds();
-
 	state.occlusionEnabled = occlusionEnabled;
 
-	bool fragmentContainsKill = (fragmentShader && fragmentShader->getModes().ContainsKill);
-	for(int i = 0; i < RENDERTARGETS; i++)
+	bool fragmentContainsDiscard = (fragmentShader && fragmentShader->getAnalysis().ContainsDiscard);
+	for(int i = 0; i < MAX_COLOR_BUFFERS; i++)
 	{
-		state.colorWriteMask |= pipelineState.colorWriteActive(i, attachments) << (4 * i);
-		state.targetFormat[i] = attachments.renderTargetInternalFormat(i);
-		state.blendState[i] = pipelineState.getBlendState(i, attachments, fragmentContainsKill);
+		state.colorWriteMask |= fragmentOutputInterfaceState.colorWriteActive(i, attachments) << (4 * i);
+		state.colorFormat[i] = attachments.colorFormat(i);
+		state.blendState[i] = fragmentOutputInterfaceState.getBlendState(i, attachments, fragmentContainsDiscard);
 	}
 
-	state.multiSampleCount = static_cast<unsigned int>(pipelineState.getSampleCount());
-	state.multiSampleMask = pipelineState.getMultiSampleMask();
-	state.enableMultiSampling = (state.multiSampleCount > 1) &&
-	                            !(pipelineState.isDrawLine(true) && (pipelineState.getLineRasterizationMode() == VK_LINE_RASTERIZATION_MODE_BRESENHAM_EXT));
+	const bool isBresenhamLine = vertexInputInterfaceState.isDrawLine(true, preRasterizationState.getPolygonMode()) &&
+	                             preRasterizationState.getLineRasterizationMode() == VK_LINE_RASTERIZATION_MODE_BRESENHAM_EXT;
+
+	state.multiSampleCount = static_cast<unsigned int>(fragmentOutputInterfaceState.getSampleCount());
+	state.multiSampleMask = fragmentOutputInterfaceState.getMultiSampleMask();
+	state.enableMultiSampling = state.multiSampleCount > 1 && !isBresenhamLine;
 
 	// SampleId and SamplePosition require per-sample fragment shader invocations, so the Vulkan spec
 	// requires turning on sample shading if either of them is present in the shader:
@@ -171,16 +169,16 @@ const PixelProcessor::State PixelProcessor::update(const vk::GraphicsState &pipe
 	}
 	else
 	{
-		state.sampleShadingEnabled = pipelineState.hasSampleShadingEnabled();
-		state.minSampleShading = pipelineState.getMinSampleShading();
+		state.sampleShadingEnabled = fragmentOutputInterfaceState.hasSampleShadingEnabled();
+		state.minSampleShading = fragmentOutputInterfaceState.getMinSampleShading();
 	}
 
 	if(state.enableMultiSampling && fragmentShader)
 	{
-		state.centroid = fragmentShader->getModes().NeedsCentroid;
+		state.centroid = fragmentShader->getAnalysis().NeedsCentroid;
 	}
 
-	state.frontFace = pipelineState.getFrontFace();
+	state.frontFace = preRasterizationState.getFrontFace();
 
 	state.hash = state.computeHash();
 

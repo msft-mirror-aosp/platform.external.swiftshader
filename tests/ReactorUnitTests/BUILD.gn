@@ -25,8 +25,11 @@ if (supports_llvm) {
       "//third_party/swiftshader/src/Reactor:swiftshader_llvm_reactor",
     ]
 
+    configs += [ "//third_party/swiftshader:swiftshader_config" ]
+
     sources = [
       "//gpu/swiftshader_tests_main.cc",
+      "ReactorSIMD.cpp",
       "ReactorUnitTests.cpp",
     ]
 
@@ -46,8 +49,11 @@ if (supports_subzero) {
       "//third_party/swiftshader/src/Reactor:swiftshader_subzero_reactor",
     ]
 
+    configs += [ "//third_party/swiftshader:swiftshader_config" ]
+
     sources = [
       "//gpu/swiftshader_tests_main.cc",
+      "ReactorSIMD.cpp",
       "ReactorUnitTests.cpp",
     ]
 

@@ -14,7 +14,7 @@
 
 #include "SpirvShader.hpp"
 
-#include "SamplerCore.hpp"  // TODO: Figure out what's needed.
+#include "SamplerCore.hpp"
 #include "Device/Config.hpp"
 #include "System/Debug.hpp"
 #include "System/Math.hpp"
@@ -30,16 +30,16 @@
 
 namespace sw {
 
-SpirvShader::ImageSampler *SpirvShader::getImageSampler(const vk::Device *device, uint32_t inst, uint32_t samplerId, uint32_t imageViewId)
+SpirvEmitter::ImageSampler *SpirvEmitter::getImageSampler(const vk::Device *device, uint32_t signature, uint32_t samplerId, uint32_t imageViewId)
 {
-	ImageInstruction instruction(inst);
-	ASSERT(imageViewId != 0 && (samplerId != 0 || instruction.samplerMethod == Fetch));
+	ImageInstructionSignature instruction(signature);
+	ASSERT(imageViewId != 0 && (samplerId != 0 || instruction.samplerMethod == Fetch || instruction.samplerMethod == Write));
 	ASSERT(device);
 
-	vk::Device::SamplingRoutineCache::Key key = { inst, samplerId, imageViewId };
+	vk::Device::SamplingRoutineCache::Key key = { signature, samplerId, imageViewId };
 
-	auto createSamplingRoutine = [&device](const vk::Device::SamplingRoutineCache::Key &key) {
-		ImageInstruction instruction(key.instruction);
+	auto createSamplingRoutine = [device](const vk::Device::SamplingRoutineCache::Key &key) {
+		ImageInstructionSignature instruction(key.instruction);
 		const vk::Identifier::State imageViewState = vk::Identifier(key.imageView).getState();
 		const vk::SamplerState *vkSamplerState = (key.sampler != 0) ? device->findSampler(key.sampler) : nullptr;
 
@@ -48,6 +48,7 @@ SpirvShader::ImageSampler *SpirvShader::getImageSampler(const vk::Device *device
 
 		Sampler samplerState = {};
 		samplerState.textureType = type;
+		ASSERT(instruction.coordinates >= samplerState.dimensionality());  // "It may be a vector larger than needed, but all unused components appear after all used components."
 		samplerState.textureFormat = imageViewState.format;
 
 		samplerState.addressingModeU = convertAddressingMode(0, vkSamplerState, type);
@@ -94,10 +95,8 @@ SpirvShader::ImageSampler *SpirvShader::getImageSampler(const vk::Device *device
 				samplerState.maxLod = 0.0f;
 			}
 		}
-		else  // Fetch
+		else if(samplerMethod == Fetch)
 		{
-			ASSERT(samplerMethod == Fetch);
-
 			// OpImageFetch does not take a sampler descriptor, but for VK_EXT_image_robustness
 			// requires replacing invalid texels with zero.
 			// TODO(b/162327166): Only perform bounds checks when VK_EXT_image_robustness is enabled.
@@ -110,6 +109,12 @@ SpirvShader::ImageSampler *SpirvShader::getImageSampler(const vk::Device *device
 				samplerState.maxLod = 0.0f;
 			}
 		}
+		else if(samplerMethod == Write)
+		{
+			return emitWriteRoutine(instruction, samplerState);
+		}
+		else
+			ASSERT(false);
 
 		return emitSamplerRoutine(instruction, samplerState);
 	};
@@ -120,7 +125,23 @@ SpirvShader::ImageSampler *SpirvShader::getImageSampler(const vk::Device *device
 	return (ImageSampler *)(routine->getEntry());
 }
 
-std::shared_ptr<rr::Routine> SpirvShader::emitSamplerRoutine(ImageInstruction instruction, const Sampler &samplerState)
+std::shared_ptr<rr::Routine> SpirvEmitter::emitWriteRoutine(ImageInstructionSignature instruction, const Sampler &samplerState)
+{
+	// TODO(b/129523279): Hold a separate mutex lock for the sampler being built.
+	rr::Function<Void(Pointer<Byte>, Pointer<SIMD::Float>, Pointer<SIMD::Float>, Pointer<Byte>)> function;
+	{
+		Pointer<Byte> descriptor = function.Arg<0>();
+		Pointer<SIMD::Float> coord = function.Arg<1>();
+		Pointer<SIMD::Float> texelAndMask = function.Arg<2>();
+		Pointer<Byte> constants = function.Arg<3>();
+
+		WriteImage(instruction, descriptor, coord, texelAndMask, samplerState.textureFormat);
+	}
+
+	return function("sampler");
+}
+
+std::shared_ptr<rr::Routine> SpirvEmitter::emitSamplerRoutine(ImageInstructionSignature instruction, const Sampler &samplerState)
 {
 	// TODO(b/129523279): Hold a separate mutex lock for the sampler being built.
 	rr::Function<Void(Pointer<Byte>, Pointer<SIMD::Float>, Pointer<SIMD::Float>, Pointer<Byte>)> function;
@@ -133,9 +154,9 @@ std::shared_ptr<rr::Routine> SpirvShader::emitSamplerRoutine(ImageInstruction in
 		SIMD::Float uvwa[4];
 		SIMD::Float dRef;
 		SIMD::Float lodOrBias;  // Explicit level-of-detail, or bias added to the implicit level-of-detail (depending on samplerMethod).
-		Vector4f dsx;
-		Vector4f dsy;
-		Vector4i offset;
+		SIMD::Float dsx[4];
+		SIMD::Float dsy[4];
+		SIMD::Int offset[4];
 		SIMD::Int sampleId;
 		SamplerFunction samplerFunction = instruction.getSamplerFunction();
 
@@ -179,7 +200,7 @@ std::shared_ptr<rr::Routine> SpirvShader::emitSamplerRoutine(ImageInstruction in
 			sampleId = As<SIMD::Int>(in[i]);
 		}
 
-		SamplerCore s(constants, samplerState);
+		SamplerCore s(constants, samplerState, samplerFunction);
 
 		// For explicit-lod instructions the LOD can be different per SIMD lane. SamplerCore currently assumes
 		// a single LOD per four elements, so we sample the image again for each LOD separately.
@@ -188,23 +209,22 @@ std::shared_ptr<rr::Routine> SpirvShader::emitSamplerRoutine(ImageInstruction in
 		   samplerFunction.method == Bias || samplerFunction.method == Fetch)
 		{
 			// Only perform per-lane sampling if LOD diverges or we're doing Grad sampling.
-			Bool perLaneSampling = samplerFunction.method == Grad || lodOrBias.x != lodOrBias.y ||
-			                       lodOrBias.x != lodOrBias.z || lodOrBias.x != lodOrBias.w;
+			Bool perLaneSampling = (samplerFunction.method == Grad) || Divergent(As<SIMD::Int>(lodOrBias));
 			auto lod = Pointer<Float>(&lodOrBias);
 			Int i = 0;
 			Do
 			{
 				SIMD::Float dPdx;
 				SIMD::Float dPdy;
-				dPdx.x = Pointer<Float>(&dsx.x)[i];
-				dPdx.y = Pointer<Float>(&dsx.y)[i];
-				dPdx.z = Pointer<Float>(&dsx.z)[i];
+				dPdx.x = Pointer<Float>(&dsx[0])[i];
+				dPdx.y = Pointer<Float>(&dsx[1])[i];
+				dPdx.z = Pointer<Float>(&dsx[2])[i];
 
-				dPdy.x = Pointer<Float>(&dsy.x)[i];
-				dPdy.y = Pointer<Float>(&dsy.y)[i];
-				dPdy.z = Pointer<Float>(&dsy.z)[i];
+				dPdy.x = Pointer<Float>(&dsy[0])[i];
+				dPdy.y = Pointer<Float>(&dsy[1])[i];
+				dPdy.z = Pointer<Float>(&dsy[2])[i];
 
-				Vector4f sample = s.sampleTexture(texture, uvwa, dRef, lod[i], dPdx, dPdy, offset, sampleId, samplerFunction);
+				SIMD::Float4 sample = s.sampleTexture(texture, uvwa, dRef, lod[i], dPdx, dPdy, offset, sampleId);
 
 				If(perLaneSampling)
 				{
@@ -229,7 +249,8 @@ std::shared_ptr<rr::Routine> SpirvShader::emitSamplerRoutine(ImageInstruction in
 		}
 		else
 		{
-			Vector4f sample = s.sampleTexture(texture, uvwa, dRef, lodOrBias.x, (dsx.x), (dsy.x), offset, sampleId, samplerFunction);
+			Float lod = Float(lodOrBias.x);
+			SIMD::Float4 sample = s.sampleTexture(texture, uvwa, dRef, lod, (dsx[0]), (dsy[0]), offset, sampleId);
 
 			Pointer<SIMD::Float> rgba = out;
 			rgba[0] = sample.x;
@@ -242,7 +263,7 @@ std::shared_ptr<rr::Routine> SpirvShader::emitSamplerRoutine(ImageInstruction in
 	return function("sampler");
 }
 
-sw::FilterType SpirvShader::convertFilterMode(const vk::SamplerState *samplerState, VkImageViewType imageViewType, SamplerMethod samplerMethod)
+sw::FilterType SpirvEmitter::convertFilterMode(const vk::SamplerState *samplerState, VkImageViewType imageViewType, SamplerMethod samplerMethod)
 {
 	if(samplerMethod == Gather)
 	{
@@ -295,7 +316,7 @@ sw::FilterType SpirvShader::convertFilterMode(const vk::SamplerState *samplerSta
 	return FILTER_POINT;
 }
 
-sw::MipmapType SpirvShader::convertMipmapMode(const vk::SamplerState *samplerState)
+sw::MipmapType SpirvEmitter::convertMipmapMode(const vk::SamplerState *samplerState)
 {
 	if(!samplerState)
 	{
@@ -318,7 +339,7 @@ sw::MipmapType SpirvShader::convertMipmapMode(const vk::SamplerState *samplerSta
 	}
 }
 
-sw::AddressingMode SpirvShader::convertAddressingMode(int coordinateIndex, const vk::SamplerState *samplerState, VkImageViewType imageViewType)
+sw::AddressingMode SpirvEmitter::convertAddressingMode(int coordinateIndex, const vk::SamplerState *samplerState, VkImageViewType imageViewType)
 {
 	switch(imageViewType)
 	{

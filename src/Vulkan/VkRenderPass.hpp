@@ -48,7 +48,7 @@ public:
 		return subpassCount;
 	}
 
-	VkSubpassDescription const &getSubpass(uint32_t subpassIndex) const
+	const VkSubpassDescription &getSubpass(uint32_t subpassIndex) const
 	{
 		return subpasses[subpassIndex];
 	}
@@ -80,7 +80,7 @@ public:
 
 	uint32_t getViewMask(uint32_t subpassIndex) const
 	{
-		return viewMasks ? viewMasks[subpassIndex] : 1;
+		return viewMasks ? viewMasks[subpassIndex] : 0;
 	}
 
 	bool isMultiView() const

@@ -38,9 +38,9 @@ class SwapchainKHR;
 class PresentImage
 {
 public:
-	VkResult allocateImage(VkDevice device, const VkImageCreateInfo &createInfo);
+	VkResult createImage(VkDevice device, const VkImageCreateInfo &createInfo);
 	VkResult allocateAndBindImageMemory(VkDevice device, const VkMemoryAllocateInfo &allocateInfo);
-	void clear();
+	void release();
 	VkImage asVkImage() const;
 
 	const Image *getImage() const { return image; }
@@ -77,16 +77,18 @@ public:
 
 	virtual void destroySurface(const VkAllocationCallbacks *pAllocator) = 0;
 
-	virtual VkResult getSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities) const = 0;
+	virtual VkResult getSurfaceCapabilities(const void *pSurfaceInfoPNext, VkSurfaceCapabilitiesKHR *pSurfaceCapabilities, void *pSurfaceCapabilitiesPNext) const = 0;
 
-	uint32_t getSurfaceFormatsCount() const;
-	VkResult getSurfaceFormats(uint32_t *pSurfaceFormatCount, VkSurfaceFormatKHR *pSurfaceFormats) const;
+	uint32_t getSurfaceFormatsCount(const void *pSurfaceInfoPNext) const;
+	VkResult getSurfaceFormats(const void *pSurfaceInfoPNext, uint32_t *pSurfaceFormatCount, VkSurfaceFormat2KHR *pSurfaceFormats) const;
 
 	uint32_t getPresentModeCount() const;
 	VkResult getPresentModes(uint32_t *pPresentModeCount, VkPresentModeKHR *pPresentModes) const;
 
 	VkResult getPresentRectangles(uint32_t *pRectCount, VkRect2D *pRects) const;
 
+	virtual void* allocateImageMemory(PresentImage *image, const VkMemoryAllocateInfo &allocateInfo) { return nullptr; }
+	virtual void releaseImageMemory(PresentImage *image) {}
 	virtual void attachImage(PresentImage *image) = 0;
 	virtual void detachImage(PresentImage *image) = 0;
 	virtual VkResult present(PresentImage *image) = 0;
@@ -96,7 +98,7 @@ public:
 	bool hasAssociatedSwapchain();
 
 protected:
-	static void setCommonSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities);
+	static void setCommonSurfaceCapabilities(const void *pSurfaceInfoPNext, VkSurfaceCapabilitiesKHR *pSurfaceCapabilities, void *pSurfaceCapabilitiesPNext);
 
 private:
 	SwapchainKHR *associatedSwapchain = nullptr;

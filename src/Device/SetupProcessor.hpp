@@ -28,11 +28,9 @@ namespace sw {
 struct Primitive;
 struct Triangle;
 struct Polygon;
-struct Vertex;
-struct DrawCall;
 struct DrawData;
 
-using SetupFunction = FunctionT<int(Primitive *primitive, const Triangle *triangle, const Polygon *polygon, const DrawData *draw)>;
+using SetupFunction = FunctionT<int(const vk::Device *device, Primitive *primitive, const Triangle *triangle, const Polygon *polygon, const DrawData *draw)>;
 
 class SetupProcessor
 {
@@ -58,7 +56,6 @@ public:
 		VkCullModeFlags cullMode : BITS(VK_CULL_MODE_FLAG_BITS_MAX_ENUM);
 		unsigned int multiSampleCount : 3;  // 1, 2 or 4
 		bool enableMultiSampling : 1;
-		bool rasterizerDiscard : 1;
 		unsigned int numClipDistances : 4;  // [0 - 8]
 		unsigned int numCullDistances : 4;  // [0 - 8]
 

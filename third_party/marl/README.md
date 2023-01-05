@@ -8,7 +8,7 @@ Marl is a C++ 11 library that provides a fluent interface for running tasks acro
 
 Marl uses a combination of fibers and threads to allow efficient execution of tasks that can block, while keeping a fixed number of hardware threads.
 
-Marl supports Windows, macOS, Linux, FreeBSD, Fuchsia, Android and iOS (arm, aarch64, mips64, ppc64 (ELFv2), x86 and x64).
+Marl supports Windows, macOS, Linux, FreeBSD, Fuchsia, Android and iOS (arm, aarch64, loongarch64, mips64, ppc64, rv64, x86 and x64).
 
 Marl has no dependencies on other libraries (with an exception on googletest for building the optional unit tests).
 
@@ -93,6 +93,20 @@ make
 
 The resulting binaries will be found in `<path-to-marl>/build`
 
+### Installing Marl (vcpkg)
+
+Alternatively, you can build and install Marl using [vcpkg](https://github.com/Microsoft/vcpkg/) dependency manager:
+
+```bash or powershell
+git clone https://github.com/Microsoft/vcpkg.git
+cd vcpkg
+./bootstrap-vcpkg.sh
+./vcpkg integrate install
+./vcpkg install marl
+```
+
+The Marl port in vcpkg is kept up to date by Microsoft team members and community contributors. If the version is out of date, please [create an issue or pull request](https://github.com/Microsoft/vcpkg) on the vcpkg repository.
+
 ### Windows
 
 Marl can be built using [Visual Studio 2019's CMake integration](https://docs.microsoft.com/en-us/cpp/build/cmake-projects-in-visual-studio?view=vs-2019).
@@ -123,9 +137,9 @@ add_subdirectory(${MARL_DIR})
 
 ### Usage Recommendations
 
-#### Capture marl synchronization primitves by value
+#### Capture marl synchronization primitives by value
 
-All marl synchronization primitves aside from `marl::ConditionVariable` should be lambda-captured by **value**:
+All marl synchronization primitives aside from `marl::ConditionVariable` should be lambda-captured by **value**:
 
 ```c++
 marl::Event event;

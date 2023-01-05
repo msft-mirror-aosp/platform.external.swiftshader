@@ -117,7 +117,7 @@ private:
 			return res;
 		}
 
-		Color operator+(Color const &obj) const
+		Color operator+(const Color &obj) const
 		{
 			Color res;
 			for(int i = 0; i < 4; ++i)
@@ -314,7 +314,7 @@ union Color
 		uint16_t r = 0;
 		uint16_t g = 0;
 		uint16_t b = 0;
-		const uint16_t a = halfFloat1;
+		uint16_t a = halfFloat1;
 
 		RGBA(uint16_t r, uint16_t g, uint16_t b)
 		    : r(r)
@@ -328,6 +328,7 @@ union Color
 			this->r = other.r;
 			this->g = other.g;
 			this->b = other.b;
+			this->a = halfFloat1;
 
 			return *this;
 		}
@@ -579,10 +580,10 @@ Color interpolate(RGBf e0, RGBf e1, const IndexInfo &index, bool isSigned)
 	static constexpr uint32_t weights3[] = { 0, 9, 18, 27, 37, 46, 55, 64 };
 	static constexpr uint32_t weights4[] = { 0, 4, 9, 13, 17, 21, 26, 30,
 		                                     34, 38, 43, 47, 51, 55, 60, 64 };
-	static constexpr uint32_t const *weightsN[] = {
+	static const uint32_t constexpr *weightsN[] = {
 		nullptr, nullptr, nullptr, weights3, weights4
 	};
-	auto weights = weightsN[index.numBits];
+	const uint32_t *weights = weightsN[index.numBits];
 	ASSERT_MSG(weights != nullptr, "Unexpected number of index bits: %d", (int)index.numBits);
 	Color color;
 	uint32_t e0Weight = 64 - weights[index.value];
@@ -649,18 +650,14 @@ struct DeltaBits
 {
 	size_t channel[3];
 
-	DeltaBits()
+	constexpr DeltaBits()
+	    : channel{ 0, 0, 0 }
 	{
-		channel[R] = 0;
-		channel[G] = 0;
-		channel[B] = 0;
 	}
 
-	DeltaBits(int r, int g, int b)
+	constexpr DeltaBits(size_t r, size_t g, size_t b)
+	    : channel{ r, g, b }
 	{
-		channel[R] = r;
-		channel[G] = g;
-		channel[B] = b;
 	}
 };
 
@@ -670,26 +667,23 @@ struct ModeDesc
 	bool hasDelta;
 	int partitionCount;
 	int endpointBits;
-	int numEndpoints;
 	DeltaBits deltaBits;
 
-	ModeDesc()
+	constexpr ModeDesc()
 	    : number(-1)
 	    , hasDelta(false)
 	    , partitionCount(0)
 	    , endpointBits(0)
-	    , numEndpoints(0)
 	{
 	}
 
-	ModeDesc(int number, bool hasDelta, int partitionCount, int endpointBits, DeltaBits deltaBits)
+	constexpr ModeDesc(int number, bool hasDelta, int partitionCount, int endpointBits, DeltaBits deltaBits)
 	    : number(number)
 	    , hasDelta(hasDelta)
 	    , partitionCount(partitionCount)
 	    , endpointBits(endpointBits)
 	    , deltaBits(deltaBits)
 	{
-		numEndpoints = partitionCount * 2;
 	}
 };
 
@@ -701,9 +695,16 @@ struct BlockDesc
 	int LSB;
 	ModeDesc modeDesc;
 
-	BlockDesc() = default;
+	constexpr BlockDesc()
+	    : type(End)
+	    , channel(None)
+	    , MSB(0)
+	    , LSB(0)
+	    , modeDesc()
+	{
+	}
 
-	BlockDesc(DataType type, Channel channel, int MSB, int LSB, ModeDesc modeDesc)
+	constexpr BlockDesc(const DataType type, Channel channel, int MSB, int LSB, ModeDesc modeDesc)
 	    : type(type)
 	    , channel(channel)
 	    , MSB(MSB)
@@ -712,18 +713,19 @@ struct BlockDesc
 	{
 	}
 
-	BlockDesc(DataType type, Channel channel, int MSB, int LSB)
+	constexpr BlockDesc(DataType type, Channel channel, int MSB, int LSB)
 	    : type(type)
 	    , channel(channel)
 	    , MSB(MSB)
 	    , LSB(LSB)
+	    , modeDesc()
 	{
 	}
 };
 
 // Turns a legal mode into an index into the BlockDesc table.
 // Illegal or reserved modes return -1.
-int getIndex(uint8_t mode)
+static int modeToIndex(uint8_t mode)
 {
 	if(mode <= 3)
 	{
@@ -746,29 +748,27 @@ int getIndex(uint8_t mode)
 	return -1;
 }
 
-static constexpr int NumBlocks = 14;
-// The largest number of descriptions within a block.
-static constexpr int MaxBlockDescIndex = 26;
-
-// Table describing the bitfields for each mode from the LSB to the MSB before
-// the index data starts.
+// Returns a description of the bitfields for each mode from the LSB
+// to the MSB before the index data starts.
 //
-// The numbers come from the BC6h block description. The basic format is a list of bitfield
-// descriptors of the form:
+// The numbers come from the BC6h block description. Each BlockDesc in the
 //   {Type, Channel, MSB, LSB}
-//   * Type describes which endpoint this is, or if this is a mode, a partition number,
-//     or the end of the block description.
+//   * Type describes which endpoint this is, or if this is a mode, a partition
+//     number, or the end of the block description.
 //   * Channel describes one of the 3 color channels within an endpoint
 //   * MSB and LSB specificy:
 //      * The size of the bitfield being read
 //      * The position of the bitfield within the variable it is being read to
-//      * And if the bitfield is stored in reverse bit order
-//     If MSB < LSB then the bitfield is stored in reverse order. The size of the bitfield
-//     is abs(MSB-LSB+1). And the position of the bitfield within the variable is
-//     min(LSB, MSB).
+//      * If the bitfield is stored in reverse bit order
+//     If MSB < LSB then the bitfield is stored in reverse order. The size of
+//     the bitfield is abs(MSB-LSB+1). And the position of the bitfield within
+//     the variable is min(LSB, MSB).
 //
-// Invalid or reserved modes are not present in the array.
-static const BlockDesc blockDescs[NumBlocks][MaxBlockDescIndex] = {
+// Invalid or reserved modes return an empty list.
+static constexpr int NumBlocks = 14;
+// The largest number of descriptions within a block.
+static constexpr int MaxBlockDescIndex = 26;
+static constexpr BlockDesc blockDescs[NumBlocks][MaxBlockDescIndex] = {
 	// clang-format off
 	// Mode 0, Index 0
 	{
@@ -954,9 +954,9 @@ struct Block
 			mode = data.consumeBits(4, 0);
 		}
 
-		int index = getIndex(mode);
+		int blockIndex = modeToIndex(mode);
 		// Handle illegal or reserved mode
-		if(index < 0)
+		if(blockIndex == -1)
 		{
 			for(int y = 0; y < 4 && y + dstY < dstHeight; y++)
 			{
@@ -968,18 +968,16 @@ struct Block
 			}
 			return;
 		}
+		const BlockDesc *blockDesc = blockDescs[blockIndex];
 
 		RGBf e[4];
 		e[0].isSigned = e[1].isSigned = e[2].isSigned = e[3].isSigned = isSigned;
 
 		int partition = 0;
 		ModeDesc modeDesc;
-		for(auto desc : blockDescs[index])
+		for(int index = 0; blockDesc[index].type != End; index++)
 		{
-			if(desc.type == End)
-			{
-				break;
-			}
+			const BlockDesc desc = blockDesc[index];
 
 			switch(desc.type)
 			{
@@ -1018,7 +1016,7 @@ struct Block
 		// Sign extension
 		if(isSigned)
 		{
-			for(int ep = 0; ep < modeDesc.numEndpoints; ep++)
+			for(int ep = 0; ep < modeDesc.partitionCount * 2; ep++)
 			{
 				e[ep].extendSign();
 			}
@@ -1026,7 +1024,7 @@ struct Block
 		else if(modeDesc.hasDelta)
 		{
 			// Don't sign-extend the base endpoint in an unsigned format.
-			for(int ep = 1; ep < modeDesc.numEndpoints; ep++)
+			for(int ep = 1; ep < modeDesc.partitionCount * 2; ep++)
 			{
 				e[ep].extendSign();
 			}
@@ -1035,13 +1033,13 @@ struct Block
 		// Turn the deltas into endpoints
 		if(modeDesc.hasDelta)
 		{
-			for(int ep = 1; ep < modeDesc.numEndpoints; ep++)
+			for(int ep = 1; ep < modeDesc.partitionCount * 2; ep++)
 			{
 				e[ep].resolveDelta(e[0]);
 			}
 		}
 
-		for(int ep = 0; ep < modeDesc.numEndpoints; ep++)
+		for(int ep = 0; ep < modeDesc.partitionCount * 2; ep++)
 		{
 			e[ep].unquantize();
 		}
@@ -1439,17 +1437,17 @@ struct Block
 		static constexpr uint16_t weights3[] = { 0, 9, 18, 27, 37, 46, 55, 64 };
 		static constexpr uint16_t weights4[] = { 0, 4, 9, 13, 17, 21, 26, 30,
 			                                     34, 38, 43, 47, 51, 55, 60, 64 };
-		static constexpr uint16_t const *weightsN[] = {
+		static const uint16_t constexpr *weightsN[] = {
 			nullptr, nullptr, weights2, weights3, weights4
 		};
-		auto weights = weightsN[index.numBits];
+		const uint16_t *weights = weightsN[index.numBits];
 		ASSERT_MSG(weights != nullptr, "Unexpected number of index bits: %d", (int)index.numBits);
 		return (uint8_t)(((64 - weights[index.value]) * uint16_t(e0) + weights[index.value] * uint16_t(e1) + 32) >> 6);
 	}
 
 	void decode(uint8_t *dst, int dstX, int dstY, int dstWidth, int dstHeight, size_t dstPitch) const
 	{
-		auto const &mode = this->mode();
+		const auto &mode = this->mode();
 
 		if(mode.IDX < 0)  // Invalid mode:
 		{
@@ -1509,8 +1507,8 @@ struct Block
 			}
 		}
 
-		auto const colorBits = mode.CB + mode.SPB + mode.EPB;
-		auto const alphaBits = mode.AB + mode.SPB + mode.EPB;
+		const auto colorBits = mode.CB + mode.SPB + mode.EPB;
+		const auto alphaBits = mode.AB + mode.SPB + mode.EPB;
 
 		for(int i = 0; i < mode.NS; i++)
 		{
@@ -1540,7 +1538,7 @@ struct Block
 				ASSERT(partitionIdx < MaxPartitions);
 				auto subsetIdx = subsetIndex(mode, partitionIdx, texelIdx);
 				ASSERT(subsetIdx < MaxSubsets);
-				auto const &subset = subsets[subsetIdx];
+				const auto &subset = subsets[subsetIdx];
 
 				auto anchorIdx = anchorIndex(mode, partitionIdx, subsetIdx);
 				auto isAnchor = anchorIdx == texelIdx;

@@ -28,11 +28,10 @@ namespace fuzz {
 FuzzerPassApplyIdSynonyms::FuzzerPassApplyIdSynonyms(
     opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
-    protobufs::TransformationSequence* transformations)
+    protobufs::TransformationSequence* transformations,
+    bool ignore_inapplicable_transformations)
     : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations) {}
-
-FuzzerPassApplyIdSynonyms::~FuzzerPassApplyIdSynonyms() = default;
+                 transformations, ignore_inapplicable_transformations) {}
 
 void FuzzerPassApplyIdSynonyms::Apply() {
   // Compute a closure of data synonym facts, to enrich the pool of synonyms
@@ -108,9 +107,9 @@ void FuzzerPassApplyIdSynonyms::Apply() {
         // which case we need to be able to add an extract instruction to get
         // that element out.
         if (synonym_to_try->index_size() > 0 &&
-            !fuzzerutil::CanInsertOpcodeBeforeInstruction(SpvOpCompositeExtract,
-                                                          use_inst) &&
-            use_inst->opcode() != SpvOpPhi) {
+            !fuzzerutil::CanInsertOpcodeBeforeInstruction(
+                spv::Op::OpCompositeExtract, use_inst) &&
+            use_inst->opcode() != spv::Op::OpPhi) {
           // We cannot insert an extract before this instruction, so this
           // synonym is no good.
           continue;
@@ -133,7 +132,7 @@ void FuzzerPassApplyIdSynonyms::Apply() {
           id_with_which_to_replace_use = GetFuzzerContext()->GetFreshId();
           opt::Instruction* instruction_to_insert_before = nullptr;
 
-          if (use_inst->opcode() != SpvOpPhi) {
+          if (use_inst->opcode() != spv::Op::OpPhi) {
             instruction_to_insert_before = use_inst;
           } else {
             auto parent_block_id =
@@ -183,7 +182,7 @@ void FuzzerPassApplyIdSynonyms::Apply() {
 }
 
 bool FuzzerPassApplyIdSynonyms::DataDescriptorsHaveCompatibleTypes(
-    SpvOp opcode, uint32_t use_in_operand_index,
+    spv::Op opcode, uint32_t use_in_operand_index,
     const protobufs::DataDescriptor& dd1,
     const protobufs::DataDescriptor& dd2) {
   auto base_object_type_id_1 =
@@ -199,7 +198,7 @@ bool FuzzerPassApplyIdSynonyms::DataDescriptorsHaveCompatibleTypes(
       GetIRContext(), base_object_type_id_2, dd2.index());
   assert(type_id_1 && type_id_2 && "Data descriptors have invalid types");
 
-  return TransformationReplaceIdWithSynonym::TypesAreCompatible(
+  return fuzzerutil::TypesAreCompatible(
       GetIRContext(), opcode, use_in_operand_index, type_id_1, type_id_2);
 }
 
