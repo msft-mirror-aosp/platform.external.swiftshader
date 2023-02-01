@@ -314,20 +314,16 @@ void SetupRoutine::generate()
 		Int Y1 = *Pointer<Int>(v1 + OFFSET(Vertex, projected.y));
 		Int Y2 = *Pointer<Int>(v2 + OFFSET(Vertex, projected.y));
 
-		if(point)
-		{
-			*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordX)) = Float(1.0f / subPixF) * Float(X0);
-			*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordY)) = Float(1.0f / subPixF) * Float(Y0);
-		}
-
 		if(line)
 		{
 			X2 = X1 + Y1 - Y0;
 			Y2 = Y1 + X0 - X1;
 		}
 
-		Float dx = Float(X0) * (1.0f / subPixF);
-		Float dy = Float(Y0) * (1.0f / subPixF);
+		Float x0 = Float(X0) * (1.0f / subPixF);
+		Float y0 = Float(Y0) * (1.0f / subPixF);
+		*Pointer<Float>(primitive + OFFSET(Primitive, x0)) = x0;
+		*Pointer<Float>(primitive + OFFSET(Primitive, y0)) = y0;
 
 		X1 -= X0;
 		Y1 -= Y0;
@@ -342,12 +338,6 @@ void SetupRoutine::generate()
 		Float y2 = w2 * (1.0f / subPixF) * Float(Y2);
 
 		Float a = x1 * y2 - x2 * y1;
-
-		Float4 xQuad = Float4(0, 1, 0, 1) - Float4(dx);
-		Float4 yQuad = Float4(0, 0, 1, 1) - Float4(dy);
-
-		*Pointer<Float4>(primitive + OFFSET(Primitive, xQuad), 16) = xQuad;
-		*Pointer<Float4>(primitive + OFFSET(Primitive, yQuad), 16) = yQuad;
 
 		Float4 M[3];
 
@@ -571,10 +561,12 @@ void SetupRoutine::edge(Pointer<Byte> &primitive, Pointer<Byte> &data, const Int
 		constexpr int subPixB = vk::SUBPIXEL_PRECISION_BITS;
 		constexpr int subPixM = vk::SUBPIXEL_PRECISION_MASK;
 
-		Int y1 = Max((Y1 + subPixM) >> subPixB, *Pointer<Int>(data + OFFSET(DrawData, scissorY0)));
-		Int y2 = Min((Y2 + subPixM) >> subPixB, *Pointer<Int>(data + OFFSET(DrawData, scissorY1)));
+		Int y1 = (Y1 + subPixM) >> subPixB;
+		Int y2 = (Y2 + subPixM) >> subPixB;
+		Int yMin = Max(y1, *Pointer<Int>(data + OFFSET(DrawData, scissorY0)));
+		Int yMax = Min(y2, *Pointer<Int>(data + OFFSET(DrawData, scissorY1)));
 
-		If(y1 < y2)
+		If(yMin < yMax)
 		{
 			Int xMin = *Pointer<Int>(data + OFFSET(DrawData, scissorX0));
 			Int xMax = *Pointer<Int>(data + OFFSET(DrawData, scissorX1));
@@ -608,7 +600,10 @@ void SetupRoutine::edge(Pointer<Byte> &primitive, Pointer<Byte> &data, const Int
 
 			Do
 			{
-				*Pointer<Short>(edge + y * sizeof(Primitive::Span)) = Short(Clamp(x, xMin, xMax));
+				If(y >= yMin)
+				{
+					*Pointer<Short>(edge + y * sizeof(Primitive::Span)) = Short(Clamp(x, xMin, xMax));
+				}
 
 				x += Q;
 				d += R;
@@ -620,7 +615,7 @@ void SetupRoutine::edge(Pointer<Byte> &primitive, Pointer<Byte> &data, const Int
 
 				y++;
 			}
-			Until(y >= y2);
+			Until(y >= yMax);
 		}
 	}
 }

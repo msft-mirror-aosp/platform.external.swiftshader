@@ -20,6 +20,10 @@
 #include "Vulkan/VulkanPlatform.hpp"
 #include "spirv-tools/libspirv.h"
 
+#ifndef SWIFTSHADER_LEGACY_PRECISION
+#	define SWIFTSHADER_LEGACY_PRECISION false
+#endif
+
 namespace vk {
 
 // Note: Constant array initialization requires a string literal.
@@ -74,6 +78,7 @@ static_assert(MAX_IMAGE_LEVELS_CUBE <= sw::MIPMAP_LEVELS);
 constexpr uint32_t MAX_BOUND_DESCRIPTOR_SETS = 4;
 constexpr uint32_t MAX_VERTEX_INPUT_BINDINGS = 16;
 constexpr uint32_t MAX_PUSH_CONSTANT_SIZE = 128;
+constexpr uint32_t MAX_UPDATE_AFTER_BIND_DESCRIPTORS = 500000;
 
 constexpr uint32_t MAX_DESCRIPTOR_SET_UNIFORM_BUFFERS_DYNAMIC = 8;
 constexpr uint32_t MAX_DESCRIPTOR_SET_STORAGE_BUFFERS_DYNAMIC = 4;
@@ -89,7 +94,7 @@ constexpr float MAX_POINT_SIZE = 1023.0;
 
 constexpr int MAX_SAMPLER_ALLOCATION_COUNT = 4000;
 
-constexpr int SUBPIXEL_PRECISION_BITS = 4;
+constexpr int SUBPIXEL_PRECISION_BITS = SWIFTSHADER_LEGACY_PRECISION ? 4 : 8;
 constexpr float SUBPIXEL_PRECISION_FACTOR = static_cast<float>(1 << SUBPIXEL_PRECISION_BITS);
 constexpr int SUBPIXEL_PRECISION_MASK = 0xFFFFFFFF >> (32 - SUBPIXEL_PRECISION_BITS);
 

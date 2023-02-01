@@ -27,8 +27,8 @@ namespace sw {
 
 VertexRoutine::VertexRoutine(
     const VertexProcessor::State &state,
-    vk::PipelineLayout const *pipelineLayout,
-    SpirvShader const *spirvShader)
+    const vk::PipelineLayout *pipelineLayout,
+    const SpirvShader *spirvShader)
     : routine(pipelineLayout)
     , state(state)
     , spirvShader(spirvShader)
@@ -90,10 +90,10 @@ void VertexRoutine::readInput(Pointer<UInt> &batch)
 {
 	for(int i = 0; i < MAX_INTERFACE_COMPONENTS; i += 4)
 	{
-		if(spirvShader->inputs[i + 0].Type != SpirvShader::ATTRIBTYPE_UNUSED ||
-		   spirvShader->inputs[i + 1].Type != SpirvShader::ATTRIBTYPE_UNUSED ||
-		   spirvShader->inputs[i + 2].Type != SpirvShader::ATTRIBTYPE_UNUSED ||
-		   spirvShader->inputs[i + 3].Type != SpirvShader::ATTRIBTYPE_UNUSED)
+		if(spirvShader->inputs[i + 0].Type != Spirv::ATTRIBTYPE_UNUSED ||
+		   spirvShader->inputs[i + 1].Type != Spirv::ATTRIBTYPE_UNUSED ||
+		   spirvShader->inputs[i + 2].Type != Spirv::ATTRIBTYPE_UNUSED ||
+		   spirvShader->inputs[i + 3].Type != Spirv::ATTRIBTYPE_UNUSED)
 		{
 			Pointer<Byte> input = *Pointer<Pointer<Byte>>(data + OFFSET(DrawData, input) + sizeof(void *) * (i / 4));
 			UInt stride = *Pointer<UInt>(data + OFFSET(DrawData, stride) + sizeof(uint32_t) * (i / 4));
@@ -136,8 +136,9 @@ void VertexRoutine::computeClipFlags()
 		clipFlags |= minY & Clipper::CLIP_BOTTOM;
 		if(state.depthClipEnable)
 		{
+			// If depthClipNegativeOneToOne is enabled, depth values are in [-1, 1] instead of [0, 1].
 			SIMD::Int maxZ = CmpLT(posW, posZ);
-			SIMD::Int minZ = CmpNLE(0.0f, posZ);
+			SIMD::Int minZ = CmpNLE(state.depthClipNegativeOneToOne ? -posW : 0.0f, posZ);
 			clipFlags |= maxZ & Clipper::CLIP_FAR;
 			clipFlags |= minZ & Clipper::CLIP_NEAR;
 		}
@@ -148,7 +149,7 @@ void VertexRoutine::computeClipFlags()
 		SIMD::Int finiteZ = CmpLE(Abs(posZ), maxPos);
 
 		SIMD::Int finiteXYZ = finiteX & finiteY & finiteZ;
-		clipFlags |= finiteXYZ & 0x00000080;
+		clipFlags |= finiteXYZ & Clipper::CLIP_FINITE;
 	}
 }
 
@@ -162,7 +163,7 @@ void VertexRoutine::computeCullMask()
 		auto count = spirvShader->getNumOutputCullDistances();
 		for(uint32_t i = 0; i < count; i++)
 		{
-			auto const &distance = routine.getVariable(it->second.Id)[it->second.FirstComponent + i];
+			const auto &distance = routine.getVariable(it->second.Id)[it->second.FirstComponent + i];
 			auto mask = SignMask(CmpGE(distance, SIMD::Float(0)));
 			cullMask &= mask;
 		}
@@ -207,7 +208,7 @@ Vector4f VertexRoutine::readStream(Pointer<Byte> &buffer, UInt &stride, const St
 
 	int componentCount = format.componentCount();
 	bool normalized = !format.isUnnormalizedInteger();
-	bool isNativeFloatAttrib = (stream.attribType == SpirvShader::ATTRIBTYPE_FLOAT) || normalized;
+	bool isNativeFloatAttrib = (stream.attribType == Spirv::ATTRIBTYPE_FLOAT) || normalized;
 	bool bgra = false;
 
 	switch(stream.format)
@@ -684,10 +685,10 @@ void VertexRoutine::writeCache(Pointer<Byte> &vertexCache, Pointer<UInt> &tagCac
 
 	for(int i = 0; i < MAX_INTERFACE_COMPONENTS; i += 4)
 	{
-		if(spirvShader->outputs[i + 0].Type != SpirvShader::ATTRIBTYPE_UNUSED ||
-		   spirvShader->outputs[i + 1].Type != SpirvShader::ATTRIBTYPE_UNUSED ||
-		   spirvShader->outputs[i + 2].Type != SpirvShader::ATTRIBTYPE_UNUSED ||
-		   spirvShader->outputs[i + 3].Type != SpirvShader::ATTRIBTYPE_UNUSED)
+		if(spirvShader->outputs[i + 0].Type != Spirv::ATTRIBTYPE_UNUSED ||
+		   spirvShader->outputs[i + 1].Type != Spirv::ATTRIBTYPE_UNUSED ||
+		   spirvShader->outputs[i + 2].Type != Spirv::ATTRIBTYPE_UNUSED ||
+		   spirvShader->outputs[i + 3].Type != Spirv::ATTRIBTYPE_UNUSED)
 		{
 			Vector4f v;
 			v.x = Extract128(routine.outputs[i + 0], 0);
@@ -716,7 +717,7 @@ void VertexRoutine::writeVertex(const Pointer<Byte> &vertex, Pointer<Byte> &cach
 
 	for(int i = 0; i < MAX_INTERFACE_COMPONENTS; i++)
 	{
-		if(spirvShader->outputs[i].Type != SpirvShader::ATTRIBTYPE_UNUSED)
+		if(spirvShader->outputs[i].Type != Spirv::ATTRIBTYPE_UNUSED)
 		{
 			*Pointer<Int>(vertex + OFFSET(Vertex, v[i]), 4) = *Pointer<Int>(cacheEntry + OFFSET(Vertex, v[i]), 4);
 		}

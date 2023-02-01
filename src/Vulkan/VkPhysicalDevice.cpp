@@ -247,21 +247,21 @@ static void getPhysicalDeviceDescriptorIndexingFeatures(T *features)
 	features->shaderUniformTexelBufferArrayDynamicIndexing = VK_TRUE;
 	features->shaderStorageTexelBufferArrayDynamicIndexing = VK_TRUE;
 	features->shaderUniformBufferArrayNonUniformIndexing = VK_TRUE;
-	features->shaderSampledImageArrayNonUniformIndexing = VK_FALSE;
+	features->shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 	features->shaderStorageBufferArrayNonUniformIndexing = VK_TRUE;
-	features->shaderStorageImageArrayNonUniformIndexing = VK_FALSE;
+	features->shaderStorageImageArrayNonUniformIndexing = VK_TRUE;
 	features->shaderInputAttachmentArrayNonUniformIndexing = VK_FALSE;
 	features->shaderUniformTexelBufferArrayNonUniformIndexing = VK_TRUE;
 	features->shaderStorageTexelBufferArrayNonUniformIndexing = VK_TRUE;
 	features->descriptorBindingUniformBufferUpdateAfterBind = VK_FALSE;
-	features->descriptorBindingSampledImageUpdateAfterBind = VK_FALSE;
-	features->descriptorBindingStorageImageUpdateAfterBind = VK_FALSE;
+	features->descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+	features->descriptorBindingStorageImageUpdateAfterBind = VK_TRUE;
 	features->descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
 	features->descriptorBindingUniformTexelBufferUpdateAfterBind = VK_TRUE;
 	features->descriptorBindingStorageTexelBufferUpdateAfterBind = VK_TRUE;
 	features->descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
 	features->descriptorBindingPartiallyBound = VK_TRUE;
-	features->descriptorBindingVariableDescriptorCount = VK_FALSE;
+	features->descriptorBindingVariableDescriptorCount = VK_TRUE;
 	features->runtimeDescriptorArray = VK_TRUE;
 }
 
@@ -370,6 +370,37 @@ static void getPhysicalDeviceMaintenance4Features(T *features)
 }
 
 template<typename T>
+static void getPhysicalDevicePrimitiveTopologyListRestartFeatures(T *features)
+{
+	features->primitiveTopologyListRestart = VK_TRUE;
+	features->primitiveTopologyPatchListRestart = VK_FALSE;
+}
+
+template<typename T>
+static void getPhysicalDevicePipelineRobustnessFeatures(T *features)
+{
+	features->pipelineRobustness = VK_TRUE;
+}
+
+template<typename T>
+static void getPhysicalDeviceGraphicsPipelineLibraryFeatures(T *features)
+{
+	features->graphicsPipelineLibrary = VK_TRUE;
+}
+
+template<typename T>
+static void getPhysicalDeviceGlobalPriorityQueryFeatures(T *features)
+{
+	features->globalPriorityQuery = VK_TRUE;
+}
+
+template<typename T>
+static void getPhysicalDeviceSwapchainMaintenance1FeaturesKHR(T *features)
+{
+	features->swapchainMaintenance1 = VK_TRUE;
+}
+
+template<typename T>
 static void getPhysicalDeviceVulkan12Features(T *features)
 {
 	features->samplerMirrorClampToEdge = VK_TRUE;
@@ -377,7 +408,7 @@ static void getPhysicalDeviceVulkan12Features(T *features)
 	getPhysicalDevice8BitStorageFeaturesKHR(features);
 	getPhysicalDeviceShaderAtomicInt64Features(features);
 	getPhysicalDeviceShaderFloat16Int8Features(features);
-	features->descriptorIndexing = VK_FALSE;
+	features->descriptorIndexing = VK_TRUE;
 	getPhysicalDeviceDescriptorIndexingFeatures(features);
 	features->samplerFilterMinmax = VK_FALSE;
 	getPhysicalDeviceScalarBlockLayoutFeatures(features);
@@ -395,7 +426,7 @@ static void getPhysicalDeviceVulkan12Features(T *features)
 }
 
 template<typename T>
-static void getPhysicalDeviceDepthClipEnableFeaturesExt(T *features)
+static void getPhysicalDeviceDepthClipEnableFeaturesEXT(T *features)
 {
 	features->depthClipEnable = VK_TRUE;
 }
@@ -418,26 +449,38 @@ static void getPhysicalDeviceVulkan13Features(T *features)
 	getPhysicalDeviceMaintenance4Features(features);
 }
 
-static void getPhysicalDeviceCustomBorderColorFeaturesExt(VkPhysicalDeviceCustomBorderColorFeaturesEXT *features)
+static void getPhysicalDeviceCustomBorderColorFeaturesEXT(VkPhysicalDeviceCustomBorderColorFeaturesEXT *features)
 {
 	features->customBorderColors = VK_TRUE;
 	features->customBorderColorWithoutFormat = VK_TRUE;
 }
 
-static void getPhysicalDeviceBlendOperationAdvancedFeaturesExt(VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT *features)
+static void getPhysicalDeviceBlendOperationAdvancedFeaturesEXT(VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT *features)
 {
 	features->advancedBlendCoherentOperations = VK_FALSE;
 }
 
-static void getPhysicalDeviceExtendedDynamicStateFeaturesExt(VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *features)
+static void getPhysicalDeviceExtendedDynamicStateFeaturesEXT(VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *features)
 {
 	features->extendedDynamicState = VK_TRUE;
 }
 
-static void getPhysicalDevice4444FormatsFeaturesExt(VkPhysicalDevice4444FormatsFeaturesEXT *features)
+static void getPhysicalDevice4444FormatsFeaturesEXT(VkPhysicalDevice4444FormatsFeaturesEXT *features)
 {
 	features->formatA4R4G4B4 = VK_TRUE;
 	features->formatA4B4G4R4 = VK_TRUE;
+}
+
+static void getPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT(VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT *features)
+{
+	features->rasterizationOrderColorAttachmentAccess = VK_TRUE;
+	features->rasterizationOrderDepthAttachmentAccess = VK_TRUE;
+	features->rasterizationOrderStencilAttachmentAccess = VK_TRUE;
+}
+
+static void getPhysicalDeviceDepthClipControlFeaturesExt(VkPhysicalDeviceDepthClipControlFeaturesEXT *features)
+{
+	features->depthClipControl = VK_TRUE;
 }
 
 void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
@@ -490,7 +533,7 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES:
 			getPhysicalDeviceSeparateDepthStencilLayoutsFeaturesKHR(reinterpret_cast<VkPhysicalDeviceSeparateDepthStencilLayoutsFeatures *>(curExtension));
 			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES_KHR:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES:
 			getPhysicalDevice8BitStorageFeaturesKHR(reinterpret_cast<VkPhysicalDevice8BitStorageFeaturesKHR *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_FEATURES_EXT:
@@ -499,7 +542,7 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGELESS_FRAMEBUFFER_FEATURES:
 			getPhysicalDeviceImagelessFramebufferFeatures(reinterpret_cast<VkPhysicalDeviceImagelessFramebufferFeatures *>(curExtension));
 			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES_KHR:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES:
 			getPhysicalDeviceShaderSubgroupExtendedTypesFeatures(reinterpret_cast<VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES:
@@ -535,19 +578,19 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 			getPhysicalDeviceDescriptorIndexingFeatures(reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeatures *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT:
-			getPhysicalDeviceDepthClipEnableFeaturesExt(reinterpret_cast<VkPhysicalDeviceDepthClipEnableFeaturesEXT *>(curExtension));
+			getPhysicalDeviceDepthClipEnableFeaturesEXT(reinterpret_cast<VkPhysicalDeviceDepthClipEnableFeaturesEXT *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_WORKGROUP_MEMORY_FEATURES:
 			getPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures(reinterpret_cast<VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT:
-			getPhysicalDeviceCustomBorderColorFeaturesExt(reinterpret_cast<VkPhysicalDeviceCustomBorderColorFeaturesEXT *>(curExtension));
+			getPhysicalDeviceCustomBorderColorFeaturesEXT(reinterpret_cast<VkPhysicalDeviceCustomBorderColorFeaturesEXT *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_FEATURES_EXT:
-			getPhysicalDeviceBlendOperationAdvancedFeaturesExt(reinterpret_cast<VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT *>(curExtension));
+			getPhysicalDeviceBlendOperationAdvancedFeaturesEXT(reinterpret_cast<VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT:
-			getPhysicalDeviceExtendedDynamicStateFeaturesExt(reinterpret_cast<VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *>(curExtension));
+			getPhysicalDeviceExtendedDynamicStateFeaturesEXT(reinterpret_cast<VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIVATE_DATA_FEATURES:
 			getPhysicalDevicePrivateDataFeatures(reinterpret_cast<VkPhysicalDevicePrivateDataFeatures *>(curExtension));
@@ -568,7 +611,7 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 			getPhysicalDeviceInlineUniformBlockFeatures(reinterpret_cast<VkPhysicalDeviceInlineUniformBlockFeatures *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_4444_FORMATS_FEATURES_EXT:
-			getPhysicalDevice4444FormatsFeaturesExt(reinterpret_cast<struct VkPhysicalDevice4444FormatsFeaturesEXT *>(curExtension));
+			getPhysicalDevice4444FormatsFeaturesEXT(reinterpret_cast<struct VkPhysicalDevice4444FormatsFeaturesEXT *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES:
 			getPhysicalDeviceSynchronization2Features(reinterpret_cast<struct VkPhysicalDeviceSynchronization2Features *>(curExtension));
@@ -579,19 +622,31 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES:
 			getPhysicalDeviceMaintenance4Features(reinterpret_cast<struct VkPhysicalDeviceMaintenance4Features *>(curExtension));
 			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXEL_BUFFER_ALIGNMENT_FEATURES_EXT:
-			// Workaround for a test bug (see https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3564)
-			reinterpret_cast<struct VkPhysicalDeviceTexelBufferAlignmentFeaturesEXT *>(curExtension)->texelBufferAlignment = VK_TRUE;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIMITIVE_TOPOLOGY_LIST_RESTART_FEATURES_EXT:
+			getPhysicalDevicePrimitiveTopologyListRestartFeatures(reinterpret_cast<struct VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT *>(curExtension));
 			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_MERGE_FEEDBACK_FEATURES_EXT:
-			// TODO(b/216982034): Workaround for a test bug (see https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3879)
-			reinterpret_cast<struct VkPhysicalDeviceSubpassMergeFeedbackFeaturesEXT *>(curExtension)->subpassMergeFeedback = VK_FALSE;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_FEATURES_EXT:
+			getPhysicalDevicePipelineRobustnessFeatures(reinterpret_cast<struct VkPhysicalDevicePipelineRobustnessFeaturesEXT *>(curExtension));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_EXT:
+			getPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT(reinterpret_cast<struct VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT *>(curExtension));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GLOBAL_PRIORITY_QUERY_FEATURES_KHR:
+			getPhysicalDeviceGlobalPriorityQueryFeatures(reinterpret_cast<struct VkPhysicalDeviceGlobalPriorityQueryFeaturesKHR *>(curExtension));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT:
+			getPhysicalDeviceDepthClipControlFeaturesExt(reinterpret_cast<struct VkPhysicalDeviceDepthClipControlFeaturesEXT *>(curExtension));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT:
+			getPhysicalDeviceGraphicsPipelineLibraryFeatures(reinterpret_cast<struct VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT *>(curExtension));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT:
+			getPhysicalDeviceSwapchainMaintenance1FeaturesKHR(reinterpret_cast<struct VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_MAX_ENUM:  // TODO(b/176893525): This may not be legal. dEQP tests that this value is ignored.
 			break;
 		default:
-			// TODO(b/216982034): Revert to UNSUPPORTED() when https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3879 is fixed.
-			WARN("curExtension->sType: %s", vk::Stringify(curExtension->sType).c_str());
+			UNSUPPORTED("curExtension->sType: %s", vk::Stringify(curExtension->sType).c_str());
 			break;
 		}
 		curExtension = reinterpret_cast<VkBaseOutStructure *>(curExtension->pNext);
@@ -665,7 +720,7 @@ const VkPhysicalDeviceLimits &PhysicalDevice::getLimits()
 		{ 256, 256, 64 },                            // maxComputeWorkGroupSize[3]
 		vk::SUBPIXEL_PRECISION_BITS,                 // subPixelPrecisionBits
 		8,                                           // subTexelPrecisionBits
-		4,                                           // mipmapPrecisionBits
+		6,                                           // mipmapPrecisionBits
 		UINT32_MAX,                                  // maxDrawIndexedIndexValue
 		UINT32_MAX,                                  // maxDrawIndirectCount
 		vk::MAX_SAMPLER_LOD_BIAS,                    // maxSamplerLodBias
@@ -1080,7 +1135,7 @@ static void getDriverProperties(T *properties)
 	properties->driverID = VK_DRIVER_ID_GOOGLE_SWIFTSHADER_KHR;
 	strcpy(properties->driverName, "SwiftShader driver");
 	strcpy(properties->driverInfo, "");
-	properties->conformanceVersion = { 1, 1, 3, 3 };
+	properties->conformanceVersion = { 1, 3, 3, 1 };
 }
 
 void PhysicalDevice::getProperties(VkPhysicalDeviceDriverProperties *properties) const
@@ -1143,7 +1198,10 @@ static void getDescriptorIndexingProperties(T *properties)
 	//  the corresponding non-UpdateAfterBind limit."
 	const VkPhysicalDeviceLimits &limits = PhysicalDevice::getLimits();
 
-	properties->maxUpdateAfterBindDescriptorsInAllPools = 0;
+	// Limits from:
+	// https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#limits-minmax
+	// Table 53. Required Limits
+	properties->maxUpdateAfterBindDescriptorsInAllPools = vk::MAX_UPDATE_AFTER_BIND_DESCRIPTORS;
 	properties->shaderUniformBufferArrayNonUniformIndexingNative = VK_FALSE;
 	properties->shaderSampledImageArrayNonUniformIndexingNative = VK_FALSE;
 	properties->shaderStorageBufferArrayNonUniformIndexingNative = VK_FALSE;
@@ -1151,20 +1209,20 @@ static void getDescriptorIndexingProperties(T *properties)
 	properties->shaderInputAttachmentArrayNonUniformIndexingNative = VK_FALSE;
 	properties->robustBufferAccessUpdateAfterBind = VK_FALSE;
 	properties->quadDivergentImplicitLod = VK_FALSE;
-	properties->maxPerStageDescriptorUpdateAfterBindSamplers = limits.maxPerStageDescriptorSamplers;
+	properties->maxPerStageDescriptorUpdateAfterBindSamplers = vk::MAX_UPDATE_AFTER_BIND_DESCRIPTORS;
 	properties->maxPerStageDescriptorUpdateAfterBindUniformBuffers = limits.maxPerStageDescriptorUniformBuffers;
-	properties->maxPerStageDescriptorUpdateAfterBindStorageBuffers = limits.maxPerStageDescriptorStorageBuffers;
-	properties->maxPerStageDescriptorUpdateAfterBindSampledImages = limits.maxPerStageDescriptorSampledImages;
-	properties->maxPerStageDescriptorUpdateAfterBindStorageImages = limits.maxPerStageDescriptorStorageImages;
+	properties->maxPerStageDescriptorUpdateAfterBindStorageBuffers = vk::MAX_UPDATE_AFTER_BIND_DESCRIPTORS;
+	properties->maxPerStageDescriptorUpdateAfterBindSampledImages = vk::MAX_UPDATE_AFTER_BIND_DESCRIPTORS;
+	properties->maxPerStageDescriptorUpdateAfterBindStorageImages = vk::MAX_UPDATE_AFTER_BIND_DESCRIPTORS;
 	properties->maxPerStageDescriptorUpdateAfterBindInputAttachments = limits.maxPerStageDescriptorInputAttachments;
-	properties->maxPerStageUpdateAfterBindResources = limits.maxPerStageResources;
-	properties->maxDescriptorSetUpdateAfterBindSamplers = limits.maxDescriptorSetSamplers;
+	properties->maxPerStageUpdateAfterBindResources = vk::MAX_UPDATE_AFTER_BIND_DESCRIPTORS;
+	properties->maxDescriptorSetUpdateAfterBindSamplers = vk::MAX_UPDATE_AFTER_BIND_DESCRIPTORS;
 	properties->maxDescriptorSetUpdateAfterBindUniformBuffers = limits.maxDescriptorSetUniformBuffers;
 	properties->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = limits.maxDescriptorSetUniformBuffersDynamic;
-	properties->maxDescriptorSetUpdateAfterBindStorageBuffers = limits.maxDescriptorSetStorageBuffers;
+	properties->maxDescriptorSetUpdateAfterBindStorageBuffers = vk::MAX_UPDATE_AFTER_BIND_DESCRIPTORS;
 	properties->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = limits.maxDescriptorSetStorageBuffersDynamic;
-	properties->maxDescriptorSetUpdateAfterBindSampledImages = limits.maxDescriptorSetSampledImages;
-	properties->maxDescriptorSetUpdateAfterBindStorageImages = limits.maxDescriptorSetStorageImages;
+	properties->maxDescriptorSetUpdateAfterBindSampledImages = vk::MAX_UPDATE_AFTER_BIND_DESCRIPTORS;
+	properties->maxDescriptorSetUpdateAfterBindStorageImages = vk::MAX_UPDATE_AFTER_BIND_DESCRIPTORS;
 	properties->maxDescriptorSetUpdateAfterBindInputAttachments = limits.maxDescriptorSetInputAttachments;
 }
 
@@ -1289,6 +1347,21 @@ void PhysicalDevice::getProperties(VkPhysicalDeviceShaderIntegerDotProductProper
 }
 
 template<typename T>
+static void getGraphicsPipelineLibraryProperties(T *properties)
+{
+	// Library linking is currently fast in SwiftShader, because all the pipeline creation cost
+	// is actually paid at draw time.
+	properties->graphicsPipelineLibraryFastLinking = VK_TRUE;
+	// TODO: check this
+	properties->graphicsPipelineLibraryIndependentInterpolationDecoration = VK_FALSE;
+}
+
+void PhysicalDevice::getProperties(VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT *properties) const
+{
+	getGraphicsPipelineLibraryProperties(properties);
+}
+
+template<typename T>
 static void getSamplerFilterMinmaxProperties(T *properties)
 {
 	properties->filterMinmaxSingleComponentFormats = VK_FALSE;
@@ -1310,6 +1383,24 @@ static void getTimelineSemaphoreProperties(T *properties)
 void PhysicalDevice::getProperties(VkPhysicalDeviceTimelineSemaphoreProperties *properties) const
 {
 	getTimelineSemaphoreProperties(properties);
+}
+
+template<typename T>
+static void getPipelineRobustnessProperties(T *properties)
+{
+	// Buffer access is not robust by default.
+	properties->defaultRobustnessStorageBuffers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DISABLED_EXT;
+	properties->defaultRobustnessUniformBuffers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DISABLED_EXT;
+	properties->defaultRobustnessVertexInputs = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DISABLED_EXT;
+	// SwiftShader currently provides robustImageAccess robustness unconditionally.
+	// robustImageAccess2 is not supported.
+	// TODO(b/162327166): Only provide robustness when requested.
+	properties->defaultRobustnessImages = VK_PIPELINE_ROBUSTNESS_IMAGE_BEHAVIOR_ROBUST_IMAGE_ACCESS_EXT;
+}
+
+void PhysicalDevice::getProperties(VkPhysicalDevicePipelineRobustnessPropertiesEXT *properties) const
+{
+	getPipelineRobustnessProperties(properties);
 }
 
 void PhysicalDevice::getProperties(VkPhysicalDeviceVulkan12Properties *properties) const
@@ -1558,7 +1649,234 @@ bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceZeroInitializeWor
 
 	return CheckFeature(requested, supported, shaderZeroInitializeWorkgroupMemory);
 }
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, primitiveTopologyListRestart) &&
+	       CheckFeature(requested, supported, primitiveTopologyPatchListRestart);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, graphicsPipelineLibrary);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, swapchainMaintenance1);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceDescriptorIndexingFeatures *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, shaderInputAttachmentArrayDynamicIndexing) &&
+	       CheckFeature(requested, supported, shaderUniformTexelBufferArrayDynamicIndexing) &&
+	       CheckFeature(requested, supported, shaderStorageTexelBufferArrayDynamicIndexing) &&
+	       CheckFeature(requested, supported, shaderUniformBufferArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, shaderSampledImageArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, shaderStorageBufferArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, shaderStorageImageArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, shaderInputAttachmentArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, shaderUniformTexelBufferArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, shaderStorageTexelBufferArrayNonUniformIndexing) &&
+	       CheckFeature(requested, supported, descriptorBindingUniformBufferUpdateAfterBind) &&
+	       CheckFeature(requested, supported, descriptorBindingSampledImageUpdateAfterBind) &&
+	       CheckFeature(requested, supported, descriptorBindingStorageImageUpdateAfterBind) &&
+	       CheckFeature(requested, supported, descriptorBindingStorageBufferUpdateAfterBind) &&
+	       CheckFeature(requested, supported, descriptorBindingUniformTexelBufferUpdateAfterBind) &&
+	       CheckFeature(requested, supported, descriptorBindingStorageTexelBufferUpdateAfterBind) &&
+	       CheckFeature(requested, supported, descriptorBindingUpdateUnusedWhilePending) &&
+	       CheckFeature(requested, supported, descriptorBindingPartiallyBound) &&
+	       CheckFeature(requested, supported, descriptorBindingVariableDescriptorCount) &&
+	       CheckFeature(requested, supported, runtimeDescriptorArray);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDevicePipelineRobustnessFeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, pipelineRobustness);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceProtectedMemoryFeatures *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, protectedMemory);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceBufferDeviceAddressFeatures *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, bufferDeviceAddress) &&
+	       CheckFeature(requested, supported, bufferDeviceAddressCaptureReplay) &&
+	       CheckFeature(requested, supported, bufferDeviceAddressMultiDevice);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceGlobalPriorityQueryFeaturesKHR *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, globalPriorityQuery);
+}
 #undef CheckFeature
+
+static bool checkFormatUsage(VkImageUsageFlags usage, VkFormatFeatureFlags features)
+{
+	// Check for usage conflict with features
+	if((usage & VK_IMAGE_USAGE_SAMPLED_BIT) && !(features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
+	{
+		return false;
+	}
+
+	if((usage & VK_IMAGE_USAGE_STORAGE_BIT) && !(features & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT))
+	{
+		return false;
+	}
+
+	if((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) && !(features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT))
+	{
+		return false;
+	}
+
+	if((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) && !(features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
+	{
+		return false;
+	}
+
+	if((usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) && !(features & (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)))
+	{
+		return false;
+	}
+
+	if((usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) && !(features & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT))
+	{
+		return false;
+	}
+
+	if((usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) && !(features & VK_FORMAT_FEATURE_TRANSFER_DST_BIT))
+	{
+		return false;
+	}
+
+	return true;
+}
+
+bool vk::PhysicalDevice::isFormatSupported(vk::Format format, VkImageType type, VkImageTiling tiling,
+                                           VkImageUsageFlags usage, VkImageUsageFlags stencilUsage, VkImageCreateFlags flags)
+{
+	VkFormatProperties properties = {};
+	vk::PhysicalDevice::GetFormatProperties(format, &properties);
+
+	if(flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT)
+	{
+		for(vk::Format f : format.getCompatibleFormats())
+		{
+			VkFormatProperties extendedProperties = {};
+			vk::PhysicalDevice::GetFormatProperties(f, &extendedProperties);
+			properties.linearTilingFeatures |= extendedProperties.linearTilingFeatures;
+			properties.optimalTilingFeatures |= extendedProperties.optimalTilingFeatures;
+			properties.bufferFeatures |= extendedProperties.bufferFeatures;
+		}
+	}
+
+	VkFormatFeatureFlags features;
+	switch(tiling)
+	{
+	case VK_IMAGE_TILING_LINEAR:
+		features = properties.linearTilingFeatures;
+		break;
+
+	case VK_IMAGE_TILING_OPTIMAL:
+		features = properties.optimalTilingFeatures;
+		break;
+
+	default:
+		UNSUPPORTED("VkImageTiling %d", int(tiling));
+		features = 0;
+	}
+
+	if(features == 0)
+	{
+		return false;
+	}
+
+	// Reject any usage or separate stencil usage that is not compatible with the specified format.
+	if(!checkFormatUsage(usage, features))
+	{
+		return false;
+	}
+	// If stencilUsage is 0 then no separate usage was provided and it takes on the same value as usage,
+	// which has already been checked. So only check non-zero stencilUsage.
+	if(stencilUsage != 0 && !checkFormatUsage(stencilUsage, features))
+	{
+		return false;
+	}
+
+	auto allRecognizedUsageBits = VK_IMAGE_USAGE_SAMPLED_BIT |
+	                              VK_IMAGE_USAGE_STORAGE_BIT |
+	                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+	                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+	                              VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
+	                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+	                              VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+	                              VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+	ASSERT(!(usage & ~(allRecognizedUsageBits)));
+
+	if(usage & VK_IMAGE_USAGE_SAMPLED_BIT)
+	{
+		if(tiling == VK_IMAGE_TILING_LINEAR)
+		{
+			// TODO(b/171299814): Compressed formats and cube maps are not supported for sampling using VK_IMAGE_TILING_LINEAR; otherwise, sampling
+			// in linear tiling is always supported as long as it can be sampled when using VK_IMAGE_TILING_OPTIMAL.
+			if(!(properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) ||
+			   vk::Format(format).isCompressed() ||
+			   (flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT))
+			{
+				return false;
+			}
+		}
+		else if(!(features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
+		{
+			return false;
+		}
+	}
+
+	// "Images created with tiling equal to VK_IMAGE_TILING_LINEAR have further restrictions on their limits and capabilities
+	//  compared to images created with tiling equal to VK_IMAGE_TILING_OPTIMAL."
+	if(tiling == VK_IMAGE_TILING_LINEAR)
+	{
+		if(type != VK_IMAGE_TYPE_2D)
+		{
+			return false;
+		}
+
+		if(vk::Format(format).isDepth() || vk::Format(format).isStencil())
+		{
+			return false;
+		}
+	}
+
+	// "Images created with a format from one of those listed in Formats requiring sampler Y'CBCR conversion for VK_IMAGE_ASPECT_COLOR_BIT image views
+	//  have further restrictions on their limits and capabilities compared to images created with other formats."
+	if(vk::Format(format).isYcbcrFormat())
+	{
+		if(type != VK_IMAGE_TYPE_2D)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
 
 void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties *pFormatProperties)
 {
@@ -2124,12 +2442,50 @@ void PhysicalDevice::getQueueFamilyProperties(uint32_t pQueueFamilyPropertyCount
 	}
 }
 
+void PhysicalDevice::getQueueFamilyGlobalPriorityProperties(VkQueueFamilyGlobalPriorityPropertiesKHR *pQueueFamilyGlobalPriorityProperties) const
+{
+	pQueueFamilyGlobalPriorityProperties->priorityCount = 1;
+	pQueueFamilyGlobalPriorityProperties->priorities[0] = VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR;
+}
+
+bool PhysicalDevice::validateQueueGlobalPriority(VkQueueGlobalPriorityKHR queueGlobalPriority) const
+{
+	VkQueueFamilyGlobalPriorityPropertiesKHR queueFamilyGlobalPriorityProperties;
+	getQueueFamilyGlobalPriorityProperties(&queueFamilyGlobalPriorityProperties);
+
+	for(uint32_t i = 0; i < queueFamilyGlobalPriorityProperties.priorityCount; ++i)
+	{
+		if(queueGlobalPriority == queueFamilyGlobalPriorityProperties.priorities[i])
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void PhysicalDevice::getQueueFamilyProperties(uint32_t pQueueFamilyPropertyCount,
                                               VkQueueFamilyProperties2 *pQueueFamilyProperties) const
 {
 	for(uint32_t i = 0; i < pQueueFamilyPropertyCount; i++)
 	{
 		pQueueFamilyProperties[i].queueFamilyProperties = getQueueFamilyProperties();
+
+		VkBaseOutStructure *extInfo = reinterpret_cast<VkBaseOutStructure *>(pQueueFamilyProperties[i].pNext);
+		while(extInfo)
+		{
+			switch(extInfo->sType)
+			{
+			case VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES_KHR:
+				getQueueFamilyGlobalPriorityProperties(reinterpret_cast<VkQueueFamilyGlobalPriorityPropertiesKHR *>(extInfo));
+				break;
+			default:
+				UNSUPPORTED("pQueueFamilyProperties->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
+				break;
+			}
+
+			extInfo = extInfo->pNext;
+		}
 	}
 }
 
