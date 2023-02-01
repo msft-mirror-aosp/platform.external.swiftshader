@@ -37,6 +37,7 @@ macro(spvtools_core_tables CONFIG_VERSION)
       --extinst-cldebuginfo100-grammar=${CLDEBUGINFO100_GRAMMAR_JSON_FILE}
       --core-insts-output=${GRAMMAR_INSTS_INC_FILE}
       --operand-kinds-output=${GRAMMAR_KINDS_INC_FILE}
+      --output-language=c++
     DEPENDS ${GRAMMAR_PROCESSING_SCRIPT}
             ${GRAMMAR_JSON_FILE}
             ${DEBUGINFO_GRAMMAR_JSON_FILE}
@@ -58,6 +59,7 @@ macro(spvtools_enum_string_mapping CONFIG_VERSION)
       --extinst-cldebuginfo100-grammar=${CLDEBUGINFO100_GRAMMAR_JSON_FILE}
       --extension-enum-output=${GRAMMAR_EXTENSION_ENUM_INC_FILE}
       --enum-string-mapping-output=${GRAMMAR_ENUM_STRING_MAPPING_INC_FILE}
+      --output-language=c++
     DEPENDS ${GRAMMAR_PROCESSING_SCRIPT}
             ${GRAMMAR_JSON_FILE}
             ${DEBUGINFO_GRAMMAR_JSON_FILE}
@@ -92,6 +94,7 @@ macro(spvtools_glsl_tables CONFIG_VERSION)
     COMMAND ${PYTHON_EXECUTABLE} ${GRAMMAR_PROCESSING_SCRIPT}
       --extinst-glsl-grammar=${GLSL_GRAMMAR_JSON_FILE}
       --glsl-insts-output=${GRAMMAR_INC_FILE}
+      --output-language=c++
     DEPENDS ${GRAMMAR_PROCESSING_SCRIPT} ${CORE_GRAMMAR_JSON_FILE} ${GLSL_GRAMMAR_JSON_FILE}
     COMMENT "Generate info tables for GLSL extended instructions and operands v${CONFIG_VERSION}.")
   list(APPEND EXTINST_CPP_DEPENDS ${GRAMMAR_INC_FILE})
@@ -197,7 +200,7 @@ set(SPIRV_TOOLS_CHANGES_FILE
 add_custom_command(OUTPUT ${SPIRV_TOOLS_BUILD_VERSION_INC}
    COMMAND ${PYTHON_EXECUTABLE}
            ${SPIRV_TOOLS_BUILD_VERSION_INC_GENERATOR}
-           ${spirv-tools_SOURCE_DIR} ${SPIRV_TOOLS_BUILD_VERSION_INC}
+           ${SPIRV_TOOLS_CHANGES_FILE} ${SPIRV_TOOLS_BUILD_VERSION_INC}
    DEPENDS ${SPIRV_TOOLS_BUILD_VERSION_INC_GENERATOR}
            ${SPIRV_TOOLS_CHANGES_FILE}
    COMMENT "Update build-version.inc in the SPIRV-Tools build directory (if necessary).")
@@ -228,7 +231,6 @@ set(SPIRV_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/util/hex_float.h
   ${CMAKE_CURRENT_SOURCE_DIR}/util/make_unique.h
   ${CMAKE_CURRENT_SOURCE_DIR}/util/parse_number.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/util/pooled_linked_list.h
   ${CMAKE_CURRENT_SOURCE_DIR}/util/small_vector.h
   ${CMAKE_CURRENT_SOURCE_DIR}/util/string_utils.h
   ${CMAKE_CURRENT_SOURCE_DIR}/util/timer.h
@@ -319,10 +321,14 @@ set(SPIRV_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_logicals.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_memory.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_memory_semantics.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_mesh_shading.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_misc.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_mode_setting.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_non_uniform.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_primitives.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_ray_query.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_ray_tracing.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_ray_tracing_reorder.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_scopes.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_small_type_uses.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_type.cpp
@@ -407,7 +413,7 @@ if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
   find_library(LIBRT rt)
   if(LIBRT)
     foreach(target ${SPIRV_TOOLS_TARGETS})
-      target_link_libraries(${target} ${LIBRT})
+      target_link_libraries(${target} rt)
     endforeach()
   endif()
 endif()

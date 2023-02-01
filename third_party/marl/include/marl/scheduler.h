@@ -21,6 +21,7 @@
 #include "export.h"
 #include "memory.h"
 #include "mutex.h"
+#include "sanitizers.h"
 #include "task.h"
 #include "thread.h"
 
@@ -487,6 +488,9 @@ class Scheduler {
   // it going to sleep.
   void onBeginSpinning(int workerId);
 
+  // setBound() sets the scheduler bound to the current thread.
+  static void setBound(Scheduler* scheduler);
+
   // The scheduler currently bound to the current thread.
   static thread_local Scheduler* bound;
 
@@ -570,6 +574,7 @@ bool Scheduler::Fiber::wait(
 }
 
 Scheduler::Worker* Scheduler::Worker::getCurrent() {
+  MSAN_UNPOISON(&current, sizeof(Worker*));
   return Worker::current;
 }
 
