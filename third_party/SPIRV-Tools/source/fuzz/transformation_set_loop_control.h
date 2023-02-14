@@ -29,7 +29,7 @@ class TransformationSetLoopControl : public Transformation {
   const static uint32_t kLoopControlFirstLiteralInOperandIndex = 3;
 
   explicit TransformationSetLoopControl(
-      const protobufs::TransformationSetLoopControl& message);
+      protobufs::TransformationSetLoopControl message);
 
   TransformationSetLoopControl(uint32_t block_id, uint32_t loop_control,
                                uint32_t peel_count, uint32_t partial_count);
@@ -71,7 +71,7 @@ class TransformationSetLoopControl : public Transformation {
   // Returns true if and only if |loop_single_bit_mask| is *not* set in
   // |existing_loop_control| but *is* set in |message_.loop_control|.
   bool LoopControlBitIsAddedByTransformation(
-      SpvLoopControlMask loop_control_single_bit_mask,
+      spv::LoopControlMask loop_control_single_bit_mask,
       uint32_t existing_loop_control_mask) const;
 
   protobufs::TransformationSetLoopControl message_;

@@ -26,7 +26,7 @@ namespace fuzz {
 class TransformationWrapEarlyTerminatorInFunction : public Transformation {
  public:
   explicit TransformationWrapEarlyTerminatorInFunction(
-      const protobufs::TransformationWrapEarlyTerminatorInFunction& message);
+      protobufs::TransformationWrapEarlyTerminatorInFunction message);
 
   TransformationWrapEarlyTerminatorInFunction(
       uint32_t fresh_id,
@@ -60,8 +60,8 @@ class TransformationWrapEarlyTerminatorInFunction : public Transformation {
 
   protobufs::Transformation ToMessage() const override;
 
-  static opt::Function* MaybeGetWrapperFunction(opt::IRContext* ir_context,
-                                                SpvOp early_terminator_opcode);
+  static opt::Function* MaybeGetWrapperFunction(
+      opt::IRContext* ir_context, spv::Op early_terminator_opcode);
 
  private:
   protobufs::TransformationWrapEarlyTerminatorInFunction message_;

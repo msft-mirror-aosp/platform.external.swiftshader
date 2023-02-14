@@ -28,7 +28,7 @@ namespace fuzz {
 class TransformationPropagateInstructionUp : public Transformation {
  public:
   explicit TransformationPropagateInstructionUp(
-      const protobufs::TransformationPropagateInstructionUp& message);
+      protobufs::TransformationPropagateInstructionUp message);
 
   TransformationPropagateInstructionUp(
       uint32_t block_id,
@@ -80,7 +80,7 @@ class TransformationPropagateInstructionUp : public Transformation {
                                                      uint32_t block_id);
 
   // Returns true if |opcode| is supported by this transformation.
-  static bool IsOpcodeSupported(SpvOp opcode);
+  static bool IsOpcodeSupported(spv::Op opcode);
 
   protobufs::TransformationPropagateInstructionUp message_;
 };

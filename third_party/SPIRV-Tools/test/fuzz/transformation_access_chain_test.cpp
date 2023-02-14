@@ -26,6 +26,7 @@ namespace {
 TEST(TransformationAccessChainTest, BasicTest) {
   std::string shader = R"(
                OpCapability Shader
+               OpCapability VariablePointers
           %1 = OpExtInstImport "GLSL.std.450"
                OpMemoryModel Logical GLSL450
                OpEntryPoint Fragment %4 "main" %48 %54
@@ -63,7 +64,6 @@ TEST(TransformationAccessChainTest, BasicTest) {
          %85 = OpConstant %10 5
          %52 = OpTypeArray %50 %51
          %53 = OpTypePointer Private %52
-         %45 = OpUndef %9
          %46 = OpConstantNull %9
          %47 = OpTypePointer Private %8
          %48 = OpVariable %47 Private
@@ -127,96 +127,106 @@ TEST(TransformationAccessChainTest, BasicTest) {
   transformation_context.GetFactManager()->AddFactValueOfPointeeIsIrrelevant(
       54);
 
+  // Check the case where the index type is not a 32-bit integer.
+  TransformationAccessChain invalid_index_example1(
+      101, 28, {29}, MakeInstructionDescriptor(42, spv::Op::OpReturn, 0));
+
+  // Since the index  is not a 32-bit integer type but a 32-bit float type,
+  // ValidIndexComposite should return false and thus the transformation is not
+  // applicable.
+  ASSERT_FALSE(invalid_index_example1.IsApplicable(context.get(),
+                                                   transformation_context));
+
   // Bad: id is not fresh
-  ASSERT_FALSE(TransformationAccessChain(
-                   43, 43, {80}, MakeInstructionDescriptor(24, SpvOpLoad, 0))
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationAccessChain(
+          43, 43, {80}, MakeInstructionDescriptor(24, spv::Op::OpLoad, 0))
+          .IsApplicable(context.get(), transformation_context));
 
   // Bad: pointer id does not exist
-  ASSERT_FALSE(TransformationAccessChain(
-                   100, 1000, {80}, MakeInstructionDescriptor(24, SpvOpLoad, 0))
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationAccessChain(
+          100, 1000, {80}, MakeInstructionDescriptor(24, spv::Op::OpLoad, 0))
+          .IsApplicable(context.get(), transformation_context));
 
   // Bad: pointer id is not a type
-  ASSERT_FALSE(TransformationAccessChain(
-                   100, 5, {80}, MakeInstructionDescriptor(24, SpvOpLoad, 0))
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationAccessChain(
+          100, 5, {80}, MakeInstructionDescriptor(24, spv::Op::OpLoad, 0))
+          .IsApplicable(context.get(), transformation_context));
 
   // Bad: pointer id is not a pointer
-  ASSERT_FALSE(TransformationAccessChain(
-                   100, 23, {80}, MakeInstructionDescriptor(24, SpvOpLoad, 0))
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationAccessChain(
+          100, 23, {80}, MakeInstructionDescriptor(24, spv::Op::OpLoad, 0))
+          .IsApplicable(context.get(), transformation_context));
 
   // Bad: index id does not exist
-  ASSERT_FALSE(TransformationAccessChain(
-                   100, 43, {1000}, MakeInstructionDescriptor(24, SpvOpLoad, 0))
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationAccessChain(
+          100, 43, {1000}, MakeInstructionDescriptor(24, spv::Op::OpLoad, 0))
+          .IsApplicable(context.get(), transformation_context));
 
   // Bad: index id is not a constant and the pointer refers to a struct
-  ASSERT_FALSE(TransformationAccessChain(
-                   100, 43, {24}, MakeInstructionDescriptor(25, SpvOpIAdd, 0))
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationAccessChain(
+          100, 43, {24}, MakeInstructionDescriptor(25, spv::Op::OpIAdd, 0))
+          .IsApplicable(context.get(), transformation_context));
 
   // Bad: too many indices
-  ASSERT_FALSE(
-      TransformationAccessChain(100, 43, {80, 80, 80},
-                                MakeInstructionDescriptor(24, SpvOpLoad, 0))
-          .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(TransformationAccessChain(
+                   100, 43, {80, 80, 80},
+                   MakeInstructionDescriptor(24, spv::Op::OpLoad, 0))
+                   .IsApplicable(context.get(), transformation_context));
 
   // Bad: index id is out of bounds when accessing a struct
   ASSERT_FALSE(
-      TransformationAccessChain(100, 43, {83, 80},
-                                MakeInstructionDescriptor(24, SpvOpLoad, 0))
+      TransformationAccessChain(
+          100, 43, {83, 80}, MakeInstructionDescriptor(24, spv::Op::OpLoad, 0))
           .IsApplicable(context.get(), transformation_context));
 
   // Bad: attempt to insert before variable
-  ASSERT_FALSE(TransformationAccessChain(
-                   100, 34, {}, MakeInstructionDescriptor(36, SpvOpVariable, 0))
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationAccessChain(
+          100, 34, {}, MakeInstructionDescriptor(36, spv::Op::OpVariable, 0))
+          .IsApplicable(context.get(), transformation_context));
 
   // Bad: OpTypeBool must be present in the module to clamp an index
   ASSERT_FALSE(
-      TransformationAccessChain(100, 36, {80, 81},
-                                MakeInstructionDescriptor(37, SpvOpStore, 0))
+      TransformationAccessChain(
+          100, 36, {80, 81}, MakeInstructionDescriptor(37, spv::Op::OpStore, 0))
           .IsApplicable(context.get(), transformation_context));
 
   // Bad: pointer not available
-  ASSERT_FALSE(
-      TransformationAccessChain(
-          100, 43, {80}, MakeInstructionDescriptor(21, SpvOpAccessChain, 0))
-          .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(TransformationAccessChain(
+                   100, 43, {80},
+                   MakeInstructionDescriptor(21, spv::Op::OpAccessChain, 0))
+                   .IsApplicable(context.get(), transformation_context));
 
   // Bad: instruction descriptor does not identify anything
-  ASSERT_FALSE(TransformationAccessChain(
-                   100, 43, {80}, MakeInstructionDescriptor(24, SpvOpLoad, 100))
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationAccessChain(
+          100, 43, {80}, MakeInstructionDescriptor(24, spv::Op::OpLoad, 100))
+          .IsApplicable(context.get(), transformation_context));
 
 #ifndef NDEBUG
   // Bad: pointer is null
   ASSERT_DEATH(
-      TransformationAccessChain(100, 45, {80},
-                                MakeInstructionDescriptor(24, SpvOpLoad, 0))
-          .IsApplicable(context.get(), transformation_context),
-      "Access chains should not be created from null/undefined pointers");
-#endif
-
-#ifndef NDEBUG
-  // Bad: pointer is undef
-  ASSERT_DEATH(
-      TransformationAccessChain(100, 46, {80},
-                                MakeInstructionDescriptor(24, SpvOpLoad, 0))
+      TransformationAccessChain(
+          100, 46, {80}, MakeInstructionDescriptor(24, spv::Op::OpLoad, 0))
           .IsApplicable(context.get(), transformation_context),
       "Access chains should not be created from null/undefined pointers");
 #endif
 
   // Bad: pointer to result type does not exist
-  ASSERT_FALSE(TransformationAccessChain(
-                   100, 52, {0}, MakeInstructionDescriptor(24, SpvOpLoad, 0))
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationAccessChain(
+          100, 52, {0}, MakeInstructionDescriptor(24, spv::Op::OpLoad, 0))
+          .IsApplicable(context.get(), transformation_context));
 
   {
     TransformationAccessChain transformation(
-        100, 43, {80}, MakeInstructionDescriptor(24, SpvOpLoad, 0));
+        100, 43, {80}, MakeInstructionDescriptor(24, spv::Op::OpLoad, 0));
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
     ApplyAndCheckFreshIds(transformation, context.get(),
@@ -229,7 +239,7 @@ TEST(TransformationAccessChainTest, BasicTest) {
 
   {
     TransformationAccessChain transformation(
-        101, 28, {81}, MakeInstructionDescriptor(42, SpvOpReturn, 0));
+        101, 28, {81}, MakeInstructionDescriptor(42, spv::Op::OpReturn, 0));
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
     ApplyAndCheckFreshIds(transformation, context.get(),
@@ -242,7 +252,7 @@ TEST(TransformationAccessChainTest, BasicTest) {
 
   {
     TransformationAccessChain transformation(
-        102, 44, {}, MakeInstructionDescriptor(44, SpvOpStore, 0));
+        102, 44, {}, MakeInstructionDescriptor(44, spv::Op::OpStore, 0));
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
     ApplyAndCheckFreshIds(transformation, context.get(),
@@ -255,7 +265,8 @@ TEST(TransformationAccessChainTest, BasicTest) {
 
   {
     TransformationAccessChain transformation(
-        103, 13, {80}, MakeInstructionDescriptor(21, SpvOpAccessChain, 0));
+        103, 13, {80},
+        MakeInstructionDescriptor(21, spv::Op::OpAccessChain, 0));
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
     ApplyAndCheckFreshIds(transformation, context.get(),
@@ -268,7 +279,7 @@ TEST(TransformationAccessChainTest, BasicTest) {
 
   {
     TransformationAccessChain transformation(
-        104, 34, {}, MakeInstructionDescriptor(44, SpvOpStore, 1));
+        104, 34, {}, MakeInstructionDescriptor(44, spv::Op::OpStore, 1));
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
     ApplyAndCheckFreshIds(transformation, context.get(),
@@ -281,7 +292,7 @@ TEST(TransformationAccessChainTest, BasicTest) {
 
   {
     TransformationAccessChain transformation(
-        105, 38, {}, MakeInstructionDescriptor(40, SpvOpFunctionCall, 0));
+        105, 38, {}, MakeInstructionDescriptor(40, spv::Op::OpFunctionCall, 0));
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
     ApplyAndCheckFreshIds(transformation, context.get(),
@@ -294,7 +305,7 @@ TEST(TransformationAccessChainTest, BasicTest) {
 
   {
     TransformationAccessChain transformation(
-        106, 14, {}, MakeInstructionDescriptor(24, SpvOpLoad, 0));
+        106, 14, {}, MakeInstructionDescriptor(24, spv::Op::OpLoad, 0));
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
     ApplyAndCheckFreshIds(transformation, context.get(),
@@ -304,9 +315,24 @@ TEST(TransformationAccessChainTest, BasicTest) {
     ASSERT_FALSE(
         transformation_context.GetFactManager()->PointeeValueIsIrrelevant(107));
   }
+  {
+    // Check the case where the access chain's base pointer has the irrelevant
+    // pointee fact; the resulting access chain should inherit this fact.
+    TransformationAccessChain transformation(
+        107, 54, {}, MakeInstructionDescriptor(24, spv::Op::OpLoad, 0));
+    ASSERT_TRUE(
+        transformation.IsApplicable(context.get(), transformation_context));
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
+    ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(
+        context.get(), validator_options, kConsoleMessageConsumer));
+    ASSERT_TRUE(
+        transformation_context.GetFactManager()->PointeeValueIsIrrelevant(54));
+  }
 
   std::string after_transformation = R"(
                OpCapability Shader
+               OpCapability VariablePointers
           %1 = OpExtInstImport "GLSL.std.450"
                OpMemoryModel Logical GLSL450
                OpEntryPoint Fragment %4 "main" %48 %54
@@ -344,7 +370,6 @@ TEST(TransformationAccessChainTest, BasicTest) {
          %85 = OpConstant %10 5
          %52 = OpTypeArray %50 %51
          %53 = OpTypePointer Private %52
-         %45 = OpUndef %9
          %46 = OpConstantNull %9
          %47 = OpTypePointer Private %8
          %48 = OpVariable %47 Private
@@ -383,12 +408,52 @@ TEST(TransformationAccessChainTest, BasicTest) {
          %23 = OpConvertFToS %10 %22
         %100 = OpAccessChain %70 %43 %80
         %106 = OpAccessChain %11 %14
+        %107 = OpAccessChain %53 %54
          %24 = OpLoad %10 %14
          %25 = OpIAdd %10 %23 %24
                OpReturnValue %25
                OpFunctionEnd
   )";
   ASSERT_TRUE(IsEqual(env, after_transformation, context.get()));
+}
+
+TEST(TransformationAccessChainTest, StructIndexMustBeConstant) {
+  std::string shader = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %4 "main"
+               OpExecutionMode %4 OriginUpperLeft
+               OpSource ESSL 320
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %6 = OpTypeInt 32 1
+         %20 = OpUndef %6
+          %7 = OpTypeStruct %6 %6
+          %8 = OpTypePointer Function %7
+         %10 = OpConstant %6 0
+         %11 = OpConstant %6 2
+         %12 = OpTypePointer Function %6
+          %4 = OpFunction %2 None %3
+          %5 = OpLabel
+          %9 = OpVariable %8 Function
+               OpReturn
+               OpFunctionEnd
+  )";
+
+  const auto env = SPV_ENV_UNIVERSAL_1_4;
+  const auto consumer = nullptr;
+  const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
+  spvtools::ValidatorOptions validator_options;
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
+  // Bad: %9 is a pointer to a struct, but %20 is not a constant.
+  ASSERT_FALSE(
+      TransformationAccessChain(
+          100, 9, {20}, MakeInstructionDescriptor(9, spv::Op::OpReturn, 0))
+          .IsApplicable(context.get(), transformation_context));
 }
 
 TEST(TransformationAccessChainTest, IsomorphicStructs) {
@@ -424,7 +489,7 @@ TEST(TransformationAccessChainTest, IsomorphicStructs) {
       MakeUnique<FactManager>(context.get()), validator_options);
   {
     TransformationAccessChain transformation(
-        100, 11, {}, MakeInstructionDescriptor(5, SpvOpReturn, 0));
+        100, 11, {}, MakeInstructionDescriptor(5, spv::Op::OpReturn, 0));
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
     ApplyAndCheckFreshIds(transformation, context.get(),
@@ -434,7 +499,7 @@ TEST(TransformationAccessChainTest, IsomorphicStructs) {
   }
   {
     TransformationAccessChain transformation(
-        101, 12, {}, MakeInstructionDescriptor(5, SpvOpReturn, 0));
+        101, 12, {}, MakeInstructionDescriptor(5, spv::Op::OpReturn, 0));
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
     ApplyAndCheckFreshIds(transformation, context.get(),
@@ -533,51 +598,56 @@ TEST(TransformationAccessChainTest, ClampingVariables) {
   TransformationContext transformation_context(
       MakeUnique<FactManager>(context.get()), validator_options);
   // Bad: no ids given for clamping
-  ASSERT_FALSE(TransformationAccessChain(
-                   100, 29, {17}, MakeInstructionDescriptor(36, SpvOpLoad, 0))
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationAccessChain(
+          100, 29, {17}, MakeInstructionDescriptor(36, spv::Op::OpLoad, 0))
+          .IsApplicable(context.get(), transformation_context));
 
   // Bad: an id given for clamping is not fresh
   ASSERT_FALSE(TransformationAccessChain(
-                   100, 29, {17}, MakeInstructionDescriptor(36, SpvOpLoad, 0),
+                   100, 29, {17},
+                   MakeInstructionDescriptor(36, spv::Op::OpLoad, 0),
                    {{46, 201}})
                    .IsApplicable(context.get(), transformation_context));
 
   // Bad: an id given for clamping is not fresh
   ASSERT_FALSE(TransformationAccessChain(
-                   100, 29, {17}, MakeInstructionDescriptor(36, SpvOpLoad, 0),
+                   100, 29, {17},
+                   MakeInstructionDescriptor(36, spv::Op::OpLoad, 0),
                    {{200, 46}})
                    .IsApplicable(context.get(), transformation_context));
 
   // Bad: an id given for clamping is the same as the id for the access chain
   ASSERT_FALSE(TransformationAccessChain(
-                   100, 29, {17}, MakeInstructionDescriptor(36, SpvOpLoad, 0),
+                   100, 29, {17},
+                   MakeInstructionDescriptor(36, spv::Op::OpLoad, 0),
                    {{100, 201}})
                    .IsApplicable(context.get(), transformation_context));
 
   // Bad: the fresh ids given are not distinct
   ASSERT_FALSE(TransformationAccessChain(
-                   100, 29, {17}, MakeInstructionDescriptor(36, SpvOpLoad, 0),
+                   100, 29, {17},
+                   MakeInstructionDescriptor(36, spv::Op::OpLoad, 0),
                    {{200, 200}})
                    .IsApplicable(context.get(), transformation_context));
 
   // Bad: not enough ids given for clamping (2 pairs needed)
-  ASSERT_FALSE(
-      TransformationAccessChain(104, 34, {45, 10, 46},
-                                MakeInstructionDescriptor(46, SpvOpReturn, 0),
-                                {{208, 209}, {209, 211}})
-          .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(TransformationAccessChain(
+                   104, 34, {45, 10, 46},
+                   MakeInstructionDescriptor(46, spv::Op::OpReturn, 0),
+                   {{208, 209}, {209, 211}})
+                   .IsApplicable(context.get(), transformation_context));
 
   // Bad: the fresh ids given are not distinct
-  ASSERT_FALSE(
-      TransformationAccessChain(104, 34, {45, 10, 46},
-                                MakeInstructionDescriptor(46, SpvOpReturn, 0),
-                                {{208, 209}, {209, 211}})
-          .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(TransformationAccessChain(
+                   104, 34, {45, 10, 46},
+                   MakeInstructionDescriptor(46, spv::Op::OpReturn, 0),
+                   {{208, 209}, {209, 211}})
+                   .IsApplicable(context.get(), transformation_context));
 
   {
     TransformationAccessChain transformation(
-        100, 29, {17}, MakeInstructionDescriptor(36, SpvOpLoad, 0),
+        100, 29, {17}, MakeInstructionDescriptor(36, spv::Op::OpLoad, 0),
         {{200, 201}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
@@ -589,7 +659,7 @@ TEST(TransformationAccessChainTest, ClampingVariables) {
 
   {
     TransformationAccessChain transformation(
-        101, 29, {36}, MakeInstructionDescriptor(38, SpvOpLoad, 0),
+        101, 29, {36}, MakeInstructionDescriptor(38, spv::Op::OpLoad, 0),
         {{202, 203}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
@@ -601,7 +671,7 @@ TEST(TransformationAccessChainTest, ClampingVariables) {
 
   {
     TransformationAccessChain transformation(
-        102, 32, {10, 40}, MakeInstructionDescriptor(42, SpvOpLoad, 0),
+        102, 32, {10, 40}, MakeInstructionDescriptor(42, spv::Op::OpLoad, 0),
         {{204, 205}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
@@ -613,7 +683,7 @@ TEST(TransformationAccessChainTest, ClampingVariables) {
 
   {
     TransformationAccessChain transformation(
-        103, 34, {11}, MakeInstructionDescriptor(45, SpvOpLoad, 0),
+        103, 34, {11}, MakeInstructionDescriptor(45, spv::Op::OpLoad, 0),
         {{206, 207}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
@@ -625,7 +695,8 @@ TEST(TransformationAccessChainTest, ClampingVariables) {
 
   {
     TransformationAccessChain transformation(
-        104, 34, {45, 10, 46}, MakeInstructionDescriptor(46, SpvOpReturn, 0),
+        104, 34, {45, 10, 46},
+        MakeInstructionDescriptor(46, spv::Op::OpReturn, 0),
         {{208, 209}, {210, 211}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));

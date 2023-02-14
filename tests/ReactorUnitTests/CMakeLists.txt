@@ -14,7 +14,6 @@
 
 set(ROOT_PROJECT_COMPILE_OPTIONS
     ${SWIFTSHADER_COMPILE_OPTIONS}
-    ${WARNINGS_AS_ERRORS}
 )
 
 set(ROOT_PROJECT_LINK_LIBRARIES
@@ -24,6 +23,7 @@ set(ROOT_PROJECT_LINK_LIBRARIES
 
 set(REACTOR_UNIT_TESTS_SRC_FILES
     main.cpp
+    ReactorSIMD.cpp
     ReactorUnitTests.cpp
 )
 
@@ -53,7 +53,7 @@ target_link_options(ReactorUnitTests
 
 target_link_libraries(ReactorUnitTests
     PRIVATE
-        ${Reactor}
+        Reactor
         gtest
         ${ROOT_PROJECT_LINK_LIBRARIES}
 )

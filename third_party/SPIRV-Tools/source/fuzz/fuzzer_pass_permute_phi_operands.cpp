@@ -28,11 +28,10 @@ namespace fuzz {
 FuzzerPassPermutePhiOperands::FuzzerPassPermutePhiOperands(
     opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
-    protobufs::TransformationSequence* transformations)
+    protobufs::TransformationSequence* transformations,
+    bool ignore_inapplicable_transformations)
     : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations) {}
-
-FuzzerPassPermutePhiOperands::~FuzzerPassPermutePhiOperands() = default;
+                 transformations, ignore_inapplicable_transformations) {}
 
 void FuzzerPassPermutePhiOperands::Apply() {
   ForEachInstructionWithInstructionDescriptor(
@@ -41,7 +40,7 @@ void FuzzerPassPermutePhiOperands::Apply() {
              const protobufs::InstructionDescriptor& /*unused*/) {
         const auto& inst = *inst_it;
 
-        if (inst.opcode() != SpvOpPhi) {
+        if (inst.opcode() != spv::Op::OpPhi) {
           return;
         }
 

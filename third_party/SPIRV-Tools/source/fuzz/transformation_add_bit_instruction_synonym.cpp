@@ -21,9 +21,8 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationAddBitInstructionSynonym::TransformationAddBitInstructionSynonym(
-    const spvtools::fuzz::protobufs::TransformationAddBitInstructionSynonym&
-        message)
-    : message_(message) {}
+    protobufs::TransformationAddBitInstructionSynonym message)
+    : message_(std::move(message)) {}
 
 TransformationAddBitInstructionSynonym::TransformationAddBitInstructionSynonym(
     const uint32_t instruction_result_id,
@@ -40,20 +39,9 @@ bool TransformationAddBitInstructionSynonym::IsApplicable(
   auto instruction =
       ir_context->get_def_use_mgr()->GetDef(message_.instruction_result_id());
 
-  // TODO(https://github.com/KhronosGroup/SPIRV-Tools/issues/3557):
-  //  Right now we only support certain operations. When this issue is addressed
-  //  the following conditional can use the function |spvOpcodeIsBit|.
-  // |instruction| must be defined and must be a supported bit instruction.
-  if (!instruction || (instruction->opcode() != SpvOpBitwiseOr &&
-                       instruction->opcode() != SpvOpBitwiseXor &&
-                       instruction->opcode() != SpvOpBitwiseAnd &&
-                       instruction->opcode() != SpvOpNot)) {
-    return false;
-  }
-
-  // TODO(https://github.com/KhronosGroup/SPIRV-Tools/issues/3792):
-  //  Right now, only integer operands are supported.
-  if (ir_context->get_type_mgr()->GetType(instruction->type_id())->AsVector()) {
+  // Checks on: only integer operands are supported, instructions are bitwise
+  // operations only. Signedness of the operands must be the same.
+  if (!IsInstructionSupported(ir_context, instruction)) {
     return false;
   }
 
@@ -99,16 +87,75 @@ void TransformationAddBitInstructionSynonym::Apply(
   // synonym fact.  The helper function should take care of invalidating
   // analyses before adding facts.
   switch (bit_instruction->opcode()) {
-    case SpvOpBitwiseOr:
-    case SpvOpBitwiseXor:
-    case SpvOpBitwiseAnd:
-    case SpvOpNot:
+    case spv::Op::OpBitwiseOr:
+    case spv::Op::OpBitwiseXor:
+    case spv::Op::OpBitwiseAnd:
+    case spv::Op::OpNot:
       AddOpBitwiseOrOpNotSynonym(ir_context, transformation_context,
                                  bit_instruction);
       break;
     default:
       assert(false && "Should be unreachable.");
       break;
+  }
+}
+
+bool TransformationAddBitInstructionSynonym::IsInstructionSupported(
+    opt::IRContext* ir_context, opt::Instruction* instruction) {
+  // TODO(https://github.com/KhronosGroup/SPIRV-Tools/issues/3557):
+  //  Right now we only support certain operations. When this issue is addressed
+  //  the following conditional can use the function |spvOpcodeIsBit|.
+  // |instruction| must be defined and must be a supported bit instruction.
+  if (!instruction || (instruction->opcode() != spv::Op::OpBitwiseOr &&
+                       instruction->opcode() != spv::Op::OpBitwiseXor &&
+                       instruction->opcode() != spv::Op::OpBitwiseAnd &&
+                       instruction->opcode() != spv::Op::OpNot)) {
+    return false;
+  }
+
+  // TODO(https://github.com/KhronosGroup/SPIRV-Tools/issues/3792):
+  //  Right now, only integer operands are supported.
+  if (ir_context->get_type_mgr()->GetType(instruction->type_id())->AsVector()) {
+    return false;
+  }
+
+  if (instruction->opcode() == spv::Op::OpNot) {
+    auto operand = instruction->GetInOperand(0).words[0];
+    auto operand_inst = ir_context->get_def_use_mgr()->GetDef(operand);
+    auto operand_type =
+        ir_context->get_type_mgr()->GetType(operand_inst->type_id());
+    auto operand_sign = operand_type->AsInteger()->IsSigned();
+
+    auto type_id_sign = ir_context->get_type_mgr()
+                            ->GetType(instruction->type_id())
+                            ->AsInteger()
+                            ->IsSigned();
+
+    return operand_sign == type_id_sign;
+
+  } else {
+    // Other BitWise operations that takes two operands.
+    auto first_operand = instruction->GetInOperand(0).words[0];
+    auto first_operand_inst =
+        ir_context->get_def_use_mgr()->GetDef(first_operand);
+    auto first_operand_type =
+        ir_context->get_type_mgr()->GetType(first_operand_inst->type_id());
+    auto first_operand_sign = first_operand_type->AsInteger()->IsSigned();
+
+    auto second_operand = instruction->GetInOperand(1).words[0];
+    auto second_operand_inst =
+        ir_context->get_def_use_mgr()->GetDef(second_operand);
+    auto second_operand_type =
+        ir_context->get_type_mgr()->GetType(second_operand_inst->type_id());
+    auto second_operand_sign = second_operand_type->AsInteger()->IsSigned();
+
+    auto type_id_sign = ir_context->get_type_mgr()
+                            ->GetType(instruction->type_id())
+                            ->AsInteger()
+                            ->IsSigned();
+
+    return first_operand_sign == second_operand_sign &&
+           first_operand_sign == type_id_sign;
   }
 }
 
@@ -124,10 +171,10 @@ uint32_t TransformationAddBitInstructionSynonym::GetRequiredFreshIdCount(
   // TODO(https://github.com/KhronosGroup/SPIRV-Tools/issues/3557):
   //  Right now, only certain operations are supported.
   switch (bit_instruction->opcode()) {
-    case SpvOpBitwiseOr:
-    case SpvOpBitwiseXor:
-    case SpvOpBitwiseAnd:
-    case SpvOpNot:
+    case spv::Op::OpBitwiseOr:
+    case spv::Op::OpBitwiseXor:
+    case spv::Op::OpBitwiseAnd:
+    case spv::Op::OpNot:
       return (2 + bit_instruction->NumInOperands()) *
                  ir_context->get_type_mgr()
                      ->GetType(bit_instruction->type_id())
@@ -173,7 +220,7 @@ void TransformationAddBitInstructionSynonym::AddOpBitwiseOrOpNotSynonym(
     for (auto operand = bit_instruction->begin() + 2;
          operand != bit_instruction->end(); operand++) {
       auto bit_extract =
-          opt::Instruction(ir_context, SpvOpBitFieldUExtract,
+          opt::Instruction(ir_context, spv::Op::OpBitFieldUExtract,
                            bit_instruction->type_id(), *fresh_id++,
                            {{SPV_OPERAND_TYPE_ID, operand->words},
                             {SPV_OPERAND_TYPE_ID, {offset}},
@@ -199,12 +246,13 @@ void TransformationAddBitInstructionSynonym::AddOpBitwiseOrOpNotSynonym(
   // first two bits of the result.
   uint32_t offset = fuzzerutil::MaybeGetIntegerConstant(
       ir_context, *transformation_context, {1}, 32, false, false);
-  auto bit_insert = opt::Instruction(
-      ir_context, SpvOpBitFieldInsert, bit_instruction->type_id(), *fresh_id++,
-      {{SPV_OPERAND_TYPE_ID, {extracted_bit_instructions[0]}},
-       {SPV_OPERAND_TYPE_ID, {extracted_bit_instructions[1]}},
-       {SPV_OPERAND_TYPE_ID, {offset}},
-       {SPV_OPERAND_TYPE_ID, {count}}});
+  auto bit_insert =
+      opt::Instruction(ir_context, spv::Op::OpBitFieldInsert,
+                       bit_instruction->type_id(), *fresh_id++,
+                       {{SPV_OPERAND_TYPE_ID, {extracted_bit_instructions[0]}},
+                        {SPV_OPERAND_TYPE_ID, {extracted_bit_instructions[1]}},
+                        {SPV_OPERAND_TYPE_ID, {offset}},
+                        {SPV_OPERAND_TYPE_ID, {count}}});
   bit_instruction->InsertBefore(MakeUnique<opt::Instruction>(bit_insert));
   fuzzerutil::UpdateModuleIdBound(ir_context, bit_insert.result_id());
 
@@ -213,7 +261,7 @@ void TransformationAddBitInstructionSynonym::AddOpBitwiseOrOpNotSynonym(
     offset = fuzzerutil::MaybeGetIntegerConstant(
         ir_context, *transformation_context, {i}, 32, false, false);
     bit_insert = opt::Instruction(
-        ir_context, SpvOpBitFieldInsert, bit_instruction->type_id(),
+        ir_context, spv::Op::OpBitFieldInsert, bit_instruction->type_id(),
         *fresh_id++,
         {{SPV_OPERAND_TYPE_ID, {bit_insert.result_id()}},
          {SPV_OPERAND_TYPE_ID, {extracted_bit_instructions[i]}},

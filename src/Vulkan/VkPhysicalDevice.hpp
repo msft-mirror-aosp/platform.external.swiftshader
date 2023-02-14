@@ -38,9 +38,35 @@ public:
 	void getFeatures2(VkPhysicalDeviceFeatures2 *features) const;
 	bool hasFeatures(const VkPhysicalDeviceFeatures &requestedFeatures) const;
 
+	bool hasExtendedFeatures(const VkPhysicalDeviceLineRasterizationFeaturesEXT *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceProvokingVertexFeaturesEXT *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceVulkan11Features *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceVulkan12Features *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceVulkan13Features *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceDepthClipEnableFeaturesEXT *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDevicePrivateDataFeatures *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceTextureCompressionASTCHDRFeatures *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceShaderTerminateInvocationFeatures *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceSubgroupSizeControlFeatures *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceInlineUniformBlockFeatures *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceShaderIntegerDotProductFeatures *features) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceDescriptorIndexingFeatures *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDevicePipelineRobustnessFeaturesEXT *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceProtectedMemoryFeatures *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceBufferDeviceAddressFeatures *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceGlobalPriorityQueryFeaturesKHR *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *requested) const;
+
 	const VkPhysicalDeviceProperties &getProperties() const;
 	void getProperties(VkPhysicalDeviceIDProperties *properties) const;
 	void getProperties(VkPhysicalDeviceMaintenance3Properties *properties) const;
+	void getProperties(VkPhysicalDeviceMaintenance4Properties *properties) const;
 	void getProperties(VkPhysicalDeviceMultiviewProperties *properties) const;
 	void getProperties(VkPhysicalDevicePointClippingProperties *properties) const;
 	void getProperties(VkPhysicalDeviceProtectedMemoryProperties *properties) const;
@@ -56,33 +82,52 @@ public:
 	void getProperties(const VkPhysicalDeviceExternalFenceInfo *pExternalFenceInfo, VkExternalFenceProperties *pExternalFenceProperties) const;
 	void getProperties(const VkPhysicalDeviceExternalSemaphoreInfo *pExternalSemaphoreInfo, VkExternalSemaphoreProperties *pExternalSemaphoreProperties) const;
 	void getProperties(VkPhysicalDeviceExternalMemoryHostPropertiesEXT *properties) const;
-	void getProperties(VkPhysicalDeviceDriverPropertiesKHR *properties) const;
+	void getProperties(VkPhysicalDeviceDriverProperties *properties) const;
 	void getProperties(VkPhysicalDeviceLineRasterizationPropertiesEXT *properties) const;
 	void getProperties(VkPhysicalDeviceProvokingVertexPropertiesEXT *properties) const;
 	void getProperties(VkPhysicalDeviceFloatControlsProperties *) const;
 	void getProperties(VkPhysicalDeviceSamplerFilterMinmaxProperties *properties) const;
 	void getProperties(VkPhysicalDeviceTimelineSemaphoreProperties *properties) const;
-	void getProperties(VkPhysicalDeviceVulkan12Properties *properties) const;
 	void getProperties(VkPhysicalDeviceDescriptorIndexingProperties *properties) const;
 	void getProperties(VkPhysicalDeviceDepthStencilResolveProperties *properties) const;
+	void getProperties(VkPhysicalDeviceCustomBorderColorPropertiesEXT *properties) const;
+	void getProperties(VkPhysicalDeviceBlendOperationAdvancedPropertiesEXT *properties) const;
+	void getProperties(VkPhysicalDeviceSubgroupSizeControlProperties *properties) const;
+	void getProperties(VkPhysicalDeviceInlineUniformBlockProperties *properties) const;
+	void getProperties(VkPhysicalDeviceTexelBufferAlignmentProperties *properties) const;
+	void getProperties(VkPhysicalDeviceShaderIntegerDotProductProperties *properties) const;
+	void getProperties(VkPhysicalDevicePipelineRobustnessPropertiesEXT *properties) const;
+	void getProperties(VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT *properties) const;
 	void getProperties(VkPhysicalDeviceVulkan11Properties *properties) const;
+	void getProperties(VkPhysicalDeviceVulkan12Properties *properties) const;
+	void getProperties(VkPhysicalDeviceVulkan13Properties *properties) const;
 
+	static bool isFormatSupported(vk::Format format, VkImageType type, VkImageTiling tiling,
+	                              VkImageUsageFlags usage, VkImageUsageFlags stencilUsage, VkImageCreateFlags flags);
 	static void GetFormatProperties(Format format, VkFormatProperties *pFormatProperties);
+	static void GetFormatProperties(Format format, VkFormatProperties3 *pFormatProperties);
 	void getImageFormatProperties(Format format, VkImageType type, VkImageTiling tiling,
 	                              VkImageUsageFlags usage, VkImageCreateFlags flags,
 	                              VkImageFormatProperties *pImageFormatProperties) const;
-	uint32_t getQueueFamilyPropertyCount() const;
 
+	uint32_t getQueueFamilyPropertyCount() const;
 	void getQueueFamilyProperties(uint32_t pQueueFamilyPropertyCount,
 	                              VkQueueFamilyProperties *pQueueFamilyProperties) const;
 	void getQueueFamilyProperties(uint32_t pQueueFamilyPropertyCount,
 	                              VkQueueFamilyProperties2 *pQueueFamilyProperties) const;
+	void getQueueFamilyGlobalPriorityProperties(VkQueueFamilyGlobalPriorityPropertiesKHR *pQueueFamilyGlobalPriorityProperties) const;
+	bool validateQueueGlobalPriority(VkQueueGlobalPriorityKHR queueGlobalPriority) const;
+	VkQueueGlobalPriorityKHR getDefaultQueueGlobalPriority() const;
 	static const VkPhysicalDeviceMemoryProperties &GetMemoryProperties();
 
+	static const VkPhysicalDeviceLimits &getLimits();
+
 private:
-	const VkPhysicalDeviceLimits &getLimits() const;
-	VkSampleCountFlags getSampleCounts() const;
+	static VkSampleCountFlags getSampleCounts();
 	VkQueueFamilyProperties getQueueFamilyProperties() const;
+
+	template<typename T>
+	T getSupportedFeatures(const T *requested) const;
 };
 
 using DispatchablePhysicalDevice = DispatchableObject<PhysicalDevice, VkPhysicalDevice>;

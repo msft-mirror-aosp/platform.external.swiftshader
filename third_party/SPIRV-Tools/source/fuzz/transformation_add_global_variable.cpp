@@ -20,15 +20,15 @@ namespace spvtools {
 namespace fuzz {
 
 TransformationAddGlobalVariable::TransformationAddGlobalVariable(
-    const spvtools::fuzz::protobufs::TransformationAddGlobalVariable& message)
-    : message_(message) {}
+    spvtools::fuzz::protobufs::TransformationAddGlobalVariable message)
+    : message_(std::move(message)) {}
 
 TransformationAddGlobalVariable::TransformationAddGlobalVariable(
-    uint32_t fresh_id, uint32_t type_id, SpvStorageClass storage_class,
+    uint32_t fresh_id, uint32_t type_id, spv::StorageClass storage_class,
     uint32_t initializer_id, bool value_is_irrelevant) {
   message_.set_fresh_id(fresh_id);
   message_.set_type_id(type_id);
-  message_.set_storage_class(storage_class);
+  message_.set_storage_class(uint32_t(storage_class));
   message_.set_initializer_id(initializer_id);
   message_.set_value_is_irrelevant(value_is_irrelevant);
 }
@@ -41,10 +41,10 @@ bool TransformationAddGlobalVariable::IsApplicable(
   }
 
   // The storage class must be Private or Workgroup.
-  auto storage_class = static_cast<SpvStorageClass>(message_.storage_class());
+  auto storage_class = static_cast<spv::StorageClass>(message_.storage_class());
   switch (storage_class) {
-    case SpvStorageClassPrivate:
-    case SpvStorageClassWorkgroup:
+    case spv::StorageClass::Private:
+    case spv::StorageClass::Workgroup:
       break;
     default:
       assert(false && "Unsupported storage class.");
@@ -66,7 +66,7 @@ bool TransformationAddGlobalVariable::IsApplicable(
   }
   if (message_.initializer_id()) {
     // An initializer is not allowed if the storage class is Workgroup.
-    if (storage_class == SpvStorageClassWorkgroup) {
+    if (storage_class == spv::StorageClass::Workgroup) {
       assert(false &&
              "By construction this transformation should not have an "
              "initializer when Workgroup storage class is used.");
@@ -93,15 +93,13 @@ bool TransformationAddGlobalVariable::IsApplicable(
 void TransformationAddGlobalVariable::Apply(
     opt::IRContext* ir_context,
     TransformationContext* transformation_context) const {
-  fuzzerutil::AddGlobalVariable(
+  opt::Instruction* new_instruction = fuzzerutil::AddGlobalVariable(
       ir_context, message_.fresh_id(), message_.type_id(),
-      static_cast<SpvStorageClass>(message_.storage_class()),
+      static_cast<spv::StorageClass>(message_.storage_class()),
       message_.initializer_id());
 
-  // We have added an instruction to the module, so need to be careful about the
-  // validity of existing analyses.
-  ir_context->InvalidateAnalysesExceptFor(
-      opt::IRContext::Analysis::kAnalysisNone);
+  // Inform the def-use manager about the new instruction.
+  ir_context->get_def_use_mgr()->AnalyzeInstDefUse(new_instruction);
 
   if (message_.value_is_irrelevant()) {
     transformation_context->GetFactManager()->AddFactValueOfPointeeIsIrrelevant(

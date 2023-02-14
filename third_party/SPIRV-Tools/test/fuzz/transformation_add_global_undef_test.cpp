@@ -63,9 +63,19 @@ TEST(TransformationAddGlobalUndefTest, BasicTest) {
   ASSERT_FALSE(TransformationAddGlobalUndef(100, 3).IsApplicable(
       context.get(), transformation_context));
 
+  {
+    // %100 = OpUndef %6
+    TransformationAddGlobalUndef transformation(100, 6);
+    ASSERT_EQ(nullptr, context->get_def_use_mgr()->GetDef(100));
+    ASSERT_TRUE(
+        transformation.IsApplicable(context.get(), transformation_context));
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
+    ASSERT_EQ(spv::Op::OpUndef,
+              context->get_def_use_mgr()->GetDef(100)->opcode());
+  }
+
   TransformationAddGlobalUndef transformations[] = {
-      // %100 = OpUndef %6
-      TransformationAddGlobalUndef(100, 6),
 
       // %101 = OpUndef %7
       TransformationAddGlobalUndef(101, 7),

@@ -17,7 +17,6 @@
 #include "marl/scheduler.h"
 
 #include "marl/debug.h"
-#include "marl/sanitizers.h"
 #include "marl/thread.h"
 #include "marl/trace.h"
 
@@ -88,18 +87,18 @@ namespace marl {
 thread_local Scheduler* Scheduler::bound = nullptr;
 
 Scheduler* Scheduler::get() {
+  MSAN_UNPOISON(&bound, sizeof(Scheduler*));
   return bound;
 }
 
+void Scheduler::setBound(Scheduler* scheduler) {
+  MSAN_UNPOISON(&bound, sizeof(Scheduler*));
+  bound = scheduler;
+}
+
 void Scheduler::bind() {
-#if !MEMORY_SANITIZER_ENABLED
-  // thread_local variables in shared libraries are initialized at load-time,
-  // but this is not observed by MemorySanitizer if the loader itself was not
-  // instrumented, leading to false-positive unitialized variable errors.
-  // See https://github.com/google/marl/issues/184
-  MARL_ASSERT(bound == nullptr, "Scheduler already bound");
-#endif
-  bound = this;
+  MARL_ASSERT(get() == nullptr, "Scheduler already bound");
+  setBound(this);
   {
     marl::lock lock(singleThreadedWorkers.mutex);
     auto worker = cfg.allocator->make_unique<Worker>(
@@ -111,22 +110,22 @@ void Scheduler::bind() {
 }
 
 void Scheduler::unbind() {
-  MARL_ASSERT(bound != nullptr, "No scheduler bound");
+  MARL_ASSERT(get() != nullptr, "No scheduler bound");
   auto worker = Worker::getCurrent();
   worker->stop();
   {
-    marl::lock lock(bound->singleThreadedWorkers.mutex);
+    marl::lock lock(get()->singleThreadedWorkers.mutex);
     auto tid = std::this_thread::get_id();
-    auto it = bound->singleThreadedWorkers.byTid.find(tid);
-    MARL_ASSERT(it != bound->singleThreadedWorkers.byTid.end(),
+    auto it = get()->singleThreadedWorkers.byTid.find(tid);
+    MARL_ASSERT(it != get()->singleThreadedWorkers.byTid.end(),
                 "singleThreadedWorker not found");
     MARL_ASSERT(it->second.get() == worker, "worker is not bound?");
-    bound->singleThreadedWorkers.byTid.erase(it);
-    if (bound->singleThreadedWorkers.byTid.empty()) {
-      bound->singleThreadedWorkers.unbind.notify_one();
+    get()->singleThreadedWorkers.byTid.erase(it);
+    if (get()->singleThreadedWorkers.byTid.empty()) {
+      get()->singleThreadedWorkers.unbind.notify_one();
     }
   }
-  bound = nullptr;
+  setBound(nullptr);
 }
 
 Scheduler::Scheduler(const Config& config)
@@ -377,7 +376,7 @@ void Scheduler::Worker::start() {
           initFunc(id);
         }
 
-        Scheduler::bound = scheduler;
+        Scheduler::setBound(scheduler);
         Worker::current = this;
         mainFiber = Fiber::createFromCurrentThread(scheduler->cfg.allocator, 0);
         currentFiber = mainFiber.get();

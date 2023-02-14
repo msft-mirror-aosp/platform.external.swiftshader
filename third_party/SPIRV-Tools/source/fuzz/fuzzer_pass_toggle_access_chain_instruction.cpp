@@ -24,12 +24,10 @@ namespace fuzz {
 FuzzerPassToggleAccessChainInstruction::FuzzerPassToggleAccessChainInstruction(
     opt::IRContext* ir_context, TransformationContext* transformation_context,
     FuzzerContext* fuzzer_context,
-    protobufs::TransformationSequence* transformations)
+    protobufs::TransformationSequence* transformations,
+    bool ignore_inapplicable_transformations)
     : FuzzerPass(ir_context, transformation_context, fuzzer_context,
-                 transformations) {}
-
-FuzzerPassToggleAccessChainInstruction::
-    ~FuzzerPassToggleAccessChainInstruction() = default;
+                 transformations, ignore_inapplicable_transformations) {}
 
 void FuzzerPassToggleAccessChainInstruction::Apply() {
   auto context = GetIRContext();
@@ -38,8 +36,9 @@ void FuzzerPassToggleAccessChainInstruction::Apply() {
   // probabilistically applied.
   context->module()->ForEachInst([this,
                                   context](opt::Instruction* instruction) {
-    SpvOp opcode = instruction->opcode();
-    if ((opcode == SpvOpAccessChain || opcode == SpvOpInBoundsAccessChain) &&
+    spv::Op opcode = instruction->opcode();
+    if ((opcode == spv::Op::OpAccessChain ||
+         opcode == spv::Op::OpInBoundsAccessChain) &&
         GetFuzzerContext()->ChoosePercentage(
             GetFuzzerContext()->GetChanceOfTogglingAccessChainInstruction())) {
       auto instructionDescriptor =

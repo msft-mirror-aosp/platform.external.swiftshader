@@ -110,7 +110,7 @@ void QueryPool::destroy(const VkAllocationCallbacks *pAllocator)
 		pool[i].~Query();
 	}
 
-	vk::deallocate(pool, pAllocator);
+	vk::freeHostMemory(pool, pAllocator);
 }
 
 size_t QueryPool::ComputeRequiredAllocationSize(const VkQueryPoolCreateInfo *pCreateInfo)
@@ -188,7 +188,7 @@ void QueryPool::begin(uint32_t query, VkQueryControlFlags flags)
 	// Only accept flags with valid bits set.
 	if(flags & ~(VK_QUERY_CONTROL_PRECISE_BIT))
 	{
-		UNSUPPORTED("vkCmdBeginQuery::flags %d", int(flags));
+		UNSUPPORTED("vkCmdBeginQuery::flags 0x%08X", int(flags));
 	}
 
 	pool[query].start();
