@@ -21,6 +21,7 @@ add_spvtools_unittest(TARGET opt
        analyze_live_input_test.cpp
        assembly_builder_test.cpp
        block_merge_test.cpp
+       c_interface_test.cpp
        ccp_test.cpp
        cfg_cleanup_test.cpp
        cfg_test.cpp
@@ -43,7 +44,7 @@ add_spvtools_unittest(TARGET opt
        desc_sroa_test.cpp
        eliminate_dead_const_test.cpp
        eliminate_dead_functions_test.cpp
-       eliminate_dead_input_components_test.cpp
+       eliminate_dead_io_components_test.cpp
        eliminate_dead_member_test.cpp
        eliminate_dead_output_stores_test.cpp
        feature_manager_test.cpp

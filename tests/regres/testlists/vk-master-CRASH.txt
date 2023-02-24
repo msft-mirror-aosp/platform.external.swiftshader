@@ -1,1 +1,1 @@
-dEQP-VK.pipeline.pipeline_library.graphics_library.misc.non_graphics.shader_module_info_comp
+dEQP-VK.pipeline.fast_linked_library.misc.interpolate_at_sample_no_sample_shading

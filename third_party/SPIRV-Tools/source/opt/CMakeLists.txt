@@ -47,7 +47,7 @@ set(SPIRV_TOOLS_OPT_SOURCES
   eliminate_dead_constant_pass.h
   eliminate_dead_functions_pass.h
   eliminate_dead_functions_util.h
-  eliminate_dead_input_components_pass.h
+  eliminate_dead_io_components_pass.h
   eliminate_dead_members_pass.h
   eliminate_dead_output_stores_pass.h
   empty_pass.h
@@ -166,7 +166,7 @@ set(SPIRV_TOOLS_OPT_SOURCES
   eliminate_dead_constant_pass.cpp
   eliminate_dead_functions_pass.cpp
   eliminate_dead_functions_util.cpp
-  eliminate_dead_input_components_pass.cpp
+  eliminate_dead_io_components_pass.cpp
   eliminate_dead_members_pass.cpp
   eliminate_dead_output_stores_pass.cpp
   feature_manager.cpp
@@ -271,10 +271,7 @@ set_property(TARGET SPIRV-Tools-opt PROPERTY FOLDER "SPIRV-Tools libraries")
 spvtools_check_symbol_exports(SPIRV-Tools-opt)
 
 if(ENABLE_SPIRV_TOOLS_INSTALL)
-  install(TARGETS SPIRV-Tools-opt EXPORT SPIRV-Tools-optTargets
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  install(TARGETS SPIRV-Tools-opt EXPORT SPIRV-Tools-optTargets)
   export(EXPORT SPIRV-Tools-optTargets FILE SPIRV-Tools-optTargets.cmake)
 
   spvtools_config_package_dir(SPIRV-Tools-opt PACKAGE_DIR)
