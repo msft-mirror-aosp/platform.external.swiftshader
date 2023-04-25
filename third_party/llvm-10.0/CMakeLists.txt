@@ -1229,6 +1229,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     list(APPEND LLVM_COMPILE_OPTIONS
         "-Wno-noexcept-type"           # mangled name for ‘X’ will change in C++17 because the exception specification is part of a function type
         "-Wno-maybe-uninitialized"     # ‘X’ may be used uninitialized in this function
+        "-Wno-deprecated-declarations"
     )
     if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8)
         list(APPEND LLVM_COMPILE_OPTIONS
@@ -1239,6 +1240,11 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 9)
         list(APPEND LLVM_COMPILE_OPTIONS
             "-Wno-init-list-lifetime"  # assignment from temporary initializer_list does not extend the lifetime of the underlying array
+        )
+    endif()
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12)
+        list(APPEND LLVM_COMPILE_OPTIONS
+            "-Wno-missing-template-keyword"
         )
     endif()
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
