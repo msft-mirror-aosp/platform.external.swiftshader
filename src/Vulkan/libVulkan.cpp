@@ -96,6 +96,7 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -236,21 +237,55 @@ void ValidateRenderPassPNextChain(VkDevice device, const T *pCreateInfo)
 	}
 }
 
+// This variable will be set to the negotiated ICD interface version negotiated with the loader.
+// It defaults to 1 because if vk_icdNegotiateLoaderICDInterfaceVersion is never called it means
+// that the loader doens't support version 2 of that interface.
+uint32_t sICDInterfaceVersion = 1;
+// Whether any vk_icd* entrypoints were used. This is used to distinguish between applications that
+// use the Vulkan loader to load Swiftshader (in which case vk_icd functions are called), and
+// applications that load Swiftshader and grab vkGetInstanceProcAddr directly.
+bool sICDEntryPointsUsed = false;
+
 }  // namespace
 
 extern "C" {
 VK_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance instance, const char *pName)
 {
 	TRACE("(VkInstance instance = %p, const char* pName = %p)", instance, pName);
+	sICDEntryPointsUsed = true;
 
 	return vk::GetInstanceProcAddr(vk::Cast(instance), pName);
 }
 
 VK_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t *pSupportedVersion)
 {
-	*pSupportedVersion = 3;
+	sICDEntryPointsUsed = true;
+
+	sICDInterfaceVersion = std::min(*pSupportedVersion, 7u);
+	*pSupportedVersion = sICDInterfaceVersion;
 	return VK_SUCCESS;
 }
+
+VK_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetPhysicalDeviceProcAddr(VkInstance instance, const char *pName)
+{
+	sICDEntryPointsUsed = true;
+	return vk::GetPhysicalDeviceProcAddr(vk::Cast(instance), pName);
+}
+
+#if VK_USE_PLATFORM_WIN32_KHR
+
+VKAPI_ATTR VkResult VKAPI_CALL vk_icdEnumerateAdapterPhysicalDevices(VkInstance instance, LUID adapterLUID, uint32_t *pPhysicalDeviceCount, VkPhysicalDevice *pPhysicalDevices)
+{
+	sICDEntryPointsUsed = true;
+	if(!pPhysicalDevices)
+	{
+		*pPhysicalDeviceCount = 0;
+	}
+
+	return VK_SUCCESS;
+}
+
+#endif  // VK_USE_PLATFORM_WIN32_KHR
 
 #if VK_USE_PLATFORM_FUCHSIA
 
@@ -266,6 +301,7 @@ VK_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vk_icdInitializeConnectToServiceCallbac
     PFN_vkConnectToService callback)
 {
 	TRACE("(callback = %p)", callback);
+	sICDEntryPointsUsed = true;
 	vk::icdFuchsiaServiceConnectCallback = callback;
 	return VK_SUCCESS;
 }
@@ -368,9 +404,6 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_FUCHSIA_EXTERNAL_MEMORY_EXTENSION_NAME, VK_FUCHSIA_EXTERNAL_MEMORY_SPEC_VERSION } },
 #endif
 	{ { VK_EXT_PROVOKING_VERTEX_EXTENSION_NAME, VK_EXT_PROVOKING_VERTEX_SPEC_VERSION } },
-#if !defined(__ANDROID__)
-	{ { VK_GOOGLE_SAMPLER_FILTERING_PRECISION_EXTENSION_NAME, VK_GOOGLE_SAMPLER_FILTERING_PRECISION_SPEC_VERSION } },
-#endif
 	{ { VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME, VK_EXT_DEPTH_RANGE_UNRESTRICTED_SPEC_VERSION } },
 #ifdef SWIFTSHADER_DEVICE_MEMORY_REPORT
 	{ { VK_EXT_DEVICE_MEMORY_REPORT_EXTENSION_NAME, VK_EXT_DEVICE_MEMORY_REPORT_SPEC_VERSION } },
@@ -438,6 +471,7 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME, VK_EXT_PIPELINE_ROBUSTNESS_SPEC_VERSION } },
 	{ { VK_EXT_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_EXTENSION_NAME, VK_EXT_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_SPEC_VERSION } },
 	{ { VK_EXT_HOST_IMAGE_COPY_EXTENSION_NAME, VK_EXT_HOST_IMAGE_COPY_SPEC_VERSION } },
+	{ { VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME, VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_SPEC_VERSION } },
 };
 
 static uint32_t numSupportedExtensions(const ExtensionProperties *extensionProperties, uint32_t extensionPropertiesCount)
@@ -519,6 +553,39 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCre
 	      pCreateInfo, pAllocator, pInstance);
 
 	initializeLibrary();
+
+	// ICD interface rule for version 5 of the interface:
+	//    - If the loader supports version 4 or lower, the driver must fail with
+	//      VK_ERROR_INCOMPATIBLE_DRIVER for all vkCreateInstance calls with apiVersion
+	//      set to > Vulkan 1.0
+	//    - If the loader supports version 5 or above, the loader must fail with
+	//      VK_ERROR_INCOMPATIBLE_DRIVER if it can't handle the apiVersion, and drivers
+	//      should fail with VK_ERROR_INCOMPATIBLE_DRIVER only if they can not support the
+	//      specified apiVersion.
+	if(pCreateInfo->pApplicationInfo)
+	{
+		uint32_t appApiVersion = pCreateInfo->pApplicationInfo->apiVersion;
+		if(sICDEntryPointsUsed && sICDInterfaceVersion <= 4)
+		{
+			// Any version above 1.0 is an error.
+			if(VK_API_VERSION_MAJOR(appApiVersion) != 1 || VK_API_VERSION_MINOR(appApiVersion) != 0)
+			{
+				return VK_ERROR_INCOMPATIBLE_DRIVER;
+			}
+		}
+		else
+		{
+			if(VK_API_VERSION_MAJOR(appApiVersion) > VK_API_VERSION_MINOR(vk::API_VERSION))
+			{
+				return VK_ERROR_INCOMPATIBLE_DRIVER;
+			}
+			if((VK_API_VERSION_MAJOR(appApiVersion) == VK_API_VERSION_MINOR(vk::API_VERSION)) &&
+			   VK_API_VERSION_MINOR(appApiVersion) > VK_API_VERSION_MINOR(vk::API_VERSION))
+			{
+				return VK_ERROR_INCOMPATIBLE_DRIVER;
+			}
+		}
+	}
 
 	if(pCreateInfo->flags != 0)
 	{
@@ -968,6 +1035,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT:
 			{
 				const auto *dynamicStateFeatures = reinterpret_cast<const VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(dynamicStateFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT:
+			{
+				const auto *dynamicStateFeatures = reinterpret_cast<const VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *>(extensionCreateInfo);
 				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(dynamicStateFeatures);
 				if(!hasFeatures)
 				{
@@ -2416,7 +2493,6 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSampler(VkDevice device, const VkSamplerC
 
 	const VkBaseInStructure *extensionCreateInfo = reinterpret_cast<const VkBaseInStructure *>(pCreateInfo->pNext);
 	const vk::SamplerYcbcrConversion *ycbcrConversion = nullptr;
-	VkSamplerFilteringPrecisionModeGOOGLE filteringPrecision = VK_SAMPLER_FILTERING_PRECISION_MODE_LOW_GOOGLE;
 	VkClearColorValue borderColor = {};
 
 	while(extensionCreateInfo)
@@ -2430,15 +2506,6 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSampler(VkDevice device, const VkSamplerC
 				ycbcrConversion = vk::Cast(samplerYcbcrConversionInfo->conversion);
 			}
 			break;
-#if !defined(__ANDROID__)
-		case VK_STRUCTURE_TYPE_SAMPLER_FILTERING_PRECISION_GOOGLE:
-			{
-				const VkSamplerFilteringPrecisionGOOGLE *filteringInfo =
-				    reinterpret_cast<const VkSamplerFilteringPrecisionGOOGLE *>(extensionCreateInfo);
-				filteringPrecision = filteringInfo->samplerFilteringPrecisionMode;
-			}
-			break;
-#endif
 		case VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT:
 			{
 				const VkSamplerCustomBorderColorCreateInfoEXT *borderColorInfo =
@@ -2455,7 +2522,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSampler(VkDevice device, const VkSamplerC
 		extensionCreateInfo = extensionCreateInfo->pNext;
 	}
 
-	vk::SamplerState samplerState(pCreateInfo, ycbcrConversion, filteringPrecision, borderColor);
+	vk::SamplerState samplerState(pCreateInfo, ycbcrConversion, borderColor);
 	uint32_t samplerID = vk::Cast(device)->indexSampler(samplerState);
 
 	VkResult result = vk::Sampler::Create(pAllocator, pCreateInfo, pSampler, samplerState, samplerID);
@@ -2994,6 +3061,17 @@ VKAPI_ATTR void VKAPI_CALL vkCmdSetPrimitiveRestartEnable(VkCommandBuffer comman
 	      commandBuffer, primitiveRestartEnable);
 
 	vk::Cast(commandBuffer)->setPrimitiveRestartEnable(primitiveRestartEnable);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetVertexInputEXT(VkCommandBuffer commandBuffer, uint32_t vertexBindingDescriptionCount,
+                                                  const VkVertexInputBindingDescription2EXT *pVertexBindingDescriptions,
+                                                  uint32_t vertexAttributeDescriptionCount,
+                                                  const VkVertexInputAttributeDescription2EXT *pVertexAttributeDescriptions)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, uint32_t vertexBindingDescriptionCount = %d, const VkVertexInputBindingDescription2EXT *pVertexBindingDescriptions = %p, uint32_t vertexAttributeDescriptionCount = %d, const VkVertexInputAttributeDescription2EXT *pVertexAttributeDescriptions = %p)",
+	      commandBuffer, vertexBindingDescriptionCount, pVertexBindingDescriptions, vertexAttributeDescriptionCount, pVertexAttributeDescriptions);
+
+	vk::Cast(commandBuffer)->setVertexInput(vertexBindingDescriptionCount, pVertexBindingDescriptions, vertexAttributeDescriptionCount, pVertexAttributeDescriptions);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance)
