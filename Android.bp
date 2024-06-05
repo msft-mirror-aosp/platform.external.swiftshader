@@ -63,10 +63,8 @@ cc_defaults {
 
     cppflags: [
         "-Woverloaded-virtual",
-        "-DVK_USE_PLATFORM_ANDROID_KHR",
         "-DVK_EXPORT= ",
     ],
-    cpp_std: "c++17",
 
     arch: {
         x86: {
@@ -82,6 +80,11 @@ cc_defaults {
     },
 
     target: {
+        android: {
+            cppflags: [
+                "-DVK_USE_PLATFORM_ANDROID_KHR",
+            ],
+        },
         host: {
             cppflags: [
                 "-fno-rtti",
