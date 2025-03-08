@@ -19,6 +19,11 @@ cc_defaults {
     host_supported: true,
     vendor: true,
 
+    visibility: [
+        "//external/swiftshader:__subpackages__",
+        "//external/mesa3d:__subpackages__",
+    ],
+
     srcs: [
         "llvm/lib/Analysis/AliasAnalysis.cpp",
         "llvm/lib/Analysis/AliasAnalysisEvaluator.cpp",
@@ -139,6 +144,7 @@ cc_defaults {
         "llvm/lib/Bitcode/Reader/BitcodeReader.cpp",
         "llvm/lib/Bitcode/Reader/MetadataLoader.cpp",
         "llvm/lib/Bitcode/Reader/ValueList.cpp",
+        "llvm/lib/Bitcode/Writer/BitWriter.cpp",
         "llvm/lib/Bitcode/Writer/BitcodeWriter.cpp",
         "llvm/lib/Bitcode/Writer/ValueEnumerator.cpp",
         "llvm/lib/Bitstream/Reader/BitstreamReader.cpp",
@@ -501,6 +507,8 @@ cc_defaults {
         "llvm/lib/ExecutionEngine/JITLink/loongarch.cpp",
         "llvm/lib/ExecutionEngine/JITLink/riscv.cpp",
         "llvm/lib/ExecutionEngine/JITLink/x86_64.cpp",
+        "llvm/lib/ExecutionEngine/MCJIT/MCJIT.cpp",
+        "llvm/lib/ExecutionEngine/ExecutionEngineBindings.cpp",
         "llvm/lib/ExecutionEngine/Orc/CompileUtils.cpp",
         "llvm/lib/ExecutionEngine/Orc/Core.cpp",
         "llvm/lib/ExecutionEngine/Orc/DebugUtils.cpp",
@@ -519,6 +527,7 @@ cc_defaults {
         "llvm/lib/ExecutionEngine/Orc/Shared/OrcError.cpp",
         "llvm/lib/ExecutionEngine/Orc/TargetProcess/RegisterEHFrames.cpp",
         "llvm/lib/ExecutionEngine/Orc/TargetProcess/TargetExecutionUtils.cpp",
+        "llvm/lib/ExecutionEngine/Orc/TargetProcess/JITLoaderGDB.cpp",
         "llvm/lib/ExecutionEngine/Orc/TaskDispatch.cpp",
         "llvm/lib/ExecutionEngine/Orc/ThreadSafeModule.cpp",
         "llvm/lib/ExecutionEngine/RuntimeDyld/JITSymbol.cpp",
@@ -529,6 +538,9 @@ cc_defaults {
         "llvm/lib/ExecutionEngine/RuntimeDyld/RuntimeDyldMachO.cpp",
         "llvm/lib/ExecutionEngine/RuntimeDyld/Targets/RuntimeDyldELFMips.cpp",
         "llvm/lib/ExecutionEngine/SectionMemoryManager.cpp",
+        "llvm/lib/ExecutionEngine/GDBRegistrationListener.cpp",
+        "llvm/lib/ExecutionEngine/ExecutionEngine.cpp",
+        "llvm/lib/ExecutionEngine/TargetSelect.cpp",
         "llvm/lib/Frontend/OpenMP/OMPIRBuilder.cpp",
         "llvm/lib/IR/AbstractCallSite.cpp",
         "llvm/lib/IR/AsmWriter.cpp",
@@ -541,6 +553,7 @@ cc_defaults {
         "llvm/lib/IR/ConstantFold.cpp",
         "llvm/lib/IR/ConstantRange.cpp",
         "llvm/lib/IR/Constants.cpp",
+        "llvm/lib/IR/Core.cpp",
         "llvm/lib/IR/DIBuilder.cpp",
         "llvm/lib/IR/DataLayout.cpp",
         "llvm/lib/IR/DebugInfo.cpp",
@@ -609,6 +622,10 @@ cc_defaults {
         "llvm/lib/MC/MCDXContainerStreamer.cpp",
         "llvm/lib/MC/MCDXContainerWriter.cpp",
         "llvm/lib/MC/MCDisassembler/MCRelocationInfo.cpp",
+        "llvm/lib/MC/MCDisassembler/MCDisassembler.cpp",
+        "llvm/lib/MC/MCDisassembler/Disassembler.cpp",
+        "llvm/lib/MC/MCDisassembler/MCExternalSymbolizer.cpp",
+        "llvm/lib/MC/MCDisassembler/MCSymbolizer.cpp",
         "llvm/lib/MC/MCDwarf.cpp",
         "llvm/lib/MC/MCELFObjectTargetWriter.cpp",
         "llvm/lib/MC/MCELFStreamer.cpp",
@@ -698,6 +715,8 @@ cc_defaults {
         "llvm/lib/Passes/OptimizationLevel.cpp",
         "llvm/lib/Passes/PassBuilder.cpp",
         "llvm/lib/Passes/PassBuilderPipelines.cpp",
+        "llvm/lib/Passes/PassBuilderBindings.cpp",
+        "llvm/lib/Passes/StandardInstrumentations.cpp",
         "llvm/lib/ProfileData/InstrProf.cpp",
         "llvm/lib/ProfileData/InstrProfCorrelator.cpp",
         "llvm/lib/ProfileData/InstrProfReader.cpp",
@@ -1090,7 +1109,9 @@ cc_defaults {
         "llvm/lib/Transforms/Vectorize/VPlanVerifier.cpp",
         "llvm/lib/Transforms/Vectorize/VectorCombine.cpp",
         "llvm/lib/Target/TargetLoweringObjectFile.cpp",
+        "llvm/lib/Target/Target.cpp",
         "llvm/lib/Target/TargetMachine.cpp",
+        "llvm/lib/Target/TargetMachineC.cpp",
         "llvm/lib/Support/BLAKE3/blake3.c",
         "llvm/lib/Support/BLAKE3/blake3_dispatch.c",
         "llvm/lib/Support/BLAKE3/blake3_portable.c",
@@ -1519,13 +1540,13 @@ cc_defaults {
 cc_library_static {
     name: "libLLVM16_swiftshader",
 
-    defaults: [ "libLLVM16_swiftshader_defaults" ],
+    defaults: ["libLLVM16_swiftshader_defaults"],
 }
 
 cc_library_static {
     name: "libLLVM16_swiftshader_debug",
 
-    defaults: [ "libLLVM16_swiftshader_defaults" ],
+    defaults: ["libLLVM16_swiftshader_defaults"],
 
     cflags: [
         "-UNDEBUG",
