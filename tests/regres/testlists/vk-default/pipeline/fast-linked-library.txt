@@ -45225,6 +45225,12 @@ dEQP-VK.pipeline.fast_linked_library.multisample.sampled_image.79x31_4.r8g8b8a8_
 dEQP-VK.pipeline.fast_linked_library.multisample.sampled_image.79x31_4.r8g8b8a8_unorm.samples_4
 dEQP-VK.pipeline.fast_linked_library.multisample.sampled_image.79x31_4.r8g8b8a8_unorm.samples_64
 dEQP-VK.pipeline.fast_linked_library.multisample.sampled_image.79x31_4.r8g8b8a8_unorm.samples_8
+dEQP-VK.pipeline.fast_linked_library.multisample.samples_mapping_order.samples_16
+dEQP-VK.pipeline.fast_linked_library.multisample.samples_mapping_order.samples_2
+dEQP-VK.pipeline.fast_linked_library.multisample.samples_mapping_order.samples_32
+dEQP-VK.pipeline.fast_linked_library.multisample.samples_mapping_order.samples_4
+dEQP-VK.pipeline.fast_linked_library.multisample.samples_mapping_order.samples_64
+dEQP-VK.pipeline.fast_linked_library.multisample.samples_mapping_order.samples_8
 dEQP-VK.pipeline.fast_linked_library.multisample.shader_fragment_mask.samples_16.image_2d.r32_sint
 dEQP-VK.pipeline.fast_linked_library.multisample.shader_fragment_mask.samples_16.image_2d.r32_uint
 dEQP-VK.pipeline.fast_linked_library.multisample.shader_fragment_mask.samples_16.image_2d.r8g8b8a8_unorm

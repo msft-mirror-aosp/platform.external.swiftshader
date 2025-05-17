@@ -36460,6 +36460,7 @@ dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.inte
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.interlock.dynamic.noattachment.shaderrate.replace.replace.4x4.samples8.gs
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.interlock.dynamic.noattachment.shaderrate.replace.replace.4x4.samples8.ms
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.interlock.dynamic.noattachment.shaderrate.replace.replace.4x4.samples8.vs
+dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.misc.explicit_and_implicit_enable
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.misc_tests.sample_mask_test
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.multiview.dynamic.attachment.noshaderrate.keep.keep.151x431.samples1.ms
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.multiview.dynamic.attachment.noshaderrate.keep.keep.151x431.samples1.vs
