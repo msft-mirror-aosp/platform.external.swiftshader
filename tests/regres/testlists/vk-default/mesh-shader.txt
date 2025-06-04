@@ -1874,6 +1874,7 @@ dEQP-VK.mesh_shader.ext.misc.memory_barrier_shared_in_mesh
 dEQP-VK.mesh_shader.ext.misc.memory_barrier_shared_in_task
 dEQP-VK.mesh_shader.ext.misc.mixed_pipelines
 dEQP-VK.mesh_shader.ext.misc.mixed_pipelines_dynamic_topology
+dEQP-VK.mesh_shader.ext.misc.multiple_outputs_vertices
 dEQP-VK.mesh_shader.ext.misc.no_lines
 dEQP-VK.mesh_shader.ext.misc.no_points
 dEQP-VK.mesh_shader.ext.misc.no_triangles
