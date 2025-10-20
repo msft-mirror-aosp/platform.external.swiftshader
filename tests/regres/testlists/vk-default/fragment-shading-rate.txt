@@ -3335,6 +3335,7 @@ dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.fast_linked_lib
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.fast_linked_library.interlock.dynamic.noattachment.shaderrate.replace.replace.33x35.samples8.ms
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.fast_linked_library.interlock.dynamic.noattachment.shaderrate.replace.replace.33x35.samples8.vs
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.fast_linked_library.misc_tests.garbage_color_attachment
+dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.fast_linked_library.misc_tests.helper_invocation
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.fast_linked_library.misc_tests.sample_mask_test
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.fast_linked_library.multiview.dynamic.attachment.noshaderrate.keep.keep.1x1.samples1.ms
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.fast_linked_library.multiview.dynamic.attachment.noshaderrate.keep.keep.1x1.samples1.vs
@@ -36461,6 +36462,7 @@ dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.inte
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.interlock.dynamic.noattachment.shaderrate.replace.replace.4x4.samples8.ms
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.interlock.dynamic.noattachment.shaderrate.replace.replace.4x4.samples8.vs
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.misc.explicit_and_implicit_enable
+dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.misc_tests.helper_invocation
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.misc_tests.sample_mask_test
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.multiview.dynamic.attachment.noshaderrate.keep.keep.151x431.samples1.ms
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.monolithic.multiview.dynamic.attachment.noshaderrate.keep.keep.151x431.samples1.vs
@@ -47703,6 +47705,7 @@ dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.pipeline_librar
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.pipeline_library.interlock.dynamic.noattachment.shaderrate.replace.replace.33x35.samples8.ms
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.pipeline_library.interlock.dynamic.noattachment.shaderrate.replace.replace.33x35.samples8.vs
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.pipeline_library.misc_tests.garbage_color_attachment
+dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.pipeline_library.misc_tests.helper_invocation
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.pipeline_library.misc_tests.sample_mask_test
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.pipeline_library.multiview.dynamic.attachment.noshaderrate.keep.keep.1x1.samples1.ms
 dEQP-VK.fragment_shading_rate.dynamic_rendering.primary_cmd_buff.pipeline_library.multiview.dynamic.attachment.noshaderrate.keep.keep.1x1.samples1.vs
@@ -53764,6 +53767,7 @@ dEQP-VK.fragment_shading_rate.renderpass2.fast_linked_library.interlock.dynamic.
 dEQP-VK.fragment_shading_rate.renderpass2.fast_linked_library.interlock.dynamic.noattachmentptr.shaderrate.replace.replace.33x35.samples8.gs
 dEQP-VK.fragment_shading_rate.renderpass2.fast_linked_library.interlock.dynamic.noattachmentptr.shaderrate.replace.replace.33x35.samples8.ms
 dEQP-VK.fragment_shading_rate.renderpass2.fast_linked_library.interlock.dynamic.noattachmentptr.shaderrate.replace.replace.33x35.samples8.vs
+dEQP-VK.fragment_shading_rate.renderpass2.fast_linked_library.misc_tests.helper_invocation
 dEQP-VK.fragment_shading_rate.renderpass2.fast_linked_library.misc_tests.sample_mask_test
 dEQP-VK.fragment_shading_rate.renderpass2.fast_linked_library.multiview.dynamic.attachment.noshaderrate.keep.keep.1x1.samples1.ms
 dEQP-VK.fragment_shading_rate.renderpass2.fast_linked_library.multiview.dynamic.attachment.noshaderrate.keep.keep.1x1.samples1.vs
@@ -90024,6 +90028,7 @@ dEQP-VK.fragment_shading_rate.renderpass2.monolithic.misc.no_frag_shader
 dEQP-VK.fragment_shading_rate.renderpass2.monolithic.misc.shading_rates
 dEQP-VK.fragment_shading_rate.renderpass2.monolithic.misc.test_oob_attachment
 dEQP-VK.fragment_shading_rate.renderpass2.monolithic.misc.test_oob_attachment_robustness2
+dEQP-VK.fragment_shading_rate.renderpass2.monolithic.misc_tests.helper_invocation
 dEQP-VK.fragment_shading_rate.renderpass2.monolithic.misc_tests.sample_mask_test
 dEQP-VK.fragment_shading_rate.renderpass2.monolithic.multipass.dynamic.attachment.noshaderrate.keep.keep.151x431.samples1.ms
 dEQP-VK.fragment_shading_rate.renderpass2.monolithic.multipass.dynamic.attachment.noshaderrate.keep.keep.151x431.samples1.vs
@@ -103286,6 +103291,7 @@ dEQP-VK.fragment_shading_rate.renderpass2.pipeline_library.interlock.dynamic.noa
 dEQP-VK.fragment_shading_rate.renderpass2.pipeline_library.interlock.dynamic.noattachmentptr.shaderrate.replace.replace.33x35.samples8.gs
 dEQP-VK.fragment_shading_rate.renderpass2.pipeline_library.interlock.dynamic.noattachmentptr.shaderrate.replace.replace.33x35.samples8.ms
 dEQP-VK.fragment_shading_rate.renderpass2.pipeline_library.interlock.dynamic.noattachmentptr.shaderrate.replace.replace.33x35.samples8.vs
+dEQP-VK.fragment_shading_rate.renderpass2.pipeline_library.misc_tests.helper_invocation
 dEQP-VK.fragment_shading_rate.renderpass2.pipeline_library.misc_tests.sample_mask_test
 dEQP-VK.fragment_shading_rate.renderpass2.pipeline_library.multiview.dynamic.attachment.noshaderrate.keep.keep.1x1.samples1.ms
 dEQP-VK.fragment_shading_rate.renderpass2.pipeline_library.multiview.dynamic.attachment.noshaderrate.keep.keep.1x1.samples1.vs

@@ -15753,6 +15753,10 @@ dEQP-VK.compute.pipeline.cooperative_matrix.nv.subgroupscope.sub.uint32_uint32.w
 dEQP-VK.compute.pipeline.cooperative_matrix.nv.subgroupscope.sub.uint8_uint8.buffer.rowmajor.linear
 dEQP-VK.compute.pipeline.cooperative_matrix.nv.subgroupscope.sub.uint8_uint8.physical_buffer.rowmajor.linear
 dEQP-VK.compute.pipeline.cooperative_matrix.nv.subgroupscope.sub.uint8_uint8.workgroup.rowmajor.linear
+dEQP-VK.compute.pipeline.cooperative_matrix.op_constant_null.null_a
+dEQP-VK.compute.pipeline.cooperative_matrix.op_constant_null.null_b
+dEQP-VK.compute.pipeline.cooperative_matrix.op_constant_null.null_c
+dEQP-VK.compute.pipeline.cooperative_matrix.op_constant_null.null_r
 dEQP-VK.compute.pipeline.device_group.device_index
 dEQP-VK.compute.pipeline.device_group.dispatch_base
 dEQP-VK.compute.pipeline.device_group.dispatch_base_maintenance5
@@ -36013,6 +36017,10 @@ dEQP-VK.compute.shader_object_binary.cooperative_matrix.nv.subgroupscope.sub.uin
 dEQP-VK.compute.shader_object_binary.cooperative_matrix.nv.subgroupscope.sub.uint8_uint8.buffer.rowmajor.linear
 dEQP-VK.compute.shader_object_binary.cooperative_matrix.nv.subgroupscope.sub.uint8_uint8.physical_buffer.rowmajor.linear
 dEQP-VK.compute.shader_object_binary.cooperative_matrix.nv.subgroupscope.sub.uint8_uint8.workgroup.rowmajor.linear
+dEQP-VK.compute.shader_object_binary.cooperative_matrix.op_constant_null.null_a
+dEQP-VK.compute.shader_object_binary.cooperative_matrix.op_constant_null.null_b
+dEQP-VK.compute.shader_object_binary.cooperative_matrix.op_constant_null.null_c
+dEQP-VK.compute.shader_object_binary.cooperative_matrix.op_constant_null.null_r
 dEQP-VK.compute.shader_object_binary.device_group.device_index
 dEQP-VK.compute.shader_object_binary.device_group.dispatch_base
 dEQP-VK.compute.shader_object_binary.device_group.dispatch_base_maintenance5
@@ -56260,6 +56268,10 @@ dEQP-VK.compute.shader_object_spirv.cooperative_matrix.nv.subgroupscope.sub.uint
 dEQP-VK.compute.shader_object_spirv.cooperative_matrix.nv.subgroupscope.sub.uint8_uint8.buffer.rowmajor.linear
 dEQP-VK.compute.shader_object_spirv.cooperative_matrix.nv.subgroupscope.sub.uint8_uint8.physical_buffer.rowmajor.linear
 dEQP-VK.compute.shader_object_spirv.cooperative_matrix.nv.subgroupscope.sub.uint8_uint8.workgroup.rowmajor.linear
+dEQP-VK.compute.shader_object_spirv.cooperative_matrix.op_constant_null.null_a
+dEQP-VK.compute.shader_object_spirv.cooperative_matrix.op_constant_null.null_b
+dEQP-VK.compute.shader_object_spirv.cooperative_matrix.op_constant_null.null_c
+dEQP-VK.compute.shader_object_spirv.cooperative_matrix.op_constant_null.null_r
 dEQP-VK.compute.shader_object_spirv.device_group.device_index
 dEQP-VK.compute.shader_object_spirv.device_group.dispatch_base
 dEQP-VK.compute.shader_object_spirv.device_group.dispatch_base_maintenance5
