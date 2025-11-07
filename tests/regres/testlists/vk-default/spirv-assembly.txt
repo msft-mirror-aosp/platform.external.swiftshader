@@ -7559,7 +7559,6 @@ dEQP-VK.spirv_assembly.instruction.compute.opconstantnull.array
 dEQP-VK.spirv_assembly.instruction.compute.opconstantnull.bool
 dEQP-VK.spirv_assembly.instruction.compute.opconstantnull.float32
 dEQP-VK.spirv_assembly.instruction.compute.opconstantnull.matrix
-dEQP-VK.spirv_assembly.instruction.compute.opconstantnull.pointer
 dEQP-VK.spirv_assembly.instruction.compute.opconstantnull.sint32
 dEQP-VK.spirv_assembly.instruction.compute.opconstantnull.struct
 dEQP-VK.spirv_assembly.instruction.compute.opconstantnull.uint32
@@ -16211,7 +16210,6 @@ dEQP-VK.spirv_assembly.instruction.compute.variable_init.private.float_from_work
 dEQP-VK.spirv_assembly.instruction.compute.variable_init.private.floatarray
 dEQP-VK.spirv_assembly.instruction.compute.variable_init.private.floatarray_from_workgroup
 dEQP-VK.spirv_assembly.instruction.compute.variable_init.private.matrix
-dEQP-VK.spirv_assembly.instruction.compute.variable_init.private.matrix_from_workgroup
 dEQP-VK.spirv_assembly.instruction.compute.variable_init.private.struct
 dEQP-VK.spirv_assembly.instruction.compute.variable_init.private.struct_from_workgroup
 dEQP-VK.spirv_assembly.instruction.compute.variable_init.private.vec4
