@@ -13542,6 +13542,12 @@ dEQP-VK.pipeline.shader_object_linked_spirv.misc.descriptor_bind_test_backwards_
 dEQP-VK.pipeline.shader_object_linked_spirv.misc.descriptor_bind_test_holes
 dEQP-VK.pipeline.shader_object_linked_spirv.misc.implicit_primitive_id
 dEQP-VK.pipeline.shader_object_linked_spirv.misc.implicit_primitive_id_with_tessellation
+dEQP-VK.pipeline.shader_object_linked_spirv.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_16
+dEQP-VK.pipeline.shader_object_linked_spirv.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_2
+dEQP-VK.pipeline.shader_object_linked_spirv.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_32
+dEQP-VK.pipeline.shader_object_linked_spirv.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_4
+dEQP-VK.pipeline.shader_object_linked_spirv.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_64
+dEQP-VK.pipeline.shader_object_linked_spirv.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_8
 dEQP-VK.pipeline.shader_object_linked_spirv.multisample.a2c_with_a2one.dynamic_a2c
 dEQP-VK.pipeline.shader_object_linked_spirv.multisample.a2c_with_a2one.dynamic_a2c_dynamic_a2one
 dEQP-VK.pipeline.shader_object_linked_spirv.multisample.a2c_with_a2one.dynamic_a2c_dynamic_a2one_export_frag_depth

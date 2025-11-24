@@ -36688,6 +36688,7 @@ dEQP-VK.pipeline.pipeline_library.graphics_library.misc.other.destroy_resources_
 dEQP-VK.pipeline.pipeline_library.graphics_library.misc.other.destroy_resources_before_link_samplers_3
 dEQP-VK.pipeline.pipeline_library.graphics_library.misc.other.null_descriptor_set_in_monolithic_pipeline
 dEQP-VK.pipeline.pipeline_library.graphics_library.misc.other.null_rendering_create_info
+dEQP-VK.pipeline.pipeline_library.graphics_library.misc.other.transform_feedback_with_fast_link
 dEQP-VK.pipeline.pipeline_library.graphics_library.misc.other.unusual_multisample_state
 dEQP-VK.pipeline.pipeline_library.graphics_library.misc.other.view_index_from_device_index_in_all_stages
 dEQP-VK.pipeline.pipeline_library.graphics_library.misc.other.view_index_from_device_index_in_all_stages_link_time_opt
@@ -39289,6 +39290,12 @@ dEQP-VK.pipeline.pipeline_library.misc.frag_lib_varying_samples_8
 dEQP-VK.pipeline.pipeline_library.misc.implicit_primitive_id
 dEQP-VK.pipeline.pipeline_library.misc.implicit_primitive_id_with_tessellation
 dEQP-VK.pipeline.pipeline_library.misc.no_rendering
+dEQP-VK.pipeline.pipeline_library.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_16
+dEQP-VK.pipeline.pipeline_library.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_2
+dEQP-VK.pipeline.pipeline_library.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_32
+dEQP-VK.pipeline.pipeline_library.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_4
+dEQP-VK.pipeline.pipeline_library.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_64
+dEQP-VK.pipeline.pipeline_library.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_8
 dEQP-VK.pipeline.pipeline_library.multisample.a2c_with_a2one.dynamic_a2c
 dEQP-VK.pipeline.pipeline_library.multisample.a2c_with_a2one.dynamic_a2c_dynamic_a2one
 dEQP-VK.pipeline.pipeline_library.multisample.a2c_with_a2one.dynamic_a2c_dynamic_a2one_export_frag_depth
