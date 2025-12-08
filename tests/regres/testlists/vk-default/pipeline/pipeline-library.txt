@@ -39290,6 +39290,7 @@ dEQP-VK.pipeline.pipeline_library.misc.frag_lib_varying_samples_8
 dEQP-VK.pipeline.pipeline_library.misc.implicit_primitive_id
 dEQP-VK.pipeline.pipeline_library.misc.implicit_primitive_id_with_tessellation
 dEQP-VK.pipeline.pipeline_library.misc.no_rendering
+dEQP-VK.pipeline.pipeline_library.misc.no_rendering_unused_attachment
 dEQP-VK.pipeline.pipeline_library.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_16
 dEQP-VK.pipeline.pipeline_library.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_2
 dEQP-VK.pipeline.pipeline_library.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_32

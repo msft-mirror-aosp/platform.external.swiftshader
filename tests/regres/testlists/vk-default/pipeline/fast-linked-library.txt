@@ -39192,6 +39192,7 @@ dEQP-VK.pipeline.fast_linked_library.misc.implicit_primitive_id
 dEQP-VK.pipeline.fast_linked_library.misc.implicit_primitive_id_with_tessellation
 dEQP-VK.pipeline.fast_linked_library.misc.interpolate_at_sample_no_sample_shading
 dEQP-VK.pipeline.fast_linked_library.misc.no_rendering
+dEQP-VK.pipeline.fast_linked_library.misc.no_rendering_unused_attachment
 dEQP-VK.pipeline.fast_linked_library.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_16
 dEQP-VK.pipeline.fast_linked_library.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_2
 dEQP-VK.pipeline.fast_linked_library.multisample.3d.64x64x8_1.r8g8b8a8_unorm.samples_32
@@ -118144,6 +118145,8 @@ dEQP-VK.pipeline.fast_linked_library.vertex_input.misc.stride_change_vert_tess_f
 dEQP-VK.pipeline.fast_linked_library.vertex_input.misc.stride_change_vert_tess_geom_frag
 dEQP-VK.pipeline.fast_linked_library.vertex_input.misc.unbound_input
 dEQP-VK.pipeline.fast_linked_library.vertex_input.misc.unbound_input_dynamic
+dEQP-VK.pipeline.fast_linked_library.vertex_input.misc.unbound_input_dynamic_integer
+dEQP-VK.pipeline.fast_linked_library.vertex_input.misc.unbound_input_integer
 dEQP-VK.pipeline.fast_linked_library.vertex_input.misc.unused_binding
 dEQP-VK.pipeline.fast_linked_library.vertex_input.misc.unused_binding_dynamic
 dEQP-VK.pipeline.fast_linked_library.vertex_input.multiple_attributes.binding_one_to_many.attributes.f16vec2.f16vec3.f16vec4
