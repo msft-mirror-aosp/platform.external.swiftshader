@@ -2239,8 +2239,6 @@ dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.generated_args.de
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.generated_args.denorm_select_nan_preserve_nostorage
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.generated_args.denorm_select_var_preserve
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.generated_args.denorm_select_var_preserve_nostorage
-dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.generated_args.denorm_sstep_denorm_flush_to_zero
-dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.generated_args.denorm_sstep_denorm_flush_to_zero_nostorage
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.generated_args.denorm_sstep_inf_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.generated_args.denorm_sstep_inf_flush_to_zero_nostorage
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.generated_args.denorm_sstep_var_flush_to_zero
@@ -2819,8 +2817,6 @@ dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.input_args.denorm
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.input_args.denorm_select_nan_preserve_nostorage
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.input_args.denorm_select_var_preserve
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.input_args.denorm_select_var_preserve_nostorage
-dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.input_args.denorm_sstep_denorm_flush_to_zero
-dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.input_args.denorm_sstep_denorm_flush_to_zero_nostorage
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.input_args.denorm_sstep_inf_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.input_args.denorm_sstep_inf_flush_to_zero_nostorage
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp16.input_args.denorm_sstep_var_flush_to_zero
@@ -3346,7 +3342,6 @@ dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.generated_args.de
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.generated_args.denorm_select_inf_preserve
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.generated_args.denorm_select_nan_preserve
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.generated_args.denorm_select_var_preserve
-dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.generated_args.denorm_sstep_denorm_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.generated_args.denorm_sstep_inf_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.generated_args.denorm_sstep_var_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.generated_args.denorm_step_denorm_flush_to_zero
@@ -3645,7 +3640,6 @@ dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.input_args.denorm
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.input_args.denorm_select_inf_preserve
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.input_args.denorm_select_nan_preserve
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.input_args.denorm_select_var_preserve
-dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.input_args.denorm_sstep_denorm_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.input_args.denorm_sstep_inf_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.input_args.denorm_sstep_var_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.input_args.denorm_step_denorm_flush_to_zero
@@ -3988,7 +3982,6 @@ dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.generated_args.de
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.generated_args.denorm_select_inf_preserve
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.generated_args.denorm_select_nan_preserve
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.generated_args.denorm_select_var_preserve
-dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.generated_args.denorm_sstep_denorm_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.generated_args.denorm_sstep_inf_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.generated_args.denorm_sstep_var_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.generated_args.denorm_step_denorm_flush_to_zero
@@ -4263,7 +4256,6 @@ dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.input_args.denorm
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.input_args.denorm_select_inf_preserve
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.input_args.denorm_select_nan_preserve
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.input_args.denorm_select_var_preserve
-dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.input_args.denorm_sstep_denorm_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.input_args.denorm_sstep_inf_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.input_args.denorm_sstep_var_flush_to_zero
 dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp64.input_args.denorm_step_denorm_flush_to_zero
@@ -26797,10 +26789,6 @@ dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.generated_args.d
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.generated_args.denorm_select_var_preserve_nostorage_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.generated_args.denorm_select_var_preserve_nostorage_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.generated_args.denorm_select_var_preserve_vert
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.generated_args.denorm_sstep_denorm_flush_to_zero_frag
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.generated_args.denorm_sstep_denorm_flush_to_zero_nostorage_frag
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.generated_args.denorm_sstep_denorm_flush_to_zero_nostorage_vert
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.generated_args.denorm_sstep_denorm_flush_to_zero_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.generated_args.denorm_sstep_inf_flush_to_zero_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.generated_args.denorm_sstep_inf_flush_to_zero_nostorage_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.generated_args.denorm_sstep_inf_flush_to_zero_nostorage_vert
@@ -27957,10 +27945,6 @@ dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.input_args.denor
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.input_args.denorm_select_var_preserve_nostorage_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.input_args.denorm_select_var_preserve_nostorage_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.input_args.denorm_select_var_preserve_vert
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.input_args.denorm_sstep_denorm_flush_to_zero_frag
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.input_args.denorm_sstep_denorm_flush_to_zero_nostorage_frag
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.input_args.denorm_sstep_denorm_flush_to_zero_nostorage_vert
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.input_args.denorm_sstep_denorm_flush_to_zero_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.input_args.denorm_sstep_inf_flush_to_zero_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.input_args.denorm_sstep_inf_flush_to_zero_nostorage_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp16.input_args.denorm_sstep_inf_flush_to_zero_nostorage_vert
@@ -29003,8 +28987,6 @@ dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.generated_args.d
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.generated_args.denorm_select_nan_preserve_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.generated_args.denorm_select_var_preserve_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.generated_args.denorm_select_var_preserve_vert
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.generated_args.denorm_sstep_denorm_flush_to_zero_frag
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.generated_args.denorm_sstep_denorm_flush_to_zero_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.generated_args.denorm_sstep_inf_flush_to_zero_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.generated_args.denorm_sstep_inf_flush_to_zero_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.generated_args.denorm_sstep_var_flush_to_zero_frag
@@ -29601,8 +29583,6 @@ dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.input_args.denor
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.input_args.denorm_select_nan_preserve_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.input_args.denorm_select_var_preserve_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.input_args.denorm_select_var_preserve_vert
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.input_args.denorm_sstep_denorm_flush_to_zero_frag
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.input_args.denorm_sstep_denorm_flush_to_zero_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.input_args.denorm_sstep_inf_flush_to_zero_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.input_args.denorm_sstep_inf_flush_to_zero_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.input_args.denorm_sstep_var_flush_to_zero_frag
@@ -30287,8 +30267,6 @@ dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.generated_args.d
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.generated_args.denorm_select_nan_preserve_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.generated_args.denorm_select_var_preserve_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.generated_args.denorm_select_var_preserve_vert
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.generated_args.denorm_sstep_denorm_flush_to_zero_frag
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.generated_args.denorm_sstep_denorm_flush_to_zero_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.generated_args.denorm_sstep_inf_flush_to_zero_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.generated_args.denorm_sstep_inf_flush_to_zero_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.generated_args.denorm_sstep_var_flush_to_zero_frag
@@ -30837,8 +30815,6 @@ dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.input_args.denor
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.input_args.denorm_select_nan_preserve_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.input_args.denorm_select_var_preserve_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.input_args.denorm_select_var_preserve_vert
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.input_args.denorm_sstep_denorm_flush_to_zero_frag
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.input_args.denorm_sstep_denorm_flush_to_zero_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.input_args.denorm_sstep_inf_flush_to_zero_frag
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.input_args.denorm_sstep_inf_flush_to_zero_vert
 dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp64.input_args.denorm_sstep_var_flush_to_zero_frag
