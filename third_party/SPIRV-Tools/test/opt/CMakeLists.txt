@@ -18,8 +18,10 @@ add_subdirectory(loop_optimizations)
 add_spvtools_unittest(TARGET opt
   SRCS aggressive_dead_code_elim_test.cpp
        amd_ext_to_khr.cpp
+       analyze_live_input_test.cpp
        assembly_builder_test.cpp
        block_merge_test.cpp
+       c_interface_test.cpp
        ccp_test.cpp
        cfg_cleanup_test.cpp
        cfg_test.cpp
@@ -42,8 +44,9 @@ add_spvtools_unittest(TARGET opt
        desc_sroa_test.cpp
        eliminate_dead_const_test.cpp
        eliminate_dead_functions_test.cpp
-       eliminate_dead_input_components_test.cpp
+       eliminate_dead_io_components_test.cpp
        eliminate_dead_member_test.cpp
+       eliminate_dead_output_stores_test.cpp
        feature_manager_test.cpp
        fix_func_call_arguments_test.cpp
        fix_storage_class_test.cpp
@@ -63,6 +66,7 @@ add_spvtools_unittest(TARGET opt
        instruction_list_test.cpp
        instruction_test.cpp
        interface_var_sroa_test.cpp
+       invocation_interlock_placement_test.cpp
        interp_fixup_test.cpp
        ir_builder.cpp
        ir_context_test.cpp
@@ -74,6 +78,7 @@ add_spvtools_unittest(TARGET opt
        local_single_block_elim.cpp
        local_single_store_elim_test.cpp
        local_ssa_elim_test.cpp
+       modify_maximal_reconvergence_test.cpp
        module_test.cpp
        module_utils.h
        optimizer_test.cpp
@@ -100,6 +105,8 @@ add_spvtools_unittest(TARGET opt
        strip_debug_info_test.cpp
        strip_nonsemantic_info_test.cpp
        struct_cfg_analysis_test.cpp
+       switch_descriptorset_test.cpp
+       trim_capabilities_pass_test.cpp
        type_manager_test.cpp
        types_test.cpp
        unify_const_test.cpp
@@ -112,3 +119,12 @@ add_spvtools_unittest(TARGET opt
   LIBS SPIRV-Tools-opt
   PCH_FILE pch_test_opt
 )
+if (NOT "${SPIRV_SKIP_TESTS}" AND TARGET gmock_main)
+  if (MSVC)
+    if (${MSVC_VERSION} LESS 1920)
+      # The VS 2017 debug build requires /bigobj on test_opt
+      # https://github.com/KhronosGroup/SPIRV-Tools/issues/5335
+      target_compile_options(test_opt PRIVATE /bigobj)
+    endif()
+  endif()
+endif()

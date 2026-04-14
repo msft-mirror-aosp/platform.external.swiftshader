@@ -240,7 +240,7 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 			setupRoutine = setupProcessor.routine(setupState);
 
 			pixelState = pixelProcessor.update(pipelineState, fragmentShader, vertexShader, attachments, hasOcclusionQuery());
-			pixelRoutine = pixelProcessor.routine(pixelState, fragmentState->getPipelineLayout(), fragmentShader, inputs.getDescriptorSets());
+			pixelRoutine = pixelProcessor.routine(pixelState, fragmentState->getPipelineLayout(), fragmentShader, attachments, inputs.getDescriptorSets());
 		}
 	}
 
@@ -262,7 +262,6 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 	draw->numBatches = (count + draw->numPrimitivesPerBatch - 1) / draw->numPrimitivesPerBatch;
 	draw->topology = vertexInputInterfaceState.getTopology();
 	draw->provokingVertexMode = preRasterizationState.getProvokingVertexMode();
-	draw->indexType = pipeline->getIndexBuffer().getIndexType();
 	draw->lineRasterizationMode = preRasterizationState.getLineRasterizationMode();
 	draw->descriptorSetObjects = inputs.getDescriptorSetObjects();
 	draw->preRasterizationPipelineLayout = preRasterizationState.getPipelineLayout();
@@ -279,13 +278,14 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 		const sw::Stream &stream = inputs.getStream(i);
 		data->input[i] = stream.buffer;
 		data->robustnessSize[i] = stream.robustnessSize;
-		data->stride[i] = inputs.getVertexStride(i, vertexInputInterfaceState.hasDynamicVertexStride());
+		data->stride[i] = inputs.getVertexStride(i);
 	}
 
 	data->indices = indexBuffer;
 	data->layer = layer;
 	data->instanceID = instanceID;
 	data->baseVertex = baseVertex;
+	draw->indexType = indexBuffer ? pipeline->getIndexBuffer().getIndexType() : VK_INDEX_TYPE_UINT16;
 
 	draw->vertexRoutine = vertexRoutine;
 
@@ -310,7 +310,6 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 		data->Y0xF = Y0 * subPixF - subPixF / 2;
 		data->halfPixelX = 0.5f / W;
 		data->halfPixelY = 0.5f / H;
-		data->viewportHeight = abs(viewport.height);
 		data->depthRange = Z;
 		data->depthNear = N;
 		data->constantDepthBias = preRasterizationState.getConstantDepthBias();
@@ -694,6 +693,12 @@ void DrawCall::processPrimitiveVertices(
 	{
 		switch(indexType)
 		{
+		case VK_INDEX_TYPE_UINT8_EXT:
+			if(!setBatchIndices(triangleIndicesOut, topology, provokingVertexMode, static_cast<const uint8_t *>(primitiveIndices), start, triangleCount))
+			{
+				return;
+			}
+			break;
 		case VK_INDEX_TYPE_UINT16:
 			if(!setBatchIndices(triangleIndicesOut, topology, provokingVertexMode, static_cast<const uint16_t *>(primitiveIndices), start, triangleCount))
 			{

@@ -27,20 +27,20 @@ spvtest::Binary CreateBinary(uint32_t version) {
   return {
       // clang-format off
       // Header
-      SpvMagicNumber,
+      static_cast<uint32_t>(spv::MagicNumber),
       version,
       SPV_GENERATOR_WORD(SPV_GENERATOR_KHRONOS, 0),
       1u,  // NOTE: Bound
       0u,  // NOTE: Schema; reserved
 
       // OpCapability Shader
-      SpvOpCapability | 2u << SpvWordCountShift,
-      SpvCapabilityShader,
+      static_cast<uint32_t>(spv::Op::OpCapability) | 2u << spv::WordCountShift,
+      static_cast<uint32_t>(spv::Capability::Shader),
 
       // OpMemoryModel Logical Simple
-      SpvOpMemoryModel | 3u << SpvWordCountShift,
-      SpvAddressingModelLogical,
-      SpvMemoryModelSimple
+      static_cast<uint32_t>(spv::Op::OpMemoryModel) | 3u << spv::WordCountShift,
+      static_cast<uint32_t>(spv::AddressingModel::Logical),
+      static_cast<uint32_t>(spv::MemoryModel::Simple)
       // clang-format on
   };
 }
@@ -71,6 +71,22 @@ TEST_F(BinaryVersion, Mismatch) {
   EXPECT_THAT(GetErrorMessage(),
               HasSubstr("Conflicting SPIR-V versions: 1.3 (input modules 1 "
                         "through 1) vs 1.5 (input module 2)."));
+}
+
+TEST_F(BinaryVersion, UseHighest) {
+  // clang-format off
+  spvtest::Binaries binaries = {
+      CreateBinary(SPV_SPIRV_VERSION_WORD(1, 3)),
+      CreateBinary(SPV_SPIRV_VERSION_WORD(1, 5)),
+  };
+  // clang-format on
+  LinkerOptions options;
+  options.SetUseHighestVersion(true);
+  spvtest::Binary linked_binary;
+  ASSERT_EQ(SPV_SUCCESS, Link(binaries, &linked_binary, options))
+      << GetErrorMessage();
+  EXPECT_THAT(GetErrorMessage(), std::string());
+  EXPECT_EQ(SPV_SPIRV_VERSION_WORD(1, 5), linked_binary[1]);
 }
 
 }  // namespace

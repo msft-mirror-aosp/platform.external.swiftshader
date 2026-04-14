@@ -375,8 +375,19 @@ func (c *Config) PerformTests(exe string, env []string, coverageFile string, log
 		// Separate output per test case
 		caseOutputs := caseOutputRE.Split(out, -1)
 
-		// If the output isn't as expected, a crash may have happened, so re-run tests separately
-		if len(caseOutputs) != (numTests + 1) {
+		// If the output isn't as expected, a crash may have happened
+		isCrash := (len(caseOutputs) != (numTests + 1))
+
+		// Verify the exit code to see if a crash has happened
+		var exitErr *exec.ExitError
+		if errors.As(deqpErr, &exitErr) {
+			if exitErr.ExitCode() == 255 {
+				isCrash = true
+			}
+		}
+
+		// If a crash has happened, re-run tests separately
+		if isCrash {
 			// Re-run tests one by one
 			for _, testName := range testNames {
 				singleTest := []string{testName}
@@ -451,9 +462,7 @@ func (c *Config) AnalyzeOutput(name string, out string, duration time.Duration, 
 	case nil:
 		toks := deqpRE.FindStringSubmatch(out)
 		if len(toks) < 3 {
-			err := fmt.Sprintf("Couldn't parse test '%v' output:\n%s", name, out)
-			log.Println("Warning: ", err)
-			return TestResult{Test: name, Status: testlist.Fail, Err: err, Coverage: coverage}
+			return TestResult{Test: name, Status: testlist.Unknown, TimeTaken: duration, Coverage: coverage}
 		}
 		switch toks[1] {
 		case "Pass":

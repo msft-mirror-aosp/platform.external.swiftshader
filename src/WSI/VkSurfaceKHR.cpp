@@ -15,6 +15,7 @@
 #include "VkSurfaceKHR.hpp"
 
 #include "Vulkan/VkDestroy.hpp"
+#include "Vulkan/VkStringify.hpp"
 
 #include <algorithm>
 
@@ -94,14 +95,14 @@ VkImage PresentImage::asVkImage() const
 	return image ? static_cast<VkImage>(*image) : VkImage({ VK_NULL_HANDLE });
 }
 
-uint32_t SurfaceKHR::getSurfaceFormatsCount(const void *pSurfaceInfoPNext) const
+uint32_t SurfaceKHR::GetSurfaceFormatsCount(const void *pSurfaceInfoPNext)
 {
 	return static_cast<uint32_t>(sizeof(surfaceFormats) / sizeof(surfaceFormats[0]));
 }
 
-VkResult SurfaceKHR::getSurfaceFormats(const void *pSurfaceInfoPNext, uint32_t *pSurfaceFormatCount, VkSurfaceFormat2KHR *pSurfaceFormats) const
+VkResult SurfaceKHR::GetSurfaceFormats(const void *pSurfaceInfoPNext, uint32_t *pSurfaceFormatCount, VkSurfaceFormat2KHR *pSurfaceFormats)
 {
-	uint32_t count = getSurfaceFormatsCount(pSurfaceInfoPNext);
+	uint32_t count = GetSurfaceFormatsCount(pSurfaceInfoPNext);
 
 	uint32_t i;
 	for(i = 0; i < std::min(*pSurfaceFormatCount, count); i++)
@@ -119,14 +120,14 @@ VkResult SurfaceKHR::getSurfaceFormats(const void *pSurfaceInfoPNext, uint32_t *
 	return VK_SUCCESS;
 }
 
-uint32_t SurfaceKHR::getPresentModeCount() const
+uint32_t SurfaceKHR::GetPresentModeCount()
 {
 	return static_cast<uint32_t>(sizeof(presentModes) / sizeof(presentModes[0]));
 }
 
-VkResult SurfaceKHR::getPresentModes(uint32_t *pPresentModeCount, VkPresentModeKHR *pPresentModes) const
+VkResult SurfaceKHR::GetPresentModes(uint32_t *pPresentModeCount, VkPresentModeKHR *pPresentModes)
 {
-	uint32_t count = getPresentModeCount();
+	uint32_t count = GetPresentModeCount();
 
 	uint32_t i;
 	for(i = 0; i < std::min(*pPresentModeCount, count); i++)
@@ -182,7 +183,26 @@ VkResult SurfaceKHR::getPresentRectangles(uint32_t *pRectCount, VkRect2D *pRects
 	return VK_SUCCESS;
 }
 
-void SurfaceKHR::setCommonSurfaceCapabilities(const void *pSurfaceInfoPNext, VkSurfaceCapabilitiesKHR *pSurfaceCapabilities, void *pSurfaceCapabilitiesPNext)
+void SurfaceKHR::GetSurfacelessCapabilities(const void *pSurfaceInfoPNext, VkSurfaceCapabilitiesKHR *pSurfaceCapabilities, void *pSurfaceCapabilitiesPNext)
+{
+	SetCommonSurfaceCapabilities(pSurfaceInfoPNext, pSurfaceCapabilities, pSurfaceCapabilitiesPNext);
+
+	// When the surface is VK_NULL_HANDLE (with VK_GOOGLE_surfaceless_query), the following
+	// cannot be calculated and must have assigned values as below.
+	pSurfaceCapabilities->minImageCount = 0xFFFFFFFF;
+	pSurfaceCapabilities->maxImageCount = 0xFFFFFFFF;
+	pSurfaceCapabilities->currentExtent = { 0xFFFFFFFF, 0xFFFFFFFF };
+	pSurfaceCapabilities->currentTransform = VK_SURFACE_TRANSFORM_INHERIT_BIT_KHR;
+
+	// The following values depend on the surface as well, initialize them with something
+	// reasonable despite VK_GOOGLE_surfaceless_query not mentioning that they are not correct
+	// when surfaceless.  This was missed when developing VK_GOOGLE_surfaceless_query because
+	// Android always sets the following min/max extents regardless of the surface.
+	pSurfaceCapabilities->minImageExtent = { 1, 1 };
+	pSurfaceCapabilities->maxImageExtent = { 4096, 4096 };
+}
+
+void SurfaceKHR::SetCommonSurfaceCapabilities(const void *pSurfaceInfoPNext, VkSurfaceCapabilitiesKHR *pSurfaceCapabilities, void *pSurfaceCapabilitiesPNext)
 {
 	pSurfaceCapabilities->minImageCount = 1;
 	pSurfaceCapabilities->maxImageCount = 0;
@@ -199,6 +219,54 @@ void SurfaceKHR::setCommonSurfaceCapabilities(const void *pSurfaceInfoPNext, VkS
 	    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
 	    VK_IMAGE_USAGE_SAMPLED_BIT |
 	    VK_IMAGE_USAGE_STORAGE_BIT;
+
+	auto *extInfo = reinterpret_cast<VkBaseOutStructure *>(pSurfaceCapabilitiesPNext);
+	while(extInfo)
+	{
+		switch(extInfo->sType)
+		{
+		case VK_STRUCTURE_TYPE_SURFACE_PRESENT_SCALING_CAPABILITIES_EXT:
+			{
+				// Supported scaling is per present mode, but currently that's identical for all present modes.
+				ASSERT(vk::GetExtendedStruct<VkSurfacePresentModeEXT>(pSurfaceInfoPNext, VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT) != nullptr);
+				VkSurfacePresentScalingCapabilitiesEXT *presentScalingCapabilities = reinterpret_cast<VkSurfacePresentScalingCapabilitiesEXT *>(extInfo);
+				presentScalingCapabilities->supportedPresentScaling = 0;
+				presentScalingCapabilities->supportedPresentGravityX = 0;
+				presentScalingCapabilities->supportedPresentGravityY = 0;
+				presentScalingCapabilities->minScaledImageExtent = pSurfaceCapabilities->minImageExtent;
+				presentScalingCapabilities->maxScaledImageExtent = pSurfaceCapabilities->maxImageExtent;
+				break;
+			}
+		case VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_COMPATIBILITY_EXT:
+			{
+				VkSurfacePresentModeCompatibilityEXT *presentModeCompatibility = reinterpret_cast<VkSurfacePresentModeCompatibilityEXT *>(extInfo);
+				const auto *presentMode = vk::GetExtendedStruct<VkSurfacePresentModeEXT>(pSurfaceInfoPNext, VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT);
+				ASSERT(presentMode != nullptr);
+
+				// Present mode is ignored, so FIFO and MAILBOX are compatible.
+				if(presentModeCompatibility->pPresentModes == nullptr)
+				{
+					presentModeCompatibility->presentModeCount = 2;
+				}
+				else if(presentModeCompatibility->presentModeCount == 1)
+				{
+					presentModeCompatibility->pPresentModes[0] = presentMode->presentMode;
+					presentModeCompatibility->presentModeCount = 1;
+				}
+				else if(presentModeCompatibility->presentModeCount > 1)
+				{
+					presentModeCompatibility->pPresentModes[0] = presentModes[0];
+					presentModeCompatibility->pPresentModes[1] = presentModes[1];
+					presentModeCompatibility->presentModeCount = 2;
+				}
+				break;
+			}
+		default:
+			UNSUPPORTED("pSurfaceCapabilities->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
+			break;
+		}
+		extInfo = extInfo->pNext;
+	}
 }
 
 }  // namespace vk

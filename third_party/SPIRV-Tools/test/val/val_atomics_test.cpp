@@ -318,7 +318,8 @@ TEST_F(ValidateAtomics, AtomicAddFloatVulkan) {
   EXPECT_THAT(
       getDiagnosticString(),
       HasSubstr("Opcode AtomicFAddEXT requires one of these capabilities: "
-                "AtomicFloat32AddEXT AtomicFloat64AddEXT AtomicFloat16AddEXT"));
+                "AtomicFloat16VectorNV AtomicFloat32AddEXT AtomicFloat64AddEXT "
+                "AtomicFloat16AddEXT"));
 }
 
 TEST_F(ValidateAtomics, AtomicMinFloatVulkan) {
@@ -331,7 +332,8 @@ TEST_F(ValidateAtomics, AtomicMinFloatVulkan) {
   EXPECT_THAT(
       getDiagnosticString(),
       HasSubstr("Opcode AtomicFMinEXT requires one of these capabilities: "
-                "AtomicFloat32MinMaxEXT AtomicFloat64MinMaxEXT AtomicFloat16MinMaxEXT"));
+                "AtomicFloat16VectorNV AtomicFloat32MinMaxEXT "
+                "AtomicFloat64MinMaxEXT AtomicFloat16MinMaxEXT"));
 }
 
 TEST_F(ValidateAtomics, AtomicMaxFloatVulkan) {
@@ -343,8 +345,10 @@ TEST_F(ValidateAtomics, AtomicMaxFloatVulkan) {
   ASSERT_EQ(SPV_ERROR_INVALID_CAPABILITY, ValidateInstructions());
   EXPECT_THAT(
       getDiagnosticString(),
-      HasSubstr("Opcode AtomicFMaxEXT requires one of these capabilities: "
-                "AtomicFloat32MinMaxEXT AtomicFloat64MinMaxEXT AtomicFloat16MinMaxEXT"));
+      HasSubstr(
+          "Opcode AtomicFMaxEXT requires one of these capabilities: "
+          "AtomicFloat16VectorNV AtomicFloat32MinMaxEXT AtomicFloat64MinMaxEXT "
+          "AtomicFloat16MinMaxEXT"));
 }
 
 TEST_F(ValidateAtomics, AtomicAddFloatVulkanWrongType1) {
@@ -778,8 +782,8 @@ OpAtomicStore %f32_var_function %device %relaxed %f32_1
   EXPECT_THAT(
       getDiagnosticString(),
       HasSubstr("AtomicStore: Vulkan spec only allows storage classes for "
-                "atomic to be: Uniform, Workgroup, Image, StorageBuffer, or "
-                "PhysicalStorageBuffer."));
+                "atomic to be: Uniform, Workgroup, Image, StorageBuffer, "
+                "PhysicalStorageBuffer or TaskPayloadWorkgroupEXT."));
 }
 
 TEST_F(ValidateAtomics, AtomicStoreFunctionPointerStorageType) {
@@ -1000,8 +1004,9 @@ TEST_F(ValidateAtomics, AtomicLoadWrongPointerType) {
 
   CompileSuccessfully(GenerateKernelCode(body));
   ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Operand 27[%_ptr_Workgroup_float] cannot be a type"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Operand '27[%_ptr_Workgroup_float]' cannot be a type"));
 }
 
 TEST_F(ValidateAtomics, AtomicLoadWrongPointerDataType) {
@@ -1273,7 +1278,7 @@ TEST_F(ValidateAtomics, AtomicExchangeWrongPointerType) {
   CompileSuccessfully(GenerateKernelCode(body));
   ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Operand 33[%_ptr_Workgroup_v4float] cannot be a "
+              HasSubstr("Operand '33[%_ptr_Workgroup_v4float]' cannot be a "
                         "type"));
 }
 
@@ -1400,7 +1405,7 @@ TEST_F(ValidateAtomics, AtomicCompareExchangeWrongPointerType) {
   CompileSuccessfully(GenerateKernelCode(body));
   ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Operand 33[%_ptr_Workgroup_v4float] cannot be a "
+              HasSubstr("Operand '33[%_ptr_Workgroup_v4float]' cannot be a "
                         "type"));
 }
 
@@ -2710,6 +2715,136 @@ TEST_F(ValidateAtomics, IIncrementBadPointerDataType) {
   EXPECT_THAT(getDiagnosticString(),
               HasSubstr("AtomicIIncrement: expected Pointer to point to a "
                         "value of type Result Type"));
+}
+
+TEST_F(ValidateAtomics, AtomicFloat16VectorSuccess) {
+  const std::string definitions = R"(
+%f16 = OpTypeFloat 16
+%f16vec2 = OpTypeVector %f16 2
+%f16vec4 = OpTypeVector %f16 4
+
+%f16_1 = OpConstant %f16 1
+%f16vec2_1 = OpConstantComposite %f16vec2 %f16_1 %f16_1
+%f16vec4_1 = OpConstantComposite %f16vec4 %f16_1 %f16_1 %f16_1 %f16_1
+
+%f16vec2_ptr = OpTypePointer Workgroup %f16vec2
+%f16vec4_ptr = OpTypePointer Workgroup %f16vec4
+%f16vec2_var = OpVariable %f16vec2_ptr Workgroup
+%f16vec4_var = OpVariable %f16vec4_ptr Workgroup
+)";
+
+  const std::string body = R"(
+%val3 = OpAtomicFMinEXT %f16vec2 %f16vec2_var %device %relaxed %f16vec2_1
+%val4 = OpAtomicFMaxEXT %f16vec2 %f16vec2_var %device %relaxed %f16vec2_1
+%val8 = OpAtomicFAddEXT %f16vec2 %f16vec2_var %device %relaxed %f16vec2_1
+%val9 = OpAtomicExchange %f16vec2 %f16vec2_var %device %relaxed %f16vec2_1
+
+%val11 = OpAtomicFMinEXT %f16vec4 %f16vec4_var %device %relaxed %f16vec4_1
+%val12 = OpAtomicFMaxEXT %f16vec4 %f16vec4_var %device %relaxed %f16vec4_1
+%val18 = OpAtomicFAddEXT %f16vec4 %f16vec4_var %device %relaxed %f16vec4_1
+%val19 = OpAtomicExchange %f16vec4 %f16vec4_var %device %relaxed %f16vec4_1
+
+)";
+
+  CompileSuccessfully(GenerateShaderComputeCode(
+                          body,
+                          "OpCapability Float16\n"
+                          "OpCapability AtomicFloat16VectorNV\n"
+                          "OpExtension \"SPV_NV_shader_atomic_fp16_vector\"\n",
+                          definitions),
+                      SPV_ENV_VULKAN_1_0);
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+}
+
+static constexpr char Float16Vector3Defs[] = R"(
+%f16 = OpTypeFloat 16
+%f16vec3 = OpTypeVector %f16 3
+
+%f16_1 = OpConstant %f16 1
+%f16vec3_1 = OpConstantComposite %f16vec3 %f16_1 %f16_1 %f16_1
+
+%f16vec3_ptr = OpTypePointer Workgroup %f16vec3
+%f16vec3_var = OpVariable %f16vec3_ptr Workgroup
+)";
+
+TEST_F(ValidateAtomics, AtomicFloat16Vector3MinFail) {
+  const std::string definitions = Float16Vector3Defs;
+
+  const std::string body = R"(
+%val11 = OpAtomicFMinEXT %f16vec3 %f16vec3_var %device %relaxed %f16vec3_1
+)";
+
+  CompileSuccessfully(GenerateShaderComputeCode(
+                          body,
+                          "OpCapability Float16\n"
+                          "OpCapability AtomicFloat16VectorNV\n"
+                          "OpExtension \"SPV_NV_shader_atomic_fp16_vector\"\n",
+                          definitions),
+                      SPV_ENV_VULKAN_1_0);
+  EXPECT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("AtomicFMinEXT: expected Result Type to be float scalar type"));
+}
+
+TEST_F(ValidateAtomics, AtomicFloat16Vector3MaxFail) {
+  const std::string definitions = Float16Vector3Defs;
+
+  const std::string body = R"(
+%val12 = OpAtomicFMaxEXT %f16vec3 %f16vec3_var %device %relaxed %f16vec3_1
+)";
+
+  CompileSuccessfully(GenerateShaderComputeCode(
+                          body,
+                          "OpCapability Float16\n"
+                          "OpCapability AtomicFloat16VectorNV\n"
+                          "OpExtension \"SPV_NV_shader_atomic_fp16_vector\"\n",
+                          definitions),
+                      SPV_ENV_VULKAN_1_0);
+  EXPECT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("AtomicFMaxEXT: expected Result Type to be float scalar type"));
+}
+
+TEST_F(ValidateAtomics, AtomicFloat16Vector3AddFail) {
+  const std::string definitions = Float16Vector3Defs;
+
+  const std::string body = R"(
+%val18 = OpAtomicFAddEXT %f16vec3 %f16vec3_var %device %relaxed %f16vec3_1
+)";
+
+  CompileSuccessfully(GenerateShaderComputeCode(
+                          body,
+                          "OpCapability Float16\n"
+                          "OpCapability AtomicFloat16VectorNV\n"
+                          "OpExtension \"SPV_NV_shader_atomic_fp16_vector\"\n",
+                          definitions),
+                      SPV_ENV_VULKAN_1_0);
+  EXPECT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("AtomicFAddEXT: expected Result Type to be float scalar type"));
+}
+
+TEST_F(ValidateAtomics, AtomicFloat16Vector3ExchangeFail) {
+  const std::string definitions = Float16Vector3Defs;
+
+  const std::string body = R"(
+%val19 = OpAtomicExchange %f16vec3 %f16vec3_var %device %relaxed %f16vec3_1
+)";
+
+  CompileSuccessfully(GenerateShaderComputeCode(
+                          body,
+                          "OpCapability Float16\n"
+                          "OpCapability AtomicFloat16VectorNV\n"
+                          "OpExtension \"SPV_NV_shader_atomic_fp16_vector\"\n",
+                          definitions),
+                      SPV_ENV_VULKAN_1_0);
+  EXPECT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("AtomicExchange: expected Result Type to be integer or "
+                        "float scalar type"));
 }
 
 }  // namespace

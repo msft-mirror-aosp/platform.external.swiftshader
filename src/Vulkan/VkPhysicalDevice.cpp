@@ -308,6 +308,12 @@ static void getPhysicalDeviceDynamicRenderingFeatures(T *features)
 }
 
 template<typename T>
+static void getPhysicalDeviceDynamicRenderingLocalReadFeatures(T *features)
+{
+	features->dynamicRenderingLocalRead = VK_TRUE;
+}
+
+template<typename T>
 static void getPhysicalDeviceInlineUniformBlockFeatures(T *features)
 {
 	features->inlineUniformBlock = VK_TRUE;
@@ -395,6 +401,24 @@ static void getPhysicalDeviceGlobalPriorityQueryFeatures(T *features)
 }
 
 template<typename T>
+static void getPhysicalDeviceSwapchainMaintenance1FeaturesKHR(T *features)
+{
+	features->swapchainMaintenance1 = VK_TRUE;
+}
+
+template<typename T>
+static void getPhysicalDeviceHostImageCopyFeatures(T *features)
+{
+	features->hostImageCopy = VK_TRUE;
+}
+
+template<typename T>
+static void getPhysicalDeviceIndexTypeUint8Features(T *features)
+{
+	features->indexTypeUint8 = VK_TRUE;
+}
+
+template<typename T>
 static void getPhysicalDeviceVulkan12Features(T *features)
 {
 	features->samplerMirrorClampToEdge = VK_TRUE;
@@ -457,6 +481,11 @@ static void getPhysicalDeviceBlendOperationAdvancedFeaturesEXT(VkPhysicalDeviceB
 static void getPhysicalDeviceExtendedDynamicStateFeaturesEXT(VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *features)
 {
 	features->extendedDynamicState = VK_TRUE;
+}
+
+static void getPhysicalDeviceVertexInputDynamicStateFeaturesEXT(VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *features)
+{
+	features->vertexInputDynamicState = VK_TRUE;
 }
 
 static void getPhysicalDevice4444FormatsFeaturesEXT(VkPhysicalDevice4444FormatsFeaturesEXT *features)
@@ -568,6 +597,9 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES:
 			getPhysicalDeviceDynamicRenderingFeatures(reinterpret_cast<VkPhysicalDeviceDynamicRenderingFeatures *>(curExtension));
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES_KHR:
+			getPhysicalDeviceDynamicRenderingLocalReadFeatures(reinterpret_cast<VkPhysicalDeviceDynamicRenderingLocalReadFeaturesKHR *>(curExtension));
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES:
 			getPhysicalDeviceDescriptorIndexingFeatures(reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeatures *>(curExtension));
 			break;
@@ -585,6 +617,9 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT:
 			getPhysicalDeviceExtendedDynamicStateFeaturesEXT(reinterpret_cast<VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *>(curExtension));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT:
+			getPhysicalDeviceVertexInputDynamicStateFeaturesEXT(reinterpret_cast<VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIVATE_DATA_FEATURES:
 			getPhysicalDevicePrivateDataFeatures(reinterpret_cast<VkPhysicalDevicePrivateDataFeatures *>(curExtension));
@@ -633,6 +668,15 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT:
 			getPhysicalDeviceGraphicsPipelineLibraryFeatures(reinterpret_cast<struct VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT *>(curExtension));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT:
+			getPhysicalDeviceSwapchainMaintenance1FeaturesKHR(reinterpret_cast<struct VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *>(curExtension));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES_EXT:
+			getPhysicalDeviceHostImageCopyFeatures(reinterpret_cast<struct VkPhysicalDeviceHostImageCopyFeaturesEXT *>(curExtension));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT:
+			getPhysicalDeviceIndexTypeUint8Features(reinterpret_cast<VkPhysicalDeviceIndexTypeUint8FeaturesEXT *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_MAX_ENUM:  // TODO(b/176893525): This may not be legal. dEQP tests that this value is ignored.
 			break;
@@ -1394,6 +1438,60 @@ void PhysicalDevice::getProperties(VkPhysicalDevicePipelineRobustnessPropertiesE
 	getPipelineRobustnessProperties(properties);
 }
 
+template<typename T>
+static void getHostImageCopyProperties(T *properties)
+{
+	// There are no image layouts in SwiftShader, so support all layouts for host image copy
+	constexpr VkImageLayout kAllLayouts[] = {
+		VK_IMAGE_LAYOUT_GENERAL,
+		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+		VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL,
+		VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+		VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL,
+		VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR,
+	};
+	constexpr uint32_t kAllLayoutsCount = std::size(kAllLayouts);
+
+	if(properties->pCopySrcLayouts == nullptr)
+	{
+		properties->copySrcLayoutCount = kAllLayoutsCount;
+	}
+	else
+	{
+		properties->copySrcLayoutCount = std::min(properties->copySrcLayoutCount, kAllLayoutsCount);
+		memcpy(properties->pCopySrcLayouts, kAllLayouts, properties->copySrcLayoutCount * sizeof(*properties->pCopySrcLayouts));
+	}
+
+	if(properties->pCopyDstLayouts == nullptr)
+	{
+		properties->copyDstLayoutCount = kAllLayoutsCount;
+	}
+	else
+	{
+		properties->copyDstLayoutCount = std::min(properties->copyDstLayoutCount, kAllLayoutsCount);
+		memcpy(properties->pCopyDstLayouts, kAllLayouts, properties->copyDstLayoutCount * sizeof(*properties->pCopyDstLayouts));
+	}
+
+	memcpy(properties->optimalTilingLayoutUUID, SWIFTSHADER_UUID, VK_UUID_SIZE);
+	properties->identicalMemoryTypeRequirements = VK_TRUE;
+}
+
+void PhysicalDevice::getProperties(VkPhysicalDeviceHostImageCopyPropertiesEXT *properties) const
+{
+	getHostImageCopyProperties(properties);
+}
+
 void PhysicalDevice::getProperties(VkPhysicalDeviceVulkan12Properties *properties) const
 {
 	getDriverProperties(properties);
@@ -1598,6 +1696,13 @@ bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceExtendedDynamicSt
 	return CheckFeature(requested, supported, extendedDynamicState);
 }
 
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, vertexInputDynamicState);
+}
+
 bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDevicePrivateDataFeatures *requested) const
 {
 	auto supported = getSupportedFeatures(requested);
@@ -1654,6 +1759,27 @@ bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceGraphicsPipelineL
 	auto supported = getSupportedFeatures(requested);
 
 	return CheckFeature(requested, supported, graphicsPipelineLibrary);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, swapchainMaintenance1);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceHostImageCopyFeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, hostImageCopy);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceIndexTypeUint8FeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, indexTypeUint8);
 }
 
 bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceDescriptorIndexingFeatures *requested) const
@@ -1713,7 +1839,7 @@ bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceGlobalPriorityQue
 }
 #undef CheckFeature
 
-static bool checkFormatUsage(VkImageUsageFlags usage, VkFormatFeatureFlags features)
+static bool checkFormatUsage(VkImageUsageFlags usage, VkFormatFeatureFlags2KHR features)
 {
 	// Check for usage conflict with features
 	if((usage & VK_IMAGE_USAGE_SAMPLED_BIT) && !(features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
@@ -1751,13 +1877,18 @@ static bool checkFormatUsage(VkImageUsageFlags usage, VkFormatFeatureFlags featu
 		return false;
 	}
 
+	if((usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) && !(features & VK_FORMAT_FEATURE_2_HOST_IMAGE_TRANSFER_BIT_EXT))
+	{
+		return false;
+	}
+
 	return true;
 }
 
 bool vk::PhysicalDevice::isFormatSupported(vk::Format format, VkImageType type, VkImageTiling tiling,
                                            VkImageUsageFlags usage, VkImageUsageFlags stencilUsage, VkImageCreateFlags flags)
 {
-	VkFormatProperties properties = {};
+	VkFormatProperties3 properties = {};
 	vk::PhysicalDevice::GetFormatProperties(format, &properties);
 
 	if(flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT)
@@ -1772,7 +1903,7 @@ bool vk::PhysicalDevice::isFormatSupported(vk::Format format, VkImageType type, 
 		}
 	}
 
-	VkFormatFeatureFlags features;
+	VkFormatFeatureFlags2KHR features;
 	switch(tiling)
 	{
 	case VK_IMAGE_TILING_LINEAR:
@@ -1812,7 +1943,8 @@ bool vk::PhysicalDevice::isFormatSupported(vk::Format format, VkImageType type, 
 	                              VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
 	                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
 	                              VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-	                              VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+	                              VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT |
+	                              VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT;
 	ASSERT(!(usage & ~(allRecognizedUsageBits)));
 
 	if(usage & VK_IMAGE_USAGE_SAMPLED_BIT)
@@ -2013,7 +2145,8 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties3 *pFo
 		    VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
 		    VK_FORMAT_FEATURE_BLIT_SRC_BIT |
 		    VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
-		    VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+		    VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
+		    VK_FORMAT_FEATURE_2_HOST_IMAGE_TRANSFER_BIT_EXT;
 		break;
 
 	// YCbCr formats:
@@ -2023,9 +2156,11 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties3 *pFo
 		pFormatProperties->optimalTilingFeatures |=
 		    VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
 		    VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+		    VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT |
 		    VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
 		    VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
-		    VK_FORMAT_FEATURE_COSITED_CHROMA_SAMPLES_BIT;
+		    VK_FORMAT_FEATURE_COSITED_CHROMA_SAMPLES_BIT |
+		    VK_FORMAT_FEATURE_2_HOST_IMAGE_TRANSFER_BIT_EXT;
 		break;
 	default:
 		break;
@@ -2313,9 +2448,16 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties3 *pFo
 	{
 		// "Formats that are required to support VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT must also support
 		//  VK_FORMAT_FEATURE_TRANSFER_SRC_BIT and VK_FORMAT_FEATURE_TRANSFER_DST_BIT."
+		//
+		//  Additionally:
+		//  "If VK_EXT_host_image_copy is supported and VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT is supported
+		//  in optimalTilingFeatures or linearTilingFeatures for a color format,
+		//  VK_FORMAT_FEATURE_2_HOST_IMAGE_TRANSFER_BIT_EXT must also be supported in optimalTilingFeatures
+		//  or linearTilingFeatures respectively."
 
 		pFormatProperties->linearTilingFeatures |= VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
-		                                           VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+		                                           VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
+		                                           VK_FORMAT_FEATURE_2_HOST_IMAGE_TRANSFER_BIT_EXT;
 
 		if(!format.isCompressed())
 		{

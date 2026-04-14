@@ -1,5 +1,5 @@
-// Copyright (c) 2017 Valve Corporation
-// Copyright (c) 2017 LunarG Inc.
+// Copyright (c) 2017-2022 Valve Corporation
+// Copyright (c) 2017-2022 LunarG Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -4337,6 +4337,140 @@ OpFunctionEnd
   SinglePassRunAndMatch<InlineExhaustivePass>(text, true);
 }
 
+TEST_F(InlineTest, CreateDebugInlinedAtFromDebugLine) {
+  const std::string text = R"(OpCapability Shader
+; CHECK: OpExtInst %void %1 DebugInlinedAt %uint_6
+OpExtension "SPV_KHR_non_semantic_info"
+%1 = OpExtInstImport "NonSemantic.Shader.DebugInfo.100"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%3 = OpString "debuginlinedat.frag"
+%8 = OpString "int"
+%15 = OpString "int function1() {
+	return 1;
+}
+
+void main() {
+	function1();
+}
+"
+%20 = OpString "function1"
+%21 = OpString ""
+%26 = OpString "main"
+OpName %main "main"
+OpName %src_main "src.main"
+OpName %bb_entry "bb.entry"
+OpName %function1 "function1"
+OpName %bb_entry_0 "bb.entry"
+%int = OpTypeInt 32 1
+%int_1 = OpConstant %int 1
+%uint = OpTypeInt 32 0
+%uint_32 = OpConstant %uint 32
+%void = OpTypeVoid
+%uint_4 = OpConstant %uint 4
+%uint_0 = OpConstant %uint 0
+%uint_3 = OpConstant %uint 3
+%uint_1 = OpConstant %uint 1
+%uint_5 = OpConstant %uint 5
+%uint_17 = OpConstant %uint 17
+%uint_13 = OpConstant %uint 13
+%30 = OpTypeFunction %void
+%uint_7 = OpConstant %uint 7
+%uint_6 = OpConstant %uint 6
+%uint_2 = OpConstant %uint 2
+%uint_12 = OpConstant %uint 12
+%48 = OpTypeFunction %int
+%uint_9 = OpConstant %uint 9
+%10 = OpExtInst %void %1 DebugTypeBasic %8 %uint_32 %uint_4 %uint_0
+%13 = OpExtInst %void %1 DebugTypeFunction %uint_3 %10
+%16 = OpExtInst %void %1 DebugSource %3 %15
+%17 = OpExtInst %void %1 DebugCompilationUnit %uint_1 %uint_4 %16 %uint_5
+%22 = OpExtInst %void %1 DebugFunction %20 %13 %16 %uint_1 %uint_1 %17 %21 %uint_3 %uint_1
+%23 = OpExtInst %void %1 DebugLexicalBlock %16 %uint_1 %uint_17 %22
+%25 = OpExtInst %void %1 DebugTypeFunction %uint_3 %void
+%27 = OpExtInst %void %1 DebugFunction %26 %25 %16 %uint_5 %uint_1 %17 %21 %uint_3 %uint_5
+%28 = OpExtInst %void %1 DebugLexicalBlock %16 %uint_5 %uint_13 %27
+%main = OpFunction %void None %30
+%31 = OpLabel
+%32 = OpFunctionCall %void %src_main
+%34 = OpExtInst %void %1 DebugLine %16 %uint_7 %uint_7 %uint_1 %uint_1
+OpReturn
+OpFunctionEnd
+%src_main = OpFunction %void None %30
+%bb_entry = OpLabel
+%37 = OpExtInst %void %1 DebugScope %27
+%38 = OpExtInst %void %1 DebugFunctionDefinition %27 %src_main
+%39 = OpExtInst %void %1 DebugScope %28
+%40 = OpExtInst %void %1 DebugLine %16 %uint_6 %uint_6 %uint_2 %uint_12
+%44 = OpFunctionCall %int %function1
+%46 = OpExtInst %void %1 DebugScope %27
+%47 = OpExtInst %void %1 DebugLine %16 %uint_7 %uint_7 %uint_1 %uint_1
+OpReturn
+OpFunctionEnd
+%function1 = OpFunction %int None %48
+%bb_entry_0 = OpLabel
+%50 = OpExtInst %void %1 DebugScope %22
+%51 = OpExtInst %void %1 DebugFunctionDefinition %22 %function1
+%52 = OpExtInst %void %1 DebugScope %23
+%53 = OpExtInst %void %1 DebugLine %16 %uint_2 %uint_2 %uint_2 %uint_9
+OpReturnValue %int_1
+OpFunctionEnd
+)";
+
+  SetTargetEnv(SPV_ENV_VULKAN_1_2);
+  SinglePassRunAndMatch<InlineExhaustivePass>(text, true);
+}
+
+TEST_F(InlineTest, DecorateReturnVariableWithAliasedPointer) {
+  const std::string text = R"(OpCapability Int64
+               OpCapability VariablePointers
+               OpCapability PhysicalStorageBufferAddresses
+               OpCapability Shader
+               OpExtension "SPV_KHR_storage_buffer_storage_class"
+               OpExtension "SPV_KHR_variable_pointers"
+               OpExtension "SPV_KHR_physical_storage_buffer"
+               OpMemoryModel PhysicalStorageBuffer64 GLSL450
+               OpEntryPoint GLCompute %1 "main"
+               OpExecutionMode %1 LocalSize 8 8 1
+               OpDecorate %_ptr_PhysicalStorageBuffer__struct_5 ArrayStride 8
+               OpMemberDecorate %_struct_3 0 Offset 0
+               OpMemberDecorate %_struct_3 1 Offset 8
+               OpDecorate %_ptr_PhysicalStorageBuffer_int ArrayStride 4
+               OpMemberDecorate %_struct_5 0 Offset 0
+               OpMemberDecorate %_struct_5 1 Offset 4
+               OpDecorate %6 Aliased
+; CHECK:       OpDecorate %22 AliasedPointer
+       %void = OpTypeVoid
+          %8 = OpTypeFunction %void
+        %int = OpTypeInt 32 1
+      %int_0 = OpConstant %int 0
+               OpTypeForwardPointer %_ptr_PhysicalStorageBuffer__struct_5 PhysicalStorageBuffer
+  %_struct_3 = OpTypeStruct %int %_ptr_PhysicalStorageBuffer__struct_5
+%_ptr_PhysicalStorageBuffer_int = OpTypePointer PhysicalStorageBuffer %int
+  %_struct_5 = OpTypeStruct %int %int
+         %11 = OpTypeFunction %_ptr_PhysicalStorageBuffer_int %_ptr_PhysicalStorageBuffer__struct_5
+%_ptr_PhysicalStorageBuffer__struct_5 = OpTypePointer PhysicalStorageBuffer %_struct_5
+%_ptr_Function__struct_3 = OpTypePointer Function %_struct_3
+          %1 = OpFunction %void None %8
+         %13 = OpLabel
+         %14 = OpVariable %_ptr_Function__struct_3 Function
+         %15 = OpLoad %_struct_3 %14
+         %16 = OpCompositeExtract %_ptr_PhysicalStorageBuffer__struct_5 %15 1
+         %17 = OpFunctionCall %_ptr_PhysicalStorageBuffer_int %18 %16
+               OpReturn
+               OpFunctionEnd
+         %18 = OpFunction %_ptr_PhysicalStorageBuffer_int None %11
+          %6 = OpFunctionParameter %_ptr_PhysicalStorageBuffer__struct_5
+         %19 = OpLabel
+         %20 = OpAccessChain %_ptr_PhysicalStorageBuffer_int %6 %int_0
+               OpReturnValue %20
+               OpFunctionEnd)";
+
+  SetTargetEnv(SPV_ENV_VULKAN_1_2);
+  SinglePassRunAndMatch<InlineExhaustivePass>(text, true);
+}
+
 // TODO(greg-lunarg): Add tests to verify handling of these cases:
 //
 //    Empty modules
@@ -4352,7 +4486,7 @@ OpFunctionEnd
 //    Callee function returns a value generated outside the callee,
 //      e.g. a constant value. This might exercise some logic not yet
 //      exercised by the current tests: the false branch in the "if"
-//      inside the SpvOpReturnValue case in InlinePass::GenInlineCode?
+//      inside the spv::Op::OpReturnValue case in InlinePass::GenInlineCode?
 //    SampledImage before function call, but callee is only single block.
 //      Then the SampledImage instruction is not cloned. Documents existing
 //      behaviour.
