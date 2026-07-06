@@ -426,6 +426,12 @@ static void getPhysicalDeviceIndexTypeUint8Features(T *features)
 }
 
 template<typename T>
+static void getPhysicalDeviceInternallySynchronizedQueuesFeatures(T *features)
+{
+	features->internallySynchronizedQueues = VK_TRUE;
+}
+
+template<typename T>
 static void getPhysicalDeviceVulkan12Features(T *features)
 {
 	features->samplerMirrorClampToEdge = VK_TRUE;
@@ -697,6 +703,9 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES:
 			getPhysicalDeviceIndexTypeUint8Features(reinterpret_cast<VkPhysicalDeviceIndexTypeUint8Features *>(curExtension));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INTERNALLY_SYNCHRONIZED_QUEUES_FEATURES_KHR:
+			getPhysicalDeviceInternallySynchronizedQueuesFeatures(reinterpret_cast<VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_MAX_ENUM:  // TODO(b/176893525): This may not be legal. dEQP tests that this value is ignored.
 			break;
@@ -1816,6 +1825,13 @@ bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceIndexTypeUint8Fea
 	auto supported = getSupportedFeatures(requested);
 
 	return CheckFeature(requested, supported, indexTypeUint8);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, internallySynchronizedQueues);
 }
 
 bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceDescriptorIndexingFeatures *requested) const
