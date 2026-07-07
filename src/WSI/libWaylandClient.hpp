@@ -25,8 +25,7 @@
 // dynamically (so it remains a self-contained ICD that also works where Wayland
 // is absent), therefore it can only dlsym the real exported primitives and must
 // re-implement those inline wrappers on top of them. dlsym'ing the wrapper names
-// directly returns nullptr, so the surface previously crashed on first use (as
-// seen when running ANGLE's EGLWaylandTest with SwiftShader).
+// directly just returns nullptr, which would crash on first use.
 struct LibWaylandClientExports
 {
 	LibWaylandClientExports() {}
@@ -40,10 +39,16 @@ struct LibWaylandClientExports
 	void (*wl_event_queue_destroy)(wl_event_queue *queue) = nullptr;
 
 	// Real exported primitives: proxy marshalling and lifetime.
-	wl_proxy *(*wl_proxy_marshal_flags)(wl_proxy *proxy, uint32_t opcode, const wl_interface *interface, uint32_t version, uint32_t flags, ...) = nullptr;
+	// Requests are marshalled with the wl_proxy_marshal[_constructor[_versioned]]
+	// trio (available since libwayland 1.2) rather than the newer
+	// wl_proxy_marshal_flags (1.20 / 1.19.91), so this builds and runs against
+	// older libwayland too. These are exactly the primitives the generated
+	// static-inline wrappers used prior to 1.20.
+	void (*wl_proxy_marshal)(wl_proxy *proxy, uint32_t opcode, ...) = nullptr;
+	wl_proxy *(*wl_proxy_marshal_constructor)(wl_proxy *proxy, uint32_t opcode, const wl_interface *interface, ...) = nullptr;
+	wl_proxy *(*wl_proxy_marshal_constructor_versioned)(wl_proxy *proxy, uint32_t opcode, const wl_interface *interface, uint32_t version, ...) = nullptr;
 	int (*wl_proxy_add_listener)(wl_proxy *proxy, void (**implementation)(void), void *data) = nullptr;
 	void (*wl_proxy_destroy)(wl_proxy *proxy) = nullptr;
-	uint32_t (*wl_proxy_get_version)(wl_proxy *proxy) = nullptr;
 	void (*wl_proxy_set_queue)(wl_proxy *proxy, wl_event_queue *queue) = nullptr;
 	void *(*wl_proxy_create_wrapper)(void *proxy) = nullptr;
 	void (*wl_proxy_wrapper_destroy)(void *proxy_wrapper) = nullptr;
