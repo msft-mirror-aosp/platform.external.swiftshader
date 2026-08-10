@@ -90,6 +90,15 @@ auto getNumElements(llvm::FixedVectorType *vec)
 #endif
 }
 
+llvm::PointerType *getPointerTo(llvm::Type *type, unsigned int addressSpace = 0)
+{
+#if LLVM_VERSION_MAJOR > 23
+	return llvm::PointerType::get(type->getContext(), addressSpace);
+#else
+	return type->getPointerTo(addressSpace);
+#endif
+}
+
 llvm::Value *lowerPAVG(llvm::Value *x, llvm::Value *y)
 {
 	llvm::VectorType *ty = llvm::cast<llvm::VectorType>(x->getType());
@@ -633,7 +642,7 @@ Value *Nucleus::allocateStackVariable(Type *type, int arraySize)
 
 	if(getPragmaState(InitializeLocalVariables))
 	{
-		llvm::Type *i8PtrTy = llvm::Type::getInt8Ty(*jit->context)->getPointerTo();
+		llvm::Type *i8PtrTy = getPointerTo(llvm::Type::getInt8Ty(*jit->context));
 		llvm::Type *i32Ty = llvm::Type::getInt32Ty(*jit->context);
 		llvm::Function *memset = GET_INTRINSIC_DECLARATION(jit->module.get(), llvm::Intrinsic::memset, { i8PtrTy, i32Ty });
 
@@ -912,7 +921,7 @@ Value *Nucleus::createLoad(Value *ptr, Type *type, bool isVolatile, unsigned int
 				// Load as an integer and bitcast. See b/136037244.
 				auto size = jit->module->getDataLayout().getTypeStoreSize(elTy);
 				auto elAsIntTy = llvm::IntegerType::get(*jit->context, size * 8);
-				auto ptrCast = jit->builder->CreatePointerCast(V(ptr), elAsIntTy->getPointerTo());
+				auto ptrCast = jit->builder->CreatePointerCast(V(ptr), getPointerTo(elAsIntTy));
 				auto load = jit->builder->CreateAlignedLoad(elAsIntTy, ptrCast, llvm::MaybeAlign(alignment), isVolatile);
 				load->setAtomic(atomicOrdering(atomic, memoryOrder));
 				auto loadCast = jit->builder->CreateBitCast(load, elTy);
@@ -925,7 +934,7 @@ Value *Nucleus::createLoad(Value *ptr, Type *type, bool isVolatile, unsigned int
 				auto sizetTy = llvm::IntegerType::get(*jit->context, sizeof(size_t) * 8);
 				auto intTy = llvm::IntegerType::get(*jit->context, sizeof(int) * 8);
 				auto i8Ty = llvm::Type::getInt8Ty(*jit->context);
-				auto i8PtrTy = i8Ty->getPointerTo();
+				auto i8PtrTy = getPointerTo(i8Ty);
 				auto voidTy = llvm::Type::getVoidTy(*jit->context);
 				auto funcTy = llvm::FunctionType::get(voidTy, { sizetTy, i8PtrTy, i8PtrTy, intTy }, false);
 				auto func = jit->module->getOrInsertFunction("__atomic_load", funcTy);
@@ -982,7 +991,7 @@ Value *Nucleus::createStore(Value *value, Value *ptr, Type *type, bool isVolatil
 				// void __msan_unpoison(const volatile void *a, size_t size)
 				auto voidTy = llvm::Type::getVoidTy(*jit->context);
 				auto i8Ty = llvm::Type::getInt8Ty(*jit->context);
-				auto voidPtrTy = i8Ty->getPointerTo();
+				auto voidPtrTy = getPointerTo(i8Ty);
 				auto sizetTy = llvm::IntegerType::get(*jit->context, sizeof(size_t) * 8);
 				auto funcTy = llvm::FunctionType::get(voidTy, { voidPtrTy, sizetTy }, false);
 				auto func = jit->module->getOrInsertFunction("__msan_unpoison", funcTy);
@@ -1011,7 +1020,7 @@ Value *Nucleus::createStore(Value *value, Value *ptr, Type *type, bool isVolatil
 				auto size = jit->module->getDataLayout().getTypeStoreSize(elTy);
 				auto elAsIntTy = llvm::IntegerType::get(*jit->context, size * 8);
 				auto valCast = jit->builder->CreateBitCast(V(value), elAsIntTy);
-				auto ptrCast = jit->builder->CreatePointerCast(V(ptr), elAsIntTy->getPointerTo());
+				auto ptrCast = jit->builder->CreatePointerCast(V(ptr), getPointerTo(elAsIntTy));
 				auto store = jit->builder->CreateAlignedStore(valCast, ptrCast, llvm::MaybeAlign(alignment), isVolatile);
 				store->setAtomic(atomicOrdering(atomic, memoryOrder));
 			}
@@ -1022,7 +1031,7 @@ Value *Nucleus::createStore(Value *value, Value *ptr, Type *type, bool isVolatil
 				auto sizetTy = llvm::IntegerType::get(*jit->context, sizeof(size_t) * 8);
 				auto intTy = llvm::IntegerType::get(*jit->context, sizeof(int) * 8);
 				auto i8Ty = llvm::Type::getInt8Ty(*jit->context);
-				auto i8PtrTy = i8Ty->getPointerTo();
+				auto i8PtrTy = getPointerTo(i8Ty);
 				auto voidTy = llvm::Type::getVoidTy(*jit->context);
 				auto funcTy = llvm::FunctionType::get(voidTy, { sizetTy, i8PtrTy, i8PtrTy, intTy }, false);
 				auto func = jit->module->getOrInsertFunction("__atomic_store", funcTy);
@@ -1056,7 +1065,7 @@ Value *Nucleus::createMaskedLoad(Value *ptr, Type *elTy, Value *mask, unsigned i
 	auto i1Ty = llvm::Type::getInt1Ty(*jit->context);
 	auto i32Ty = llvm::Type::getInt32Ty(*jit->context);
 	auto elVecTy = llvm::VectorType::get(T(elTy), numEls, false);
-	auto elVecPtrTy = elVecTy->getPointerTo();
+	auto elVecPtrTy = getPointerTo(elVecTy);
 	auto i8Mask = jit->builder->CreateIntCast(V(mask), llvm::VectorType::get(i1Ty, numEls, false), false);  // vec<int, int, ...> -> vec<bool, bool, ...>
 	auto passthrough = zeroMaskedLanes ? llvm::Constant::getNullValue(elVecTy) : llvm::UndefValue::get(elVecTy);
 	auto align = llvm::ConstantInt::get(i32Ty, alignment);
@@ -1076,7 +1085,7 @@ void Nucleus::createMaskedStore(Value *ptr, Value *val, Value *mask, unsigned in
 	auto i1Ty = llvm::Type::getInt1Ty(*jit->context);
 	auto i32Ty = llvm::Type::getInt32Ty(*jit->context);
 	auto elVecTy = V(val)->getType();
-	auto elVecPtrTy = elVecTy->getPointerTo();
+	auto elVecPtrTy = getPointerTo(elVecTy);
 	auto i1Mask = jit->builder->CreateIntCast(V(mask), llvm::VectorType::get(i1Ty, numEls, false), false);  // vec<int, int, ...> -> vec<bool, bool, ...>
 	auto align = llvm::ConstantInt::get(i32Ty, alignment);
 	auto func = GET_INTRINSIC_DECLARATION(jit->module.get(), llvm::Intrinsic::masked_store, { elVecTy, elVecPtrTy });
@@ -1087,7 +1096,7 @@ void Nucleus::createMaskedStore(Value *ptr, Value *val, Value *mask, unsigned in
 		// Mark memory writes as initialized by calling __msan_unpoison
 		// void __msan_unpoison(const volatile void *a, size_t size)
 		auto voidTy = llvm::Type::getVoidTy(*jit->context);
-		auto voidPtrTy = voidTy->getPointerTo();
+		auto voidPtrTy = getPointerTo(voidTy);
 		auto sizetTy = llvm::IntegerType::get(*jit->context, sizeof(size_t) * 8);
 		auto funcTy = llvm::FunctionType::get(voidTy, { voidPtrTy, sizetTy }, false);
 		auto func = jit->module->getOrInsertFunction("__msan_unpoison", funcTy);
@@ -1123,8 +1132,8 @@ static llvm::Value *createGather(llvm::Value *base, llvm::Type *elTy, llvm::Valu
 	auto i1Ty = llvm::Type::getInt1Ty(*jit->context);
 	auto i32Ty = llvm::Type::getInt32Ty(*jit->context);
 	auto i8Ty = llvm::Type::getInt8Ty(*jit->context);
-	auto i8PtrTy = i8Ty->getPointerTo();
-	auto elPtrTy = elTy->getPointerTo();
+	auto i8PtrTy = getPointerTo(i8Ty);
+	auto elPtrTy = getPointerTo(elTy);
 	auto elVecTy = llvm::VectorType::get(elTy, numEls, false);
 	auto elPtrVecTy = llvm::VectorType::get(elPtrTy, numEls, false);
 	auto i8Base = jit->builder->CreatePointerCast(base, i8PtrTy);
@@ -1189,10 +1198,10 @@ static void createScatter(llvm::Value *base, llvm::Value *val, llvm::Value *offs
 	auto i1Ty = llvm::Type::getInt1Ty(*jit->context);
 	auto i32Ty = llvm::Type::getInt32Ty(*jit->context);
 	auto i8Ty = llvm::Type::getInt8Ty(*jit->context);
-	auto i8PtrTy = i8Ty->getPointerTo();
+	auto i8PtrTy = getPointerTo(i8Ty);
 	auto elVecTy = val->getType();
 	auto elTy = llvm::cast<llvm::VectorType>(elVecTy)->getElementType();
-	auto elPtrTy = elTy->getPointerTo();
+	auto elPtrTy = getPointerTo(elTy);
 	auto elPtrVecTy = llvm::VectorType::get(elPtrTy, numEls, false);
 
 	auto i8Base = jit->builder->CreatePointerCast(base, i8PtrTy);
@@ -1283,8 +1292,8 @@ Value *Nucleus::createGEP(Value *ptr, Type *type, Value *index, bool unsignedInd
 	// Cast to a byte pointer, apply the byte offset, and cast back to the
 	// original pointer type.
 	return createBitCast(
-	    V(jit->builder->CreateGEP(T(Byte::type()), V(createBitCast(ptr, T(llvm::PointerType::get(T(Byte::type()), 0)))), V(index))),
-	    T(llvm::PointerType::get(T(type), 0)));
+	    V(jit->builder->CreateGEP(T(Byte::type()), V(createBitCast(ptr, T(getPointerTo(T(Byte::type()), 0)))), V(index))),
+	    T(getPointerTo(T(type), 0)));
 }
 
 Value *Nucleus::createAtomicAdd(Value *ptr, Value *value, std::memory_order memoryOrder)
@@ -1458,7 +1467,7 @@ Value *Nucleus::createBitCast(Value *v, Type *destType)
 	if(!V(v)->getType()->isVectorTy() && T(destType)->isVectorTy())
 	{
 		Value *readAddress = allocateStackVariable(destType);
-		Value *writeAddress = createBitCast(readAddress, T(llvm::PointerType::get(V(v)->getType(), 0)));
+		Value *writeAddress = createBitCast(readAddress, T(getPointerTo(V(v)->getType(), 0)));
 		createStore(v, writeAddress, T(V(v)->getType()));
 		return createLoad(readAddress, destType);
 	}
@@ -1466,7 +1475,7 @@ Value *Nucleus::createBitCast(Value *v, Type *destType)
 	{
 		Value *writeAddress = allocateStackVariable(T(V(v)->getType()));
 		createStore(v, writeAddress, T(V(v)->getType()));
-		Value *readAddress = createBitCast(writeAddress, T(llvm::PointerType::get(T(destType), 0)));
+		Value *readAddress = createBitCast(writeAddress, T(getPointerTo(T(destType), 0)));
 		return createLoad(readAddress, destType);
 	}
 
@@ -1684,7 +1693,7 @@ Type *Nucleus::getContainedType(Type *vectorType)
 
 Type *Nucleus::getPointerType(Type *ElementType)
 {
-	return T(llvm::PointerType::get(T(ElementType), 0));
+	return T(getPointerTo(T(ElementType), 0));
 }
 
 static llvm::Type *getNaturalIntType()
@@ -1771,7 +1780,7 @@ Value *Nucleus::createConstantFloat(float x)
 Value *Nucleus::createNullPointer(Type *Ty)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	return V(llvm::ConstantPointerNull::get(llvm::PointerType::get(T(Ty), 0)));
+	return V(llvm::ConstantPointerNull::get(getPointerTo(T(Ty), 0)));
 }
 
 Value *Nucleus::createConstantVector(std::vector<int64_t> constants, Type *type)
@@ -3408,7 +3417,7 @@ Value *Call(RValue<Pointer<Byte>> fptr, Type *retTy, std::initializer_list<Value
 	for(auto ty : argTys) { paramTys.push_back(T(ty)); }
 	auto funcTy = llvm::FunctionType::get(T(retTy), paramTys, false);
 
-	auto funcPtrTy = funcTy->getPointerTo();
+	auto funcPtrTy = getPointerTo(funcTy);
 	auto funcPtr = jit->builder->CreatePointerCast(V(fptr.value()), funcPtrTy);
 
 	llvm::SmallVector<llvm::Value *, 8> arguments;
@@ -3873,7 +3882,7 @@ void promoteFunctionToCoroutine()
 	auto i32Ty = llvm::Type::getInt32Ty(*jit->context);
 	auto i8PtrTy = our_getInt8PtrTy(*jit->context);
 	auto promiseTy = jit->coroutine.yieldType;
-	auto promisePtrTy = promiseTy->getPointerTo();
+	auto promisePtrTy = getPointerTo(promiseTy);
 
 	// LLVM intrinsics
 	auto coro_id = GET_INTRINSIC_DECLARATION(jit->module.get(), llvm::Intrinsic::coro_id);
@@ -4040,7 +4049,7 @@ void Nucleus::createCoroutine(Type *YieldType, const std::vector<Type *> &Params
 	auto handleTy = i8PtrTy;
 	auto boolTy = i1Ty;
 	auto promiseTy = T(YieldType);
-	auto promisePtrTy = promiseTy->getPointerTo();
+	auto promisePtrTy = getPointerTo(promiseTy);
 
 	jit->function = rr::createFunction("coroutine_begin", handleTy, T(Params));
 #if LLVM_VERSION_MAJOR >= 16
