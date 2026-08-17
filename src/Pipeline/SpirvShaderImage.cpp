@@ -834,8 +834,9 @@ void SpirvEmitter::EmitImageRead(const ImageInstruction &instruction)
 
 	// For subpass data, format in the instruction is spv::ImageFormatUnknown. Get it from
 	// the renderpass data instead. In all other cases, we can use the format in the instruction.
+	ASSERT(dim != spv::DimSubpassData || attachments != nullptr);
 	vk::Format imageFormat = (dim == spv::DimSubpassData)
-	                             ? shader.getInputAttachmentFormat(d.InputAttachmentIndex)
+	                             ? shader.getInputAttachmentFormat(*attachments, d.InputAttachmentIndex)
 	                             : SpirvFormatToVulkanFormat(static_cast<spv::ImageFormat>(instruction.imageFormat));
 
 	// Depth+Stencil image attachments select aspect based on the Sampled Type of the
@@ -1258,10 +1259,14 @@ void SpirvEmitter::EmitImageWrite(const ImageInstruction &instruction)
 	}
 
 	Array<SIMD::Int> texelAndMask(5);
-	texelAndMask[0] = texel.Int(0);
-	texelAndMask[1] = texel.Int(1);
-	texelAndMask[2] = texel.Int(2);
-	texelAndMask[3] = texel.Int(3);
+	for(uint32_t i = 0; i < texel.componentCount; ++i)
+	{
+		texelAndMask[i] = texel.Int(i);
+	}
+	for(uint32_t i = texel.componentCount; i < 4; ++i)
+	{
+		texelAndMask[i] = SIMD::Int(0);
+	}
 	texelAndMask[4] = activeStoresAndAtomicsMask();
 
 	vk::Format imageFormat = SpirvFormatToVulkanFormat(static_cast<spv::ImageFormat>(instruction.imageFormat));
