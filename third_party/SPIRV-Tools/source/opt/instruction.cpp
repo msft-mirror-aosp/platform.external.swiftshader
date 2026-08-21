@@ -73,6 +73,7 @@ Instruction::Instruction(IRContext* c, const spv_parsed_instruction_t& inst,
       unique_id_(c->TakeNextUniqueId()),
       dbg_line_insts_(std::move(dbg_line)),
       dbg_scope_(kNoDebugScope, kNoInlinedAt) {
+  operands_.reserve(inst.num_operands);
   for (uint32_t i = 0; i < inst.num_operands; ++i) {
     const auto& current_payload = inst.operands[i];
     operands_.emplace_back(
@@ -92,6 +93,7 @@ Instruction::Instruction(IRContext* c, const spv_parsed_instruction_t& inst,
       has_result_id_(inst.result_id != 0),
       unique_id_(c->TakeNextUniqueId()),
       dbg_scope_(dbg_scope) {
+  operands_.reserve(inst.num_operands);
   for (uint32_t i = 0; i < inst.num_operands; ++i) {
     const auto& current_payload = inst.operands[i];
     operands_.emplace_back(
@@ -110,6 +112,14 @@ Instruction::Instruction(IRContext* c, spv::Op op, uint32_t ty_id,
       unique_id_(c->TakeNextUniqueId()),
       operands_(),
       dbg_scope_(kNoDebugScope, kNoInlinedAt) {
+  size_t operands_size = in_operands.size();
+  if (has_type_id_) {
+    operands_size++;
+  }
+  if (has_result_id_) {
+    operands_size++;
+  }
+  operands_.reserve(operands_size);
   if (has_type_id_) {
     operands_.emplace_back(spv_operand_type_t::SPV_OPERAND_TYPE_TYPE_ID,
                            std::initializer_list<uint32_t>{ty_id});
@@ -741,7 +751,7 @@ bool Instruction::IsOpaqueType() const {
 }
 
 bool Instruction::IsFoldable() const {
-  return IsFoldableByFoldScalar() ||
+  return IsFoldableByFoldScalar() || IsFoldableByFoldVector() ||
          context()->get_instruction_folder().HasConstFoldingRule(this);
 }
 
@@ -752,7 +762,7 @@ bool Instruction::IsFoldableByFoldScalar() const {
   }
 
   Instruction* type = context()->get_def_use_mgr()->GetDef(type_id());
-  if (!folder.IsFoldableType(type)) {
+  if (!folder.IsFoldableScalarType(type)) {
     return false;
   }
 
@@ -763,7 +773,29 @@ bool Instruction::IsFoldableByFoldScalar() const {
     Instruction* def_inst = context()->get_def_use_mgr()->GetDef(*op_id);
     Instruction* def_inst_type =
         context()->get_def_use_mgr()->GetDef(def_inst->type_id());
-    return folder.IsFoldableType(def_inst_type);
+    return folder.IsFoldableScalarType(def_inst_type);
+  });
+}
+
+bool Instruction::IsFoldableByFoldVector() const {
+  const InstructionFolder& folder = context()->get_instruction_folder();
+  if (!folder.IsFoldableOpcode(opcode())) {
+    return false;
+  }
+
+  Instruction* type = context()->get_def_use_mgr()->GetDef(type_id());
+  if (!folder.IsFoldableVectorType(type)) {
+    return false;
+  }
+
+  // Even if the type of the instruction is foldable, its operands may not be
+  // foldable (e.g., comparisons of 64bit types).  Check that all operand types
+  // are foldable before accepting the instruction.
+  return WhileEachInOperand([&folder, this](const uint32_t* op_id) {
+    Instruction* def_inst = context()->get_def_use_mgr()->GetDef(*op_id);
+    Instruction* def_inst_type =
+        context()->get_def_use_mgr()->GetDef(def_inst->type_id());
+    return folder.IsFoldableVectorType(def_inst_type);
   });
 }
 

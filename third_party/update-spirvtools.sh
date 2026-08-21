@@ -12,12 +12,14 @@ fi
 
 THIRD_PARTY_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd )"
 
-GIT_RESULT=`git subtree pull --prefix third_party/SPIRV-Tools https://github.com/KhronosGroup/SPIRV-Tools master --squash -m "Update SPIR-V Tools"`
+GIT_RESULT=`git subtree pull --prefix third_party/SPIRV-Tools https://github.com/KhronosGroup/SPIRV-Tools main --squash -m "Update SPIR-V Tools"`
 if [[ $GIT_RESULT == *"CONFLICT"* ]]; then
   echo "subtree pull resulted in conflicts. Atempting to automatically resolve..."
   # CONFLICT is very likely due to Android.mk being deleted in our third_party.
   # Delete it, and try to continue.
   git rm ${THIRD_PARTY_DIR}/SPIRV-Tools/Android.mk
+  git rm ${THIRD_PARTY_DIR}/SPIRV-Tools/android_test/Android.mk
+  git rm ${THIRD_PARTY_DIR}/SPIRV-Tools/android_test/jni/Application.mk
   git -c core.editor=true merge --continue # '-c core.editor=true' prevents the editor from showing
   if [ $? -ne 0 ]; then
     echo "Could not automatically resolve conflicts."

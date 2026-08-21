@@ -1,27 +1,11 @@
-//
-// File: vk_icd.h
-//
 /*
- * Copyright (c) 2015-2016, 2022 The Khronos Group Inc.
- * Copyright (c) 2015-2016, 2022 Valve Corporation
- * Copyright (c) 2015-2016, 2022 LunarG, Inc.
+ * Copyright 2015-2023 The Khronos Group Inc.
+ * Copyright 2015-2023 Valve Corporation
+ * Copyright 2015-2023 LunarG, Inc.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
+ * SPDX-License-Identifier: Apache-2.0
  */
-
-#ifndef VKICD_H
-#define VKICD_H
+#pragma once
 
 #include "vulkan.h"
 #include <stdbool.h>
@@ -80,7 +64,7 @@ extern "C" {
 #endif
     VKAPI_ATTR VkResult VKAPI_CALL vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t* pVersion);
     VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance instance, const char* pName);
-    VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetPhysicalDeviceProcAddr(VkInstance isntance, const char* pName);
+    VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetPhysicalDeviceProcAddr(VkInstance instance, const char* pName);
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
     VKAPI_ATTR VkResult VKAPI_CALL vk_icdEnumerateAdapterPhysicalDevices(VkInstance instance, LUID adapterLUID,
         uint32_t* pPhysicalDeviceCount, VkPhysicalDevice* pPhysicalDevices);
@@ -117,24 +101,23 @@ static inline bool valid_loader_magic_value(void *pNewObject) {
  * Windows and Linux ICDs will treat VkSurfaceKHR as a pointer to a struct that
  * contains the platform-specific connection and surface information.
  */
-typedef enum
-{
-	VK_ICD_WSI_PLATFORM_MIR,
-	VK_ICD_WSI_PLATFORM_WAYLAND,
-	VK_ICD_WSI_PLATFORM_WIN32,
-	VK_ICD_WSI_PLATFORM_XCB,
-	VK_ICD_WSI_PLATFORM_XLIB,
-	VK_ICD_WSI_PLATFORM_ANDROID,
-	VK_ICD_WSI_PLATFORM_MACOS,
-	VK_ICD_WSI_PLATFORM_IOS,
-	VK_ICD_WSI_PLATFORM_DISPLAY,
-	VK_ICD_WSI_PLATFORM_HEADLESS,
-	VK_ICD_WSI_PLATFORM_METAL,
-	VK_ICD_WSI_PLATFORM_DIRECTFB,
-	VK_ICD_WSI_PLATFORM_VI,
-	VK_ICD_WSI_PLATFORM_GGP,
-	VK_ICD_WSI_PLATFORM_SCREEN,
-	VK_ICD_WSI_PLATFORM_FUCHSIA,
+typedef enum {
+    VK_ICD_WSI_PLATFORM_MIR,
+    VK_ICD_WSI_PLATFORM_WAYLAND,
+    VK_ICD_WSI_PLATFORM_WIN32,
+    VK_ICD_WSI_PLATFORM_XCB,
+    VK_ICD_WSI_PLATFORM_XLIB,
+    VK_ICD_WSI_PLATFORM_ANDROID,
+    VK_ICD_WSI_PLATFORM_MACOS,
+    VK_ICD_WSI_PLATFORM_IOS,
+    VK_ICD_WSI_PLATFORM_DISPLAY,
+    VK_ICD_WSI_PLATFORM_HEADLESS,
+    VK_ICD_WSI_PLATFORM_METAL,
+    VK_ICD_WSI_PLATFORM_DIRECTFB,
+    VK_ICD_WSI_PLATFORM_VI,
+    VK_ICD_WSI_PLATFORM_GGP,
+    VK_ICD_WSI_PLATFORM_SCREEN,
+    VK_ICD_WSI_PLATFORM_FUCHSIA,
 } VkIcdWsiPlatform;
 
 typedef struct {
@@ -255,10 +238,7 @@ typedef struct {
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
 
 #ifdef VK_USE_PLATFORM_FUCHSIA
-typedef struct
-{
-	VkIcdSurfaceBase base;
+typedef struct {
+  VkIcdSurfaceBase base;
 } VkIcdSurfaceImagePipe;
-#endif  // VK_USE_PLATFORM_FUCHSIA
-
-#endif  // VKICD_H
+#endif // VK_USE_PLATFORM_FUCHSIA

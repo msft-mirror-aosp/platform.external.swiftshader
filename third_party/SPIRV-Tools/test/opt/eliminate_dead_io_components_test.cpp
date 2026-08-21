@@ -15,7 +15,6 @@
 
 #include <vector>
 
-#include "gmock/gmock.h"
 #include "test/opt/pass_fixture.h"
 #include "test/opt/pass_utils.h"
 
@@ -445,9 +444,9 @@ TEST_F(ElimDeadIOComponentsTest, ElimStructMember) {
     %v2float = OpTypeVector %float 2
      %Vertex = OpTypeStruct %v4float %v2float
 ; CHECK: %Vertex = OpTypeStruct %v4float %v2float
-; CHECK: [[sty:%\w+]] = OpTypeStruct %v4float
+; CHECK: %Vertex_0 = OpTypeStruct %v4float
 %_ptr_Input_Vertex = OpTypePointer Input %Vertex
-; CHECK: [[pty:%\w+]] = OpTypePointer Input [[sty]]
+; CHECK: [[pty:%\w+]] = OpTypePointer Input %Vertex_0
       %iVert = OpVariable %_ptr_Input_Vertex Input
 ; CHECK: %iVert = OpVariable [[pty]] Input
         %int = OpTypeInt 32 1

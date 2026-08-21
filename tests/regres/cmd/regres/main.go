@@ -63,6 +63,7 @@ const (
 	gitURL                = "https://swiftshader.googlesource.com/SwiftShader"
 	gitDailyBranch        = "HEAD"
 	gerritURL             = "https://swiftshader-review.googlesource.com/"
+	gerritUserName        = "SwiftShader Regression Bot"
 	coverageURL           = "https://$USERNAME:$PASSWORD@github.com/swiftshader-regres/swiftshader-coverage.git"
 	coverageBranch        = "gh-pages"
 	coveragePath          = "coverage/coverage.zip"
@@ -80,7 +81,7 @@ const (
 
 var (
 	numParallelTests = runtime.NumCPU()
-	llvmVersion      = llvm.Version{Major: 10}
+	llvmVersion      = llvm.Version{Major: 17, Point: 6}
 
 	cacheDir        = flag.String("cache", "cache", "path to the output cache directory")
 	gerritEmail     = flag.String("email", "$SS_REGRES_EMAIL", "gerrit email address for posting regres results")
@@ -259,13 +260,13 @@ func (r *regres) resolveExes() error {
 }
 
 // run performs the main processing loop for the regress tool. It:
-// * Scans for open and recently updated changes in gerrit using queryChanges()
-//   and changeInfo.update().
-// * Builds the most recent patchset and the commit's parent CL using
-//   r.newTest(<hash>).lazyRun().
-// * Compares the results of the tests using compare().
-// * Posts the results of the compare to gerrit as a review.
-// * Repeats the above steps until the process is interrupted.
+//   - Scans for open and recently updated changes in gerrit using queryChanges()
+//     and changeInfo.update().
+//   - Builds the most recent patchset and the commit's parent CL using
+//     r.newTest(<hash>).lazyRun().
+//   - Compares the results of the tests using compare().
+//   - Posts the results of the compare to gerrit as a review.
+//   - Repeats the above steps until the process is interrupted.
 func (r *regres) run() error {
 	if err := r.resolveExes(); err != nil {
 		return fmt.Errorf("failed to resolve all exes: %w", err)
@@ -300,10 +301,10 @@ func (r *regres) run() error {
 	for {
 		if now := time.Now(); toDate(now) != lastUpdatedTestLists {
 			lastUpdatedTestLists = toDate(now)
-			if err := r.runDaily(client, backendLLVM, false); err != nil {
+			if err := r.runDaily(client, backendLLVM); err != nil {
 				log.Println(err.Error())
 			}
-			if err := r.runDaily(client, backendSubzero, true); err != nil {
+			if err := r.runDaily(client, backendSubzero); err != nil {
 				log.Println(err.Error())
 			}
 		}
@@ -505,7 +506,7 @@ func (r *regres) getOrBuildDEQPFromConfig(test *test, cfg DeqpConfig, checkoutDi
 			// commit by SHA. This is a workaround for git repos that error when
 			// attempting to directly checkout a remote commit.
 			log.Printf("Checking out deqp %v branch %v into %v\n", cfg.Remote, cfg.Branch, cacheDir)
-			if err := git.CheckoutRemoteBranch(cacheDir, cfg.Remote, cfg.Branch); err != nil {
+			if err := git.CheckoutRemoteBranch(cacheDir, cfg.Remote, cfg.Branch, git.CommitFlags{}); err != nil {
 				return deqpBuild{}, fmt.Errorf("failed to checkout deqp branch %v @ %v: %w", cfg.Remote, cfg.Branch, err)
 			}
 			log.Printf("Checking out deqp %v commit %v \n", cfg.Remote, cfg.SHA)
@@ -514,7 +515,7 @@ func (r *regres) getOrBuildDEQPFromConfig(test *test, cfg DeqpConfig, checkoutDi
 			}
 		} else {
 			log.Printf("Checking out deqp %v @ %v into %v\n", cfg.Remote, cfg.SHA, cacheDir)
-			if err := git.CheckoutRemoteCommit(cacheDir, cfg.Remote, git.ParseHash(cfg.SHA)); err != nil {
+			if err := git.CheckoutRemoteCommit(cacheDir, cfg.Remote, git.ParseHash(cfg.SHA), git.CommitFlags{}); err != nil {
 				return deqpBuild{}, fmt.Errorf("failed to checkout deqp commit %v @ %v: %w", cfg.Remote, cfg.SHA, err)
 			}
 		}
@@ -636,28 +637,13 @@ func (r *regres) testParent(change *changeInfo, testlists testlist.Lists, d deqp
 }
 
 // runDaily runs a full deqp run on the HEAD change, posting the results to a
-// new or existing gerrit change. If genCov is true, then coverage
-// information will be generated for the run, and commiteed to the
-// coverageBranch.
-func (r *regres) runDaily(client *gerrit.Client, reactorBackend reactorBackend, genCov bool) error {
-	// TODO(b/152192800): Generating coverage data is currently broken.
-	genCov = false
-
+// new or existing gerrit change.
+func (r *regres) runDaily(client *gerrit.Client, reactorBackend reactorBackend) error {
 	log.Printf("Updating test lists (Backend: %v)\n", reactorBackend)
 
-	if genCov {
-		if r.githubUser == "" {
-			log.Println("--gh-user not specified and SS_GITHUB_USER not set. Disabling code coverage generation")
-			genCov = false
-		} else if r.githubPass == "" {
-			log.Println("--gh-pass not specified and SS_GITHUB_PASS not set. Disabling code coverage generation")
-			genCov = false
-		}
-	}
-
-	dailyHash := git.Hash{}
+	var dailyHash git.Hash
 	if r.dailyChange == "" {
-		headHash, err := git.FetchRefHash(gitDailyBranch, gitURL)
+		headHash, err := git.FetchRefHash(gitDailyBranch, gitURL, r.gerritEmail)
 		if err != nil {
 			return fmt.Errorf("failed to get hash of master HEAD: %w", err)
 		}
@@ -666,34 +652,6 @@ func (r *regres) runDaily(client *gerrit.Client, reactorBackend reactorBackend, 
 		dailyHash = git.ParseHash(r.dailyChange)
 	}
 
-	return r.runDailyTest(dailyHash, reactorBackend, genCov,
-		func(test *test, testLists testlist.Lists, results *deqp.Results) error {
-			errs := []error{}
-
-			if err := r.postDailyResults(client, test, testLists, results, reactorBackend, dailyHash); err != nil {
-				errs = append(errs, err)
-			}
-
-			if genCov {
-				if err := r.postCoverageResults(results.Coverage, dailyHash); err != nil {
-					errs = append(errs, err)
-				}
-			}
-
-			if len(errs) > 0 {
-				msg := strings.Builder{}
-				for _, err := range errs {
-					msg.WriteString(err.Error() + "\n")
-				}
-				return fmt.Errorf("%s", msg.String())
-			}
-			return nil
-		})
-}
-
-// runDailyTest performs the full deqp run on the HEAD change, calling
-// withResults with the test results.
-func (r *regres) runDailyTest(dailyHash git.Hash, reactorBackend reactorBackend, genCov bool, withResults func(*test, testlist.Lists, *deqp.Results) error) error {
 	// Get the full test results.
 	test := r.newTest(dailyHash).setReactorBackend(reactorBackend)
 	defer test.cleanup()
@@ -701,6 +659,12 @@ func (r *regres) runDailyTest(dailyHash git.Hash, reactorBackend reactorBackend,
 	// Always need to checkout the change.
 	if err := test.checkout(); err != nil {
 		return fmt.Errorf("failed to checkout '%s': %w", dailyHash, err)
+	}
+
+	// Update dEQP to latest
+	newPaths, err := r.updateLocalDeqpFiles(test)
+	if err != nil {
+		return fmt.Errorf("failed to update test lists from dEQP: %w", err)
 	}
 
 	d, err := r.getOrBuildDEQP(test)
@@ -714,15 +678,6 @@ func (r *regres) runDailyTest(dailyHash git.Hash, reactorBackend reactorBackend,
 		return fmt.Errorf("failed to load full test lists for '%s': %w", dailyHash, err)
 	}
 
-	if genCov {
-		test.coverageEnv = &cov.Env{
-			LLVM:     *r.toolchain,
-			RootDir:  test.checkoutDir,
-			ExePath:  filepath.Join(test.buildDir, "libvk_swiftshader.so"),
-			TurboCov: filepath.Join(test.buildDir, "turbo-cov"),
-		}
-	}
-
 	// Build the change.
 	if err := test.build(); err != nil {
 		return fmt.Errorf("failed to build '%s': %w", dailyHash, err)
@@ -734,7 +689,13 @@ func (r *regres) runDailyTest(dailyHash git.Hash, reactorBackend reactorBackend,
 		return fmt.Errorf("failed to test '%s': %w", dailyHash, err)
 	}
 
-	return withResults(test, testLists, results)
+	if err := r.postDailyResults(client, test, testLists, results, reactorBackend, dailyHash, newPaths); err != nil {
+		msg := strings.Builder{}
+		msg.WriteString(err.Error() + "\n")
+		return fmt.Errorf("%s", msg.String())
+	}
+
+	return nil
 }
 
 // copyFileIfDifferent copies src to dst if src doesn't exist or if there are differences
@@ -755,6 +716,9 @@ func copyFileIfDifferent(dst, src string) error {
 	}
 
 	if !bytes.Equal(srcContents, dstContents) {
+		if err := os.MkdirAll(path.Dir(dst), 0777); err != nil {
+			return err
+		}
 		if err := os.WriteFile(dst, srcContents, srcFileInfo.Mode()); err != nil {
 			return err
 		}
@@ -785,7 +749,7 @@ func (r *regres) updateLocalDeqpFiles(test *test) ([]string, error) {
 		return nil, fmt.Errorf("failed to open dEQP config file: %w", err)
 	}
 
-	hash, err := git.FetchRefHash("HEAD", cfg.Remote)
+	hash, err := git.FetchRefHash("HEAD", cfg.Remote, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch dEQP ref: %w", err)
 	}
@@ -808,7 +772,6 @@ func (r *regres) updateLocalDeqpFiles(test *test) ([]string, error) {
 
 	// Use getOrBuildDEQPFromConfig as it'll prevent us from copying data from a revision of dEQP that has build errors.
 	deqpBuild, err := r.getOrBuildDEQPFromConfig(test, cfg, test.checkoutDir)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve dEQP build information: %w", err)
 	}
@@ -893,17 +856,13 @@ func (r *regres) postDailyResults(
 	testLists testlist.Lists,
 	results *deqp.Results,
 	reactorBackend reactorBackend,
-	dailyHash git.Hash) error {
+	dailyHash git.Hash,
+	newPaths []string) error {
 
 	// Write out the test list status files.
 	filePaths, err := test.writeTestListsByStatus(testLists, results)
 	if err != nil {
 		return fmt.Errorf("failed to write test lists by status: %w", err)
-	}
-
-	newPaths, err := r.updateLocalDeqpFiles(test)
-	if err != nil {
-		return fmt.Errorf("failed to update test lists from dEQP: %w", err)
 	}
 
 	filePaths = append(filePaths, newPaths...)
@@ -932,7 +891,7 @@ func (r *regres) postDailyResults(
 	}
 
 	if err := git.Commit(test.checkoutDir, commitMsg.String(), git.CommitFlags{
-		Name:  "SwiftShader Regression Bot",
+		Name:  gerritUserName,
 		Email: r.gerritEmail,
 	}); err != nil {
 		return fmt.Errorf("failed to commit test results: %w", err)
@@ -980,7 +939,7 @@ func (r *regres) postCoverageResults(cov *cov.Tree, revision git.Hash) error {
 
 	dir := filepath.Join(r.cacheRoot, "coverage")
 	defer os.RemoveAll(dir)
-	if err := git.CheckoutRemoteBranch(dir, url, coverageBranch); err != nil {
+	if err := git.CheckoutRemoteBranch(dir, url, coverageBranch, git.CommitFlags{}); err != nil {
 		return fmt.Errorf("failed to checkout gh-pages branch: %w", err)
 	}
 
@@ -1003,7 +962,7 @@ func (r *regres) postCoverageResults(cov *cov.Tree, revision git.Hash) error {
 	shortHash := revision.String()[:8]
 
 	err = git.Commit(dir, "Update coverage data @ "+shortHash, git.CommitFlags{
-		Name:  "SwiftShader Regression Bot",
+		Name:  gerritUserName,
 		Email: r.gerritEmail,
 	})
 	if err != nil {
@@ -1260,7 +1219,10 @@ func (t *test) checkout() error {
 	}
 	log.Printf("Checking out '%s'\n", t.commit)
 	os.RemoveAll(t.checkoutDir)
-	if err := git.CheckoutRemoteCommit(t.checkoutDir, gitURL, t.commit); err != nil {
+	if err := git.CheckoutRemoteCommit(t.checkoutDir, gitURL, t.commit, git.CommitFlags{
+		Name:  gerritUserName,
+		Email: t.r.gerritEmail,
+	}); err != nil {
 		return fmt.Errorf("failed to check out commit '%s': %w", t.commit, err)
 	}
 	log.Printf("Checked out commit '%s'\n", t.commit)
@@ -1496,6 +1458,7 @@ func compare(old, new *deqp.Results) (msg string, alert bool) {
 	}
 
 	sb := strings.Builder{}
+	sb.WriteString("```\n")
 
 	// list prints the list l to sb, truncating after a limit.
 	list := func(l []string) {
@@ -1547,7 +1510,7 @@ func compare(old, new *deqp.Results) (msg string, alert bool) {
 	}
 
 	if len(broken) == 0 && len(fixed) == 0 && len(removed) == 0 && len(changed) == 0 {
-		sb.WriteString(fmt.Sprintf("\n--- No change in test results ---\n"))
+		sb.WriteString("\n--- No change in test results ---\n")
 	}
 
 	sb.WriteString(fmt.Sprintf("          Total tests: %d\n", totalTests))
@@ -1567,6 +1530,7 @@ func compare(old, new *deqp.Results) (msg string, alert bool) {
 		{"        Not Supported", testlist.NotSupported},
 		{"Compatibility Warning", testlist.CompatibilityWarning},
 		{"      Quality Warning", testlist.QualityWarning},
+		{"              Unknown", testlist.Unknown},
 	} {
 		old, new := oldStatusCounts[s.status], newStatusCounts[s.status]
 		if old == 0 && new == 0 {
@@ -1633,6 +1597,8 @@ func compare(old, new *deqp.Results) (msg string, alert bool) {
 			sb.WriteString(fmt.Sprintf("  > %v: %v -> %v (%+d%%)\n", d.name, d.old, d.new, percent))
 		}
 	}
+
+	sb.WriteString("```\n")
 
 	return sb.String(), alert
 }
