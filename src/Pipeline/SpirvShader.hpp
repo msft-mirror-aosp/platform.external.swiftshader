@@ -52,6 +52,7 @@ class PipelineLayout;
 class ImageView;
 class Sampler;
 class RenderPass;
+struct Attachments;
 struct SampledImageDescriptor;
 struct SamplerState;
 
@@ -104,6 +105,7 @@ public:
 	{
 		ASSERT(i < componentCount);
 		ASSERT(scalar[i] != nullptr);
+		RR_PRINT_ONLY(typeHint = TypeHint::Float;)
 		return As<SIMD::Float>(scalar[i]);  // TODO(b/128539387): RValue<SIMD::Float>(scalar)
 	}
 
@@ -111,6 +113,7 @@ public:
 	{
 		ASSERT(i < componentCount);
 		ASSERT(scalar[i] != nullptr);
+		RR_PRINT_ONLY(typeHint = TypeHint::Int;)
 		return As<SIMD::Int>(scalar[i]);  // TODO(b/128539387): RValue<SIMD::Int>(scalar)
 	}
 
@@ -118,6 +121,7 @@ public:
 	{
 		ASSERT(i < componentCount);
 		ASSERT(scalar[i] != nullptr);
+		RR_PRINT_ONLY(typeHint = TypeHint::UInt;)
 		return As<SIMD::UInt>(scalar[i]);  // TODO(b/128539387): RValue<SIMD::UInt>(scalar)
 	}
 
@@ -142,7 +146,7 @@ private:
 
 #ifdef ENABLE_RR_PRINT
 	friend struct rr::PrintValue::Ty<sw::Intermediate>;
-	TypeHint typeHint = TypeHint::Float;
+	mutable TypeHint typeHint = TypeHint::Float;
 #endif  // ENABLE_RR_PRINT
 };
 
@@ -733,6 +737,7 @@ public:
 		}
 
 		Decorations(const Decorations &) = default;
+		Decorations& operator= (const Decorations &) = default;
 
 		void Apply(const Decorations &src);
 
@@ -975,23 +980,53 @@ public:
 	            const SpirvBinary &insns,
 	            const vk::RenderPass *renderPass,
 	            uint32_t subpassIndex,
+		    const VkRenderingInputAttachmentIndexInfoKHR *inputAttachmentMapping,
 	            bool robustBufferAccess);
 
 	~SpirvShader();
 
 	// TODO(b/247020580): Move to SpirvRoutine
 	void emitProlog(SpirvRoutine *routine) const;
-	void emit(SpirvRoutine *routine, const RValue<SIMD::Int> &activeLaneMask, const RValue<SIMD::Int> &storesAndAtomicsMask, const vk::DescriptorSet::Bindings &descriptorSets, unsigned int multiSampleCount = 0) const;
+	void emit(SpirvRoutine *routine, const RValue<SIMD::Int> &activeLaneMask, const RValue<SIMD::Int> &storesAndAtomicsMask, const vk::DescriptorSet::Bindings &descriptorSets, const vk::Attachments *attachments = nullptr, unsigned int multiSampleCount = 0) const;
 	void emitEpilog(SpirvRoutine *routine) const;
 
 	bool getRobustBufferAccess() const { return robustBufferAccess; }
 	OutOfBoundsBehavior getOutOfBoundsBehavior(Object::ID pointerId, const vk::PipelineLayout *pipelineLayout) const;
 
-	vk::Format getInputAttachmentFormat(int32_t index) const { return inputAttachmentFormats[index]; }
+	vk::Format getInputAttachmentFormat(const vk::Attachments &attachments, int32_t index) const;
 
 private:
 	const bool robustBufferAccess;
 
+	// When reading from an input attachment, its format is needed.  When the fragment shader
+	// pipeline library is created, the formats are available with render pass objects, but not
+	// with dynamic rendering.  Instead, with dynamic rendering the formats are provided to the
+	// fragment output interface pipeline library.
+	//
+	// This class is instantiated by the fragment shader pipeline library.  With dynamic
+	// rendering, the mapping from input attachment indices to render pass attachments are
+	// stored here at that point.  Later, when the formats are needed, the information is taken
+	// out of the information provided to the fragment output interface pipeline library.
+	//
+	// In the following, `inputIndexToColorIndex` maps from an input attachment index docoration
+	// in the shader to the attachment index (not the remapped location).
+	//
+	// The depthInputIndex and stencilInputIndex values are only valid for dynamic rendering and
+	// indicate what input attachment index is supposed to map to each.  They are optional, as
+	// the shader no longer has to decorate depth and stencil input attachments with
+	// an InputAttachmentIndex decoration.
+	//
+	// Note: If SpirvEmitter::EmitImageRead were to take the format from the bound descriptor,
+	// none of the following would be necessary.  With the current implementation, read-only
+	// input attachments cannot be supported with dynamic rendering because they don't map to
+	// any attachment.
+	const bool isUsedWithDynamicRendering;
+	std::unordered_map<uint32_t, uint32_t> inputIndexToColorIndex;
+	int32_t depthInputIndex = -1;
+	int32_t stencilInputIndex = -1;
+
+	// With render passes objects, all formats are derived early from
+	// VkSubpassDescription::pInputAttachments.
 	std::vector<vk::Format> inputAttachmentFormats;
 };
 
@@ -1011,6 +1046,7 @@ public:
 	                 Spirv::Function::ID entryPoint,
 	                 RValue<SIMD::Int> activeLaneMask,
 	                 RValue<SIMD::Int> storesAndAtomicsMask,
+	                 const vk::Attachments *attachments,
 	                 const vk::DescriptorSet::Bindings &descriptorSets,
 	                 unsigned int multiSampleCount);
 
@@ -1026,6 +1062,7 @@ private:
 	             Spirv::Function::ID entryPoint,
 	             RValue<SIMD::Int> activeLaneMask,
 	             RValue<SIMD::Int> storesAndAtomicsMask,
+	             const vk::Attachments *attachments,
 	             const vk::DescriptorSet::Bindings &descriptorSets,
 	             unsigned int multiSampleCount);
 
@@ -1196,6 +1233,8 @@ private:
 
 		RValue<SIMD::Float> Float(uint32_t i) const
 		{
+			ASSERT(i < componentCount);
+
 			if(intermediate)
 			{
 				return intermediate->Float(i);
@@ -1209,6 +1248,8 @@ private:
 
 		RValue<SIMD::Int> Int(uint32_t i) const
 		{
+			ASSERT(i < componentCount);
+
 			if(intermediate)
 			{
 				return intermediate->Int(i);
@@ -1219,6 +1260,8 @@ private:
 
 		RValue<SIMD::UInt> UInt(uint32_t i) const
 		{
+			ASSERT(i < componentCount);
+
 			if(intermediate)
 			{
 				return intermediate->UInt(i);
@@ -1531,6 +1574,7 @@ private:
 	std::unordered_map<Block::Edge, RValue<SIMD::Int>, Block::Edge::Hash> edgeActiveLaneMasks;
 	std::deque<Block::ID> *pending;
 
+	const vk::Attachments *attachments;
 	const vk::DescriptorSet::Bindings &descriptorSets;
 
 	std::unordered_map<Object::ID, Intermediate> intermediates;

@@ -43,14 +43,22 @@ CLONE_SRC_DIR="$(pwd)"
 
 . /bin/using.sh # Declare the bash `using` function for configuring toolchains.
 
-using cmake-3.17.2
-using gcc-9
+using cmake-3.31.2
+using gcc-13
 
 status "Cloning to clean source directory at '${SRC_DIR}'"
+
+set -x
+# The source git repo was created in the host environment (outside
+# docker) and is owned by a different user than the one running
+# inside the docker container.  Tell git to bypass the ownership
+# check: it's ok to read and operate on the repo.
+git config --global --add safe.directory '*'
 
 mkdir -p ${SRC_DIR}
 cd ${SRC_DIR}
 git clone ${CLONE_SRC_DIR} .
+set +x
 
 mkdir -p build && cd build
 

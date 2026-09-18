@@ -718,7 +718,7 @@ namespace llvm {
       T *P;
 
     public:
-      SingleLinkedListIterator<T>(T *P) : P(P) {}
+      SingleLinkedListIterator(T *P) : P(P) {}
 
       SingleLinkedListIterator<T> &operator++() {
         P = P->Next;
@@ -729,10 +729,10 @@ namespace llvm {
         ++*this;
         return res;
       }
-      bool operator!=(const SingleLinkedListIterator<T> &Other) {
+      bool operator!=(const SingleLinkedListIterator<T> &Other) const {
         return P != Other.operator->();
       }
-      bool operator==(const SingleLinkedListIterator<T> &Other) {
+      bool operator==(const SingleLinkedListIterator<T> &Other) const {
         return P == Other.operator->();
       }
       T &operator*() const {
