@@ -367,7 +367,11 @@ void Scheduler::Worker::start() {
       auto allocator = scheduler->cfg.allocator;
       auto& affinityPolicy = scheduler->cfg.workerThread.affinityPolicy;
       auto affinity = affinityPolicy->get(id, allocator);
+#if __cplusplus > 201703L
       thread = Thread(std::move(affinity), [=, this] {
+#else
+      thread = Thread(std::move(affinity), [=] {
+#endif
         Thread::setName("Thread<%.2d>", int(id));
 
         if (auto const& initFunc = scheduler->cfg.workerThread.initializer) {

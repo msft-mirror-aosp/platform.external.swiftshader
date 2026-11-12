@@ -622,7 +622,6 @@ cc_defaults {
         "llvm/lib/MC/MCDXContainerStreamer.cpp",
         "llvm/lib/MC/MCDXContainerWriter.cpp",
         "llvm/lib/MC/MCDisassembler/MCRelocationInfo.cpp",
-        "llvm/lib/MC/MCDisassembler/MCDisassembler.cpp",
         "llvm/lib/MC/MCDisassembler/Disassembler.cpp",
         "llvm/lib/MC/MCDisassembler/MCExternalSymbolizer.cpp",
         "llvm/lib/MC/MCDisassembler/MCSymbolizer.cpp",
